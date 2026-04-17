@@ -20,8 +20,8 @@ function openDatabase(filePath) {
 }
 
 const db = openDatabase(dbPath);
-// WAL mode removed — single-user desktop app doesn't need concurrent readers.
-// foreign_keys enforced per-connection:
+// Give locked databases up to 10 seconds to clear before erroring
+try { db.exec('PRAGMA busy_timeout = 10000'); } catch (_) {}
 try { db.exec('PRAGMA foreign_keys = ON'); } catch (_) {}
 
 // Shim: node-sqlite3-wasm prepared statements need params as arrays.
