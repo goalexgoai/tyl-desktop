@@ -2026,7 +2026,7 @@ async function renderDeveloper(main) {
         ${window.electronAPI?.isDesktop
           ? 'API keys are used for webhook sends (Pro plan) — integrate with Make, Zapier, or your own systems. The desktop app handles all sending automatically.'
           : 'API keys connect your companion app to Text Your List. The companion picks up queued messages and sends them through your phone.'}
-        ${u.plan === 'free' || u.plan === 'starter' ? ' Free and Starter plans include 1 companion key.' : ' Pro plan includes unlimited keys.'}
+        ${window.electronAPI?.isDesktop ? '' : (u.plan === 'free' || u.plan === 'starter' ? ' Free and Starter plans include 1 companion key.' : ' Pro plan includes unlimited keys.')}
         ${isProOrAdmin ? ' Pro plan also enables the <code style="font-family:monospace">/api/make/send</code> webhook for Make, Zapier, etc.' : ''}
       </div>
       <div class="card" style="margin-bottom:16px">
@@ -2047,10 +2047,10 @@ async function renderDeveloper(main) {
       <!-- API Docs section — Change 4 -->
       <h3 style="font-size:16px;font-weight:700;margin-bottom:16px">API Documentation</h3>
 
-      <!-- Companion requirement note -->
-      <div class="api-companion-note" style="margin-bottom:16px">
+      <!-- Companion requirement note — hidden in desktop mode -->
+      ${window.electronAPI?.isDesktop ? '' : `<div class="api-companion-note" style="margin-bottom:16px">
         <strong>Important:</strong> Your Text Your List companion app must be open and running on your computer for messages to send. Messages queue up on the server and are delivered when your companion is active.
-      </div>
+      </div>`}
 
       <!-- API Send endpoint -->
       <div class="api-endpoint-box" style="margin-bottom:16px">
@@ -2093,7 +2093,7 @@ Content-Type: application/json
         </div>
       </div>
 
-      <div class="card" style="margin-bottom:16px">
+      ${window.electronAPI?.isDesktop ? '' : `<div class="card" style="margin-bottom:16px">
         <div class="card-header"><h3>Companion Poll &amp; Ack</h3></div>
         <div class="card-body">
           <p style="color:var(--text-muted);margin-bottom:12px">The companion calls GET /api/poll to claim the next message, then POST /api/ack to report the result.</p>
@@ -2106,10 +2106,10 @@ POST /api/ack
 Authorization: Bearer <span style="background:#fffbeb;padding:1px 4px;border-radius:3px;color:#b45309">tbk_your_api_key_here</span>
 { "message_id": "...", "status": "sent" }
 { "message_id": "...", "status": "failed", "error": "reason" }</code></pre>
-            <button class="code-copy-btn" onclick="copyText('GET /api/poll\nAuthorization: Bearer tbk_your_api_key_here');showToast('Copied!')">Copy</button>
+            <button class="code-copy-btn" onclick="copyText('GET /api/poll\\nAuthorization: Bearer tbk_your_api_key_here');showToast('Copied!')">Copy</button>
           </div>
         </div>
-      </div>
+      </div>`}
 
       <div class="card">
         <div class="card-header"><h3>Suppression list</h3></div>
@@ -2686,10 +2686,11 @@ function renderBilling(main) {
   if (proBtn) proBtn.addEventListener('click', () => upgrade('pro'));
   if (manageBtn) {
     manageBtn.addEventListener('click', async () => {
-      if (window.electronAPI?.openBilling) {
-        window.electronAPI.openBilling();
-      } else {
-        window.location.href = '/billing/checkout?plan=starter';
+      try {
+        const result = await post('/billing/portal', {});
+        if (result.url) window.location.href = result.url; // will-navigate opens in browser on desktop
+      } catch (err) {
+        msg.innerHTML = `<div class="alert alert-error">${escHtml(err.message)}</div>`;
       }
     });
   }

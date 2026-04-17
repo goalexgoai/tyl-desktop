@@ -42,7 +42,7 @@ if (!process.env.SESSION_SECRET) {
 }
 
 const app = express();
-app.set('trust proxy', 1); // app is behind nginx — needed for express-rate-limit X-Forwarded-For
+if (!process.env.TYL_DESKTOP) app.set('trust proxy', 1); // app is behind nginx on web — not needed for desktop local server
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
 // ─── Plan config ─────────────────────────────────────────────────────────────
@@ -169,6 +169,42 @@ function requireApiKey(req, res, next) {
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+
+async function syncLicenseFromWeb(userId, email) {
+  const licenseUrl = process.env.TYL_LICENSE_URL;
+  const licenseSecret = process.env.DESKTOP_LICENSE_SECRET;
+  if (!licenseUrl || !licenseSecret || !email) return;
+
+  try {
+    const https = require('https');
+    const http = require('http');
+    const url = new URL(`${licenseUrl}?email=${encodeURIComponent(email)}`);
+    const client = url.protocol === 'http:' ? http : https;
+    const data = await new Promise((resolve, reject) => {
+      const opts = {
+        hostname: url.hostname,
+        port: url.port || (url.protocol === 'http:' ? 80 : 443),
+        path: url.pathname + url.search,
+        headers: { 'x-desktop-secret': licenseSecret },
+      };
+      client.get(opts, (res) => {
+        let body = '';
+        res.on('data', d => body += d);
+        res.on('end', () => { try { resolve(JSON.parse(body)); } catch (_) { resolve(null); } });
+      }).on('error', reject);
+    });
+
+    if (!data || !data.found) return;
+
+    db.prepare(
+      'UPDATE users SET plan = ?, subscription_status = ?, billing_period_end = ?, manual_account = ? WHERE id = ?'
+    ).run(data.plan, data.subscription_status, data.billing_period_end || null, data.manual_account ? 1 : 0, userId);
+
+    console.log(`[license-sync] updated user ${userId} to plan=${data.plan} status=${data.subscription_status}`);
+  } catch (err) {
+    console.error('[license-sync] failed:', err.message);
+  }
+}
 
 function normalizePhone(raw) {
   if (!raw) return null;
@@ -449,6 +485,7 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
     if (err) return res.status(500).json({ error: 'Session error' });
     req.session.userId = user.id;
     db.prepare("UPDATE users SET last_active_at = datetime('now') WHERE id = ?").run(user.id);
+    syncLicenseFromWeb(user.id, user.email).catch(() => {});
     res.json({ ok: true, email: user.email, is_admin: user.is_admin });
   });
 });
@@ -523,6 +560,7 @@ app.post('/api/auth/change-password', requireAuth, async (req, res) => {
 
 app.get('/api/auth/me', requireAuth, (req, res) => {
   const user = req.user;
+  syncLicenseFromWeb(user.id, user.email).catch(() => {});
   // Change 8: check if billing_period_end has passed and downgrade if so
   if (user.subscription_status === 'cancelled' && user.billing_period_end) {
     if (new Date(user.billing_period_end) < new Date()) {
