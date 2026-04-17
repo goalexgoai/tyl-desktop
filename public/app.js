@@ -316,6 +316,20 @@ async function init() {
   render();
 }
 
+async function releaseApiMessages(paceSeconds) {
+  try {
+    const result = await post('/api/jobs/release-api', { paceSeconds });
+    if (result.released > 0) {
+      currentUser = await get('/api/auth/me');
+      updateUserBadge();
+      render();
+      showToast(`${result.released} message${result.released===1?'':'s'} released — sending now.`);
+    }
+  } catch (err) {
+    showToast('Could not release messages: ' + err.message);
+  }
+}
+
 function updateSetupCheckmark() {
   const done = localStorage.getItem('setup_complete') === '1';
   const el = document.getElementById('setup-checkmark');
@@ -384,6 +398,13 @@ function renderSend(main) {
       <div style="font-size:12px;color:var(--text-muted);margin-top:4px">&#128161; Tip: We recommend sending no more than 200 texts per day to protect your number from spam filters.</div>
     </div>
     <div id="companion-status-banner"></div>
+    ${(u.pending_api_count || 0) > 0 ? `<div id="api-pending-banner" style="background:#eff6ff;border:1px solid #93c5fd;border-radius:8px;padding:12px 16px;margin:0 0 12px;font-size:13.5px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
+      <span>&#128274; <strong>${u.pending_api_count} message${u.pending_api_count===1?'':'s'} waiting</strong> from Make / Zapier / API — held for your approval.</span>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-primary btn-sm" onclick="releaseApiMessages(0)">Send now (fast)</button>
+        <button class="btn btn-ghost btn-sm" onclick="releaseApiMessages(15)">Send on drip (15s)</button>
+      </div>
+    </div>` : ''}
     <div class="main-body">
       <div class="send-tabs">
         <button class="send-tab ${currentSendTab==='quicksend'?'active':''}" onclick="switchSendTab('quicksend')">Quick Send</button>
@@ -740,9 +761,9 @@ async function renderBulkSend(body) {
               </div>
             </label>
             <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;text-transform:none;letter-spacing:0;font-weight:400;margin:0;color:var(--text)">
-              <input type="radio" name="bs-pace" id="bs-pace-drip" value="30" style="margin-top:3px;flex-shrink:0" />
+              <input type="radio" name="bs-pace" id="bs-pace-drip" value="15" style="margin-top:3px;flex-shrink:0" />
               <div>
-                <div style="font-weight:600;font-size:13.5px">Slow drip <span style="font-weight:400;color:var(--text-muted)">— adds a 30-second pause between each send</span></div>
+                <div style="font-weight:600;font-size:13.5px">Drip <span style="font-weight:400;color:var(--text-muted)">— adds a 15-second pause between each send</span></div>
                 <div style="font-size:12px;color:var(--text-muted);font-weight:400">Recommended for larger lists or if you want extra caution with your number.</div>
               </div>
             </label>

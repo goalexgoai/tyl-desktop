@@ -224,4 +224,9 @@ try {
   db.exec(`ALTER TABLE api_keys ADD COLUMN platform TEXT`);
 } catch (_) {}
 
+// API source tracking — jobs from Make/Zapier/HTTP start as 'api_pending' for user approval
+try {
+  db.exec(`ALTER TABLE jobs ADD COLUMN source TEXT`);
+} catch (_) {}
+
 module.exports = db;

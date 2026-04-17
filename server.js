@@ -593,6 +593,7 @@ app.get('/api/auth/me', requireAuth, (req, res) => {
     manual_account: fresh.manual_account,
     billing_period_end: fresh.billing_period_end || null,
     billing_interval: fresh.billing_interval || null,
+    pending_api_count: db.prepare("SELECT COUNT(*) as c FROM jobs WHERE user_id = ? AND status = 'api_pending'").get(fresh.id).c,
   });
 });
 
@@ -619,6 +620,17 @@ app.post('/api/upload', requireAuth, upload.single('file'), (req, res) => {
 app.get('/api/jobs', requireAuth, (req, res) => {
   const jobs = db.prepare('SELECT * FROM jobs WHERE user_id = ? ORDER BY created_at DESC').all(req.user.id);
   res.json(jobs);
+});
+
+// Release API-pending jobs: set to 'queued' with optional paceSeconds so the send loop picks them up
+app.post('/api/jobs/release-api', requireAuth, (req, res) => {
+  const { paceSeconds = 0 } = req.body;
+  const pace = Math.max(0, parseInt(paceSeconds, 10) || 0);
+  const jobs = db.prepare("SELECT id FROM jobs WHERE user_id = ? AND status = 'api_pending'").all(req.user.id);
+  if (!jobs.length) return res.json({ released: 0 });
+  const update = db.prepare("UPDATE jobs SET status='queued', pace_seconds=?, updated_at=datetime('now') WHERE id=?");
+  db.transaction(() => { jobs.forEach(j => update.run(pace, j.id)); })();
+  res.json({ released: jobs.length });
 });
 
 app.get('/api/jobs/:id', requireAuth, (req, res) => {
@@ -872,7 +884,7 @@ app.post('/api/ack', requireApiKey, (req, res) => {
 
 // ─── Single Send ─────────────────────────────────────────────────────────────
 
-function queueSingleSend(userId, rawPhone, message, label) {
+function queueSingleSend(userId, rawPhone, message, label, source) {
   const phone = normalizePhone(rawPhone);
   if (!phone) return { error: 'Invalid phone number' };
   if (!message || !message.trim()) return { error: 'message is required' };
@@ -883,16 +895,17 @@ function queueSingleSend(userId, rawPhone, message, label) {
   const jobId = uuidv4();
   const msgId = uuidv4();
   const body  = message.trim();
+  // API-sourced messages start as 'api_pending' — user must approve before they send
+  const status = source === 'api' ? 'api_pending' : 'queued';
 
   db.transaction(() => {
-    db.prepare('INSERT INTO jobs (id, user_id, name, template, status, total) VALUES (?, ?, ?, ?, ?, 1)')
-      .run(jobId, userId, label || `Send: ${phone}`, body, 'queued');
+    db.prepare('INSERT INTO jobs (id, user_id, name, template, status, total, source) VALUES (?, ?, ?, ?, ?, 1, ?)')
+      .run(jobId, userId, label || `Send: ${phone}`, body, status, source || null);
     db.prepare('INSERT INTO messages (id, job_id, phone, first_name, last_name, link, body) VALUES (?, ?, ?, ?, ?, ?, ?)')
       .run(msgId, jobId, phone, '', '', '', body);
   })();
 
-  // Send count incremented at ack time (only confirmed sends count)
-  return { job_id: jobId, message_id: msgId, status: 'queued', preview: body };
+  return { job_id: jobId, message_id: msgId, status, preview: body };
 }
 
 // API route — requires API key, used by Make/Zapier. Pro plan (or admin) required.
@@ -920,7 +933,7 @@ app.post('/api/make/send', requireApiKey, (req, res) => {
     return res.status(402).json({ error: `Send limit reached (${req.user.plan} plan). Upgrade to send more.`, upgrade: true });
   }
 
-  const result = queueSingleSend(req.user.id, phone, message, `API: ${phone}`);
+  const result = queueSingleSend(req.user.id, phone, message, `API: ${phone}`, 'api');
   if (result.error) return res.status(result.code === 'suppressed' ? 422 : 400).json(result);
   res.status(201).json(result);
 });
