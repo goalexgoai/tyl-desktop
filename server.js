@@ -673,12 +673,14 @@ app.get('/api/jobs/:id', requireAuth, (req, res) => {
 app.get('/api/jobs/:id/messages', requireAuth, (req, res) => {
   const job = db.prepare('SELECT id FROM jobs WHERE id = ? AND user_id = ?').get(req.params.id, req.user.id);
   if (!job) return res.status(404).json({ error: 'Not found' });
-  const { status, limit = 50, offset = 0 } = req.query;
+  const { status } = req.query;
+  const limit = Math.min(500, Math.max(1, parseInt(req.query.limit, 10) || 50));
+  const offset = Math.max(0, parseInt(req.query.offset, 10) || 0);
   let query = 'SELECT * FROM messages WHERE job_id = ?';
   const params = [req.params.id];
   if (status) { query += ' AND status = ?'; params.push(status); }
   query += ' ORDER BY created_at ASC LIMIT ? OFFSET ?';
-  params.push(Number(limit), Number(offset));
+  params.push(limit, offset);
   const messages = db.prepare(query).all(...params);
   const count = db.prepare('SELECT COUNT(*) as c FROM messages WHERE job_id = ?').get(req.params.id);
   res.json({ messages, total: count.c });
@@ -1761,7 +1763,8 @@ app.post('/billing/checkout', requireAuth, async (req, res) => {
     });
     res.json({ url: session.url });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('[billing/checkout] Stripe error:', err.message);
+    res.status(500).json({ error: 'Unable to start checkout. Please try again or contact support.' });
   }
 });
 
@@ -1778,7 +1781,8 @@ app.post('/billing/portal', requireAuth, async (req, res) => {
     });
     res.json({ url: session.url });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('[billing/portal] Stripe error:', err.message);
+    res.status(500).json({ error: 'Unable to open billing portal. Please try again or contact support.' });
   }
 });
 

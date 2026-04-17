@@ -2718,7 +2718,7 @@ function renderBilling(main) {
       if (result.url) {
         window.location.href = result.url;
       } else {
-        msg.innerHTML = `<div class="alert alert-error">${result.error || 'Billing not configured yet. Contact support.'}</div>`;
+        msg.innerHTML = `<div class="alert alert-error">${escHtml(result.error || 'Billing not configured yet. Contact support.')}</div>`;
       }
     } catch (err) {
       msg.innerHTML = `<div class="alert alert-error">${escHtml(err.message)}</div>`;
