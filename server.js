@@ -594,7 +594,26 @@ app.get('/api/auth/me', requireAuth, (req, res) => {
     billing_period_end: fresh.billing_period_end || null,
     billing_interval: fresh.billing_interval || null,
     pending_api_count: db.prepare("SELECT COUNT(*) as c FROM jobs WHERE user_id = ? AND status = 'api_pending'").get(fresh.id).c,
+    api_default_pace: fresh.api_default_pace != null ? fresh.api_default_pace : null,
   });
+});
+
+// User settings — Pro users can set api_default_pace
+app.patch('/api/user/settings', requireAuth, (req, res) => {
+  const { api_default_pace } = req.body;
+  const isPrivileged = req.user.is_admin || req.user.manual_account;
+  const isPro = req.user.plan === 'pro' || isPrivileged;
+  if (!isPro) return res.status(403).json({ error: 'Pro plan required to change API send default.' });
+
+  let pace = null;
+  if (api_default_pace !== null && api_default_pace !== undefined) {
+    pace = parseInt(api_default_pace, 10);
+    if (isNaN(pace) || (pace !== 0 && pace !== 15)) {
+      return res.status(400).json({ error: 'api_default_pace must be null, 0, or 15' });
+    }
+  }
+  db.prepare('UPDATE users SET api_default_pace = ? WHERE id = ?').run(pace, req.user.id);
+  res.json({ ok: true, api_default_pace: pace });
 });
 
 // ─── CSV Upload ──────────────────────────────────────────────────────────────
@@ -896,7 +915,7 @@ app.post('/api/ack', requireApiKey, (req, res) => {
 
 // ─── Single Send ─────────────────────────────────────────────────────────────
 
-function queueSingleSend(userId, rawPhone, message, label, source) {
+function queueSingleSend(userId, rawPhone, message, label, source, defaultPace) {
   const phone = normalizePhone(rawPhone);
   if (!phone) return { error: 'Invalid phone number' };
   if (!message || !message.trim()) return { error: 'message is required' };
@@ -907,12 +926,21 @@ function queueSingleSend(userId, rawPhone, message, label, source) {
   const jobId = uuidv4();
   const msgId = uuidv4();
   const body  = message.trim();
-  // API-sourced messages start as 'api_pending' — user must approve before they send
-  const status = source === 'api' ? 'api_pending' : 'queued';
+  // API-sourced: if user has a default pace set, auto-queue; otherwise hold for approval
+  let status = 'queued';
+  let pace = 0;
+  if (source === 'api') {
+    if (defaultPace != null) {
+      status = 'queued';
+      pace = Math.max(0, parseInt(defaultPace, 10) || 0);
+    } else {
+      status = 'api_pending';
+    }
+  }
 
   db.transaction(() => {
-    db.prepare('INSERT INTO jobs (id, user_id, name, template, status, total, source) VALUES (?, ?, ?, ?, ?, 1, ?)')
-      .run(jobId, userId, label || `Send: ${phone}`, body, status, source || null);
+    db.prepare('INSERT INTO jobs (id, user_id, name, template, status, pace_seconds, total, source) VALUES (?, ?, ?, ?, ?, ?, 1, ?)')
+      .run(jobId, userId, label || `Send: ${phone}`, body, status, pace, source || null);
     db.prepare('INSERT INTO messages (id, job_id, phone, first_name, last_name, link, body) VALUES (?, ?, ?, ?, ?, ?, ?)')
       .run(msgId, jobId, phone, '', '', '', body);
   })();
@@ -945,7 +973,9 @@ app.post('/api/make/send', requireApiKey, (req, res) => {
     return res.status(402).json({ error: `Send limit reached (${req.user.plan} plan). Upgrade to send more.`, upgrade: true });
   }
 
-  const result = queueSingleSend(req.user.id, phone, message, `API: ${phone}`, 'api');
+  // Pro users can set api_default_pace: null=hold, 0=fast, 15=drip
+  const defaultPace = req.user.api_default_pace;
+  const result = queueSingleSend(req.user.id, phone, message, `API: ${phone}`, 'api', defaultPace);
   if (result.error) return res.status(result.code === 'suppressed' ? 422 : 400).json(result);
   res.status(201).json(result);
 });

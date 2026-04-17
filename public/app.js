@@ -2128,6 +2128,19 @@ Content-Type: application/json
         </div>
       </div>
 
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-header"><h3>How API messages are handled</h3></div>
+        <div class="card-body">
+          <p style="color:var(--text-muted);margin-bottom:10px">When a message arrives via API, the app needs to be open and your phone tunnel must be connected before it can send. Here is what happens depending on your settings:</p>
+          <ul style="color:var(--text-muted);font-size:13.5px;line-height:1.7;padding-left:18px;margin-bottom:10px">
+            <li><strong>Hold for approval (default)</strong> — the message is saved to your queue and held. The next time you open the app, you will see a banner letting you choose: send now (fast), send on drip (15s between each), or cancel.</li>
+            <li><strong>Send automatically — fast</strong> — the message is queued immediately and sent as soon as the app is open and the phone is connected. Use this if your middleware (e.g. Make) is already handling timing.</li>
+            <li><strong>Send automatically — drip (15s)</strong> — same as fast, but a 15-second pause is added between sends. Good for batches that should not all go out at once.</li>
+          </ul>
+          <p style="color:var(--text-muted);font-size:13px">Change your default in <strong>Account &rarr; API Send Default</strong> (Pro plan). Messages that arrive while the app is closed are always stored safely and processed on the next open.</p>
+        </div>
+      </div>
+
       ${window.electronAPI?.isDesktop ? '' : `<div class="card" style="margin-bottom:16px">
         <div class="card-header"><h3>Companion Poll &amp; Ack</h3></div>
         <div class="card-body">
@@ -3188,6 +3201,37 @@ function openAccountPanel() {
       <button class="btn btn-ghost btn-sm" id="chpw-save">Change Password</button>
     </div>
 
+    ${(u.plan === 'pro' || u.is_admin || u.manual_account) ? `
+    <div class="account-panel-section">
+      <h3>API Send Default <span style="font-size:11px;font-weight:500;background:var(--accent-light,#e8f0ff);color:var(--accent);padding:2px 7px;border-radius:10px;margin-left:6px">Pro</span></h3>
+      <p style="font-size:13px;color:var(--text-muted);margin-bottom:12px">When a message arrives via API (Make, Zapier, HTTP), how should it be handled?</p>
+      <div id="api-pace-alert"></div>
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer">
+          <input type="radio" name="api_pace" value="null" style="margin-top:3px" ${u.api_default_pace == null ? 'checked' : ''}>
+          <span>
+            <strong style="font-size:13.5px">Hold for approval</strong>
+            <div style="font-size:12.5px;color:var(--text-muted)">Message waits in queue — you choose send now, drip, or cancel</div>
+          </span>
+        </label>
+        <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer">
+          <input type="radio" name="api_pace" value="0" style="margin-top:3px" ${u.api_default_pace === 0 ? 'checked' : ''}>
+          <span>
+            <strong style="font-size:13.5px">Send automatically — fast</strong>
+            <div style="font-size:12.5px;color:var(--text-muted)">Queued immediately when app is open and phone is connected</div>
+          </span>
+        </label>
+        <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer">
+          <input type="radio" name="api_pace" value="15" style="margin-top:3px" ${u.api_default_pace === 15 ? 'checked' : ''}>
+          <span>
+            <strong style="font-size:13.5px">Send automatically — drip (15s)</strong>
+            <div style="font-size:12.5px;color:var(--text-muted)">Queued with a 15-second pause between sends</div>
+          </span>
+        </label>
+      </div>
+      <button class="btn btn-ghost btn-sm" id="save-api-pace" style="margin-top:14px">Save</button>
+    </div>` : ''}
+
     <div class="account-panel-section">
       <h3>Support</h3>
       <a href="mailto:support@textyourlist.com" class="btn btn-ghost btn-sm">Contact Support</a>
@@ -3222,6 +3266,28 @@ function openAccountPanel() {
       alertEl.innerHTML = `<div class="alert alert-error">${escHtml(err.message)}</div>`;
     }
   });
+
+  const saveApiPaceBtn = document.getElementById('save-api-pace');
+  if (saveApiPaceBtn) {
+    saveApiPaceBtn.addEventListener('click', async () => {
+      const selected = document.querySelector('input[name="api_pace"]:checked');
+      if (!selected) return;
+      const alertEl = document.getElementById('api-pace-alert');
+      alertEl.innerHTML = '';
+      const pace = selected.value === 'null' ? null : parseInt(selected.value, 10);
+      try {
+        await fetch('/api/user/settings', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ api_default_pace: pace }),
+        }).then(r => r.json());
+        alertEl.innerHTML = '<div class="alert alert-success">Saved.</div>';
+        currentUser.api_default_pace = pace;
+      } catch (err) {
+        alertEl.innerHTML = `<div class="alert alert-error">${escHtml(err.message)}</div>`;
+      }
+    });
+  }
 }
 
 function closeAccountPanel() {

@@ -229,4 +229,9 @@ try {
   db.exec(`ALTER TABLE jobs ADD COLUMN source TEXT`);
 } catch (_) {}
 
+// API send default pace — null=hold for approval, 0=auto fast, 15=auto drip (Pro only)
+try {
+  db.exec(`ALTER TABLE users ADD COLUMN api_default_pace INTEGER`);
+} catch (_) {}
+
 module.exports = db;
