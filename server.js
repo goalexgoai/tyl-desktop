@@ -1941,6 +1941,71 @@ app.get('/robots.txt', (req, res) => {
 
 app.use('/companion', express.static(path.join(__dirname, 'companion')));
 
+// ─── Desktop embedded sender ─────────────────────────────────────────────────
+// When running as a desktop app (TYL_DESKTOP=1), send messages directly from
+// the server process instead of relying on an external companion process.
+
+if (process.env.TYL_DESKTOP) {
+  const sendFn = process.platform === 'darwin'
+    ? require('./send-mac.js')
+    : require('./send-windows.js');
+
+  async function desktopSendLoop() {
+    try {
+      // Find the next pending message across all users
+      const message = db.prepare(`
+        SELECT m.*, j.pace_seconds, j.user_id
+        FROM messages m
+        JOIN jobs j ON j.id = m.job_id
+        WHERE m.status = 'pending'
+          AND j.status = 'queued'
+          AND (m.picked_at IS NULL OR m.picked_at < datetime('now', '-90 seconds'))
+        ORDER BY m.created_at ASC
+        LIMIT 1
+      `).get();
+
+      if (!message) return;
+
+      // Pace enforcement
+      if (message.pace_seconds > 0) {
+        const lastSent = db.prepare(`
+          SELECT sent_at FROM messages
+          WHERE job_id = ? AND status = 'sent' AND sent_at IS NOT NULL
+          ORDER BY sent_at DESC LIMIT 1
+        `).get(message.job_id);
+        if (lastSent && lastSent.sent_at) {
+          const elapsed = (Date.now() - new Date(lastSent.sent_at + 'Z').getTime()) / 1000;
+          if (elapsed < message.pace_seconds) return;
+        }
+      }
+
+      db.prepare("UPDATE messages SET status='sending', picked_at=datetime('now'), attempts=attempts+1, last_attempt_at=datetime('now') WHERE id=?").run(message.id);
+
+      try {
+        await sendFn(message.phone, message.body);
+        db.prepare("UPDATE messages SET status='sent', sent_at=datetime('now'), error=NULL WHERE id=?").run(message.id);
+        incrementSendCount(message.user_id, 1);
+        log(message.user_id, message.id, message.job_id, message.phone, 'sent');
+        console.log(`[desktop-sender] sent → ${message.phone}`);
+      } catch (err) {
+        const attempts = message.attempts + 1;
+        const newStatus = attempts >= 3 ? 'dead' : 'failed';
+        db.prepare("UPDATE messages SET status=?, error=?, last_attempt_at=datetime('now') WHERE id=?").run(newStatus, err.message, message.id);
+        log(message.user_id, message.id, message.job_id, message.phone, newStatus, err.message);
+        console.error(`[desktop-sender] failed → ${message.phone}: ${err.message}`);
+      }
+
+      recountJob(message.job_id);
+    } catch (err) {
+      console.error('[desktop-sender] loop error:', err.message);
+    }
+  }
+
+  // Poll every 5 seconds for pending messages
+  setInterval(desktopSendLoop, 5000);
+  console.log('[desktop-sender] embedded sender active');
+}
+
 // ─── Start ───────────────────────────────────────────────────────────────────
 
 const PORT = process.env.TYL_PORT ? parseInt(process.env.TYL_PORT, 10) : (process.env.PORT || 3000);
