@@ -231,7 +231,13 @@ async function init() {
 
     // Show app footer
     const footerEl = document.getElementById('app-footer');
-    if (footerEl) footerEl.style.display = 'block';
+    if (footerEl) {
+      footerEl.style.display = 'block';
+      if (window.electronAPI?.isDesktop) {
+        const webLinks = document.getElementById('footer-web-links');
+        if (webLinks) webLinks.style.display = 'none';
+      }
+    }
 
     // Handle new signup or billing success
     const params = new URLSearchParams(window.location.search);
@@ -268,6 +274,20 @@ async function init() {
 
   const upgradeBtn = document.getElementById('upgrade-sidebar-btn');
   if (upgradeBtn) upgradeBtn.addEventListener('click', () => navigate('billing'));
+
+  // In desktop mode, rename "Getting Started" to "Help"
+  if (window.electronAPI?.isDesktop) {
+    const setupBtn = document.getElementById('nav-setup-guide');
+    if (setupBtn) {
+      setupBtn.childNodes.forEach(node => {
+        if (node.nodeType === Node.TEXT_NODE && node.textContent.trim() === 'Getting Started') {
+          node.textContent = ' Help';
+        }
+      });
+    }
+    const checkmark = document.getElementById('setup-checkmark');
+    if (checkmark) checkmark.style.display = 'none';
+  }
 
   // Emoji bar — delegated click handler for dynamically rendered views
   document.getElementById('main').addEventListener('click', e => {
@@ -381,6 +401,7 @@ function renderSend(main) {
 }
 
 async function checkCompanionBanner() {
+  if (window.electronAPI?.isDesktop) return; // Desktop app sends automatically — no companion needed
   const el = document.getElementById('companion-status-banner');
   if (!el) return;
   try {
@@ -479,7 +500,10 @@ function renderQuickSend(body) {
         resultEl.innerHTML = 'Sending...';
         try {
           await post('/api/send-one', { phone, message });
-          resultEl.innerHTML = '<span style="color:var(--success)">&#10003; Queued — your companion app will send it shortly.</span>';
+          const successMsg = window.electronAPI?.isDesktop
+            ? '&#10003; Queued — sending within the next few seconds.'
+            : '&#10003; Queued — your companion app will send it shortly.';
+          resultEl.innerHTML = `<span style="color:var(--success)">${successMsg}</span>`;
           document.getElementById('qs-phone').value = '';
           msgEl.value = '';
           charEl.textContent = '0 chars · 1 segment';
@@ -1999,7 +2023,9 @@ async function renderDeveloper(main) {
       <!-- API Keys section -->
       <h3 style="font-size:16px;font-weight:700;margin-bottom:16px">API Keys</h3>
       <div class="alert alert-info" style="margin-bottom:16px">
-        API keys connect your companion app to Text Your List. The companion picks up queued messages and sends them through your phone.
+        ${window.electronAPI?.isDesktop
+          ? 'API keys are used for webhook sends (Pro plan) — integrate with Make, Zapier, or your own systems. The desktop app handles all sending automatically.'
+          : 'API keys connect your companion app to Text Your List. The companion picks up queued messages and sends them through your phone.'}
         ${u.plan === 'free' || u.plan === 'starter' ? ' Free and Starter plans include 1 companion key.' : ' Pro plan includes unlimited keys.'}
         ${isProOrAdmin ? ' Pro plan also enables the <code style="font-family:monospace">/api/make/send</code> webhook for Make, Zapier, etc.' : ''}
       </div>
@@ -2009,7 +2035,7 @@ async function renderDeveloper(main) {
           <div class="form-row-inline">
             <div class="form-row">
               <label>Key Name</label>
-              <input type="text" id="key-name" placeholder="Mac companion, Windows companion, etc." ${!canCreateKey ? 'disabled' : ''} />
+              <input type="text" id="key-name" placeholder="${window.electronAPI?.isDesktop ? 'Webhook integration, Make, Zapier, etc.' : 'Mac companion, Windows companion, etc.'}" ${!canCreateKey ? 'disabled' : ''} />
             </div>
             <button class="btn btn-primary" id="key-create" style="margin-bottom:0" ${!canCreateKey ? 'disabled' : ''}>Create</button>
           </div>
@@ -2157,8 +2183,10 @@ async function loadKeys() {
         <td style="color:var(--text-muted)">${fmt(k.created_at)}</td>
         <td style="text-align:right;display:flex;gap:6px;justify-content:flex-end;flex-wrap:wrap">
           ${k.active ? `
-            <a href="/api/keys/${k.id}/companion" download class="btn btn-primary btn-sm">&#8595; Mac</a>
-            <a href="/api/keys/${k.id}/companion?platform=windows" download class="btn btn-ghost btn-sm">&#8595; Windows</a>
+            ${window.electronAPI?.isDesktop ? '' : `
+              <a href="/api/keys/${k.id}/companion" download class="btn btn-primary btn-sm">&#8595; Mac</a>
+              <a href="/api/keys/${k.id}/companion?platform=windows" download class="btn btn-ghost btn-sm">&#8595; Windows</a>
+            `}
             <button class="btn btn-ghost btn-sm" style="color:var(--danger)" onclick="revokeKey(${k.id})">Revoke</button>` : ''}
         </td>
       </tr>`).join('')}
@@ -2175,6 +2203,56 @@ async function revokeKey(id) {
 // ── Getting Started ────────────────────────────────────────────────────────
 
 function renderGettingStarted(main) {
+  // Desktop mode: companion not needed — show help & tips instead
+  if (window.electronAPI?.isDesktop) {
+    main.innerHTML = `
+      <div class="main-header"><h2>Help &amp; Tips</h2></div>
+      <div class="main-body" style="max-width:640px">
+
+        <div class="card" style="padding:24px;margin-bottom:16px">
+          <h3 style="font-size:15px;font-weight:700;margin-bottom:10px">You're all set</h3>
+          <p style="font-size:13.5px;color:var(--text-muted);line-height:1.7">
+            Text Your List is running. Messages send automatically through your Mac's Messages app (connected to your iPhone). No companion app needed — it's all built in.
+          </p>
+        </div>
+
+        <div class="card" style="padding:24px;margin-bottom:16px">
+          <h3 style="font-size:15px;font-weight:700;margin-bottom:12px">How to send</h3>
+          <ul style="font-size:13.5px;color:var(--text-muted);line-height:2;margin:0 0 0 18px">
+            <li><strong style="color:var(--text)">Quick Send</strong> — send a single text to one number</li>
+            <li><strong style="color:var(--text)">Bulk Send</strong> — upload a CSV or pick a saved list to send to many contacts at once</li>
+            <li><strong style="color:var(--text)">Contacts</strong> — manage and save your contact lists for reuse</li>
+            <li><strong style="color:var(--text)">Templates</strong> — save message templates (Starter and Pro plans)</li>
+            <li><strong style="color:var(--text)">History</strong> — see all sent messages and their status</li>
+          </ul>
+        </div>
+
+        <div class="card" style="padding:24px;margin-bottom:16px">
+          <h3 style="font-size:15px;font-weight:700;margin-bottom:10px">Free plan limits</h3>
+          <ul style="font-size:13.5px;color:var(--text-muted);line-height:2;margin:0 0 12px 18px">
+            <li>50 texts per month</li>
+            <li>Bulk sends limited to 10 contacts at a time</li>
+          </ul>
+          <p style="font-size:13px;color:var(--text-muted)">Need more? <button class="btn btn-primary btn-sm" onclick="navigate('billing')">View plans</button></p>
+        </div>
+
+        <div class="card" style="padding:24px;margin-bottom:16px">
+          <h3 style="font-size:15px;font-weight:700;margin-bottom:10px">Tips</h3>
+          <ul style="font-size:13.5px;color:var(--text-muted);line-height:2;margin:0 0 0 18px">
+            <li>Keep Messages open on your Mac for fastest delivery</li>
+            <li>Don't send more than 200 texts per day to avoid spam filters</li>
+            <li>Suppression list lets you block numbers from receiving future sends</li>
+          </ul>
+        </div>
+
+        <div class="card" style="padding:20px">
+          <h3 style="font-size:14px;font-weight:700;margin-bottom:8px">Need help?</h3>
+          <a href="mailto:support@textyourlist.com" class="btn btn-ghost btn-sm">Contact Support</a>
+        </div>
+      </div>`;
+    return;
+  }
+
   const isDone = localStorage.getItem('setup_complete') === '1';
   const savedPhone = localStorage.getItem('setup_phone') || null;
   const savedOs = localStorage.getItem('setup_os') || null;
@@ -2528,7 +2606,7 @@ function renderBilling(main) {
             <li>&#10003; 50 texts/month</li>
             <li>&#10003; Bulk send up to 10 contacts</li>
             <li>&#10003; Saved list contact limit: 10</li>
-            <li>&#10003; Companion app included</li>
+            ${window.electronAPI?.isDesktop ? '' : '<li>&#10003; Companion app included</li>'}
             <li style="color:var(--text-muted)">&#8212; No saved templates</li>
             <li style="color:var(--text-muted)">&#8212; No API/webhook sends</li>
           </ul>
@@ -2544,7 +2622,7 @@ function renderBilling(main) {
             <li>&#10003; CSV upload &amp; bulk send — unlimited contacts</li>
             <li>&#10003; Saved list contact limit: 100</li>
             <li>&#10003; Saved templates</li>
-            <li>&#10003; Companion app included</li>
+            ${window.electronAPI?.isDesktop ? '' : '<li>&#10003; Companion app included</li>'}
             <li style="color:var(--text-muted)">&#8212; No API/webhook sends</li>
           </ul>
           <div style="font-size:11.5px;color:var(--text-muted);margin-bottom:12px">*Recommended max 200/day to protect your number</div>
@@ -2564,7 +2642,7 @@ function renderBilling(main) {
             <li>&#10003; Saved list contact limit: 1,000</li>
             <li>&#10003; Saved templates</li>
             <li>&#10003; API webhook sends (Make, Zapier)</li>
-            <li>&#10003; Companion app included</li>
+            ${window.electronAPI?.isDesktop ? '' : '<li>&#10003; Companion app included</li>'}
           </ul>
           <div style="font-size:11.5px;color:var(--text-muted);margin-bottom:12px">*Recommended max 200/day to protect your number</div>
           ${u.plan === 'pro'

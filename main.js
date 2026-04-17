@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Tray, Menu, nativeImage, shell, ipcMain, session: electronSession, dialog } = require('electron');
+const { app, BrowserWindow, Tray, Menu, nativeImage, shell, ipcMain, session: electronSession } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const http = require('http');
@@ -77,24 +77,6 @@ async function clearBrowserSession() {
   });
 }
 
-function getInstallDate() {
-  const filePath = path.join(app.getPath('userData'), 'install_date.json');
-  try {
-    const data = JSON.parse(fs.readFileSync(filePath, 'utf8'));
-    return new Date(data.date);
-  } catch {
-    const date = new Date();
-    fs.writeFileSync(filePath, JSON.stringify({ date: date.toISOString() }));
-    return date;
-  }
-}
-
-function isGracePeriodExpired() {
-  const installDate = getInstallDate();
-  const daysSinceInstall = (Date.now() - installDate.getTime()) / (1000 * 60 * 60 * 24);
-  return daysSinceInstall > 14;
-}
-
 async function startServer() {
   const port = await getFreePort();
   serverPort = port;
@@ -154,6 +136,20 @@ function createWindow(port) {
   });
 
   mainWindow.loadURL(`http://127.0.0.1:${port}/app`);
+
+  mainWindow.webContents.on('will-navigate', (event, url) => {
+    if (!url.startsWith(`http://127.0.0.1:${port}`)) {
+      event.preventDefault();
+      shell.openExternal(url);
+    }
+  });
+
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    if (!url.startsWith(`http://127.0.0.1:${port}`)) {
+      shell.openExternal(url);
+    }
+    return { action: 'deny' };
+  });
 
   mainWindow.on('close', (e) => {
     if (!app.isQuitting) {
@@ -222,24 +218,6 @@ if (!gotLock) {
       await clearBrowserSession();
       const license = await checkLicense(port);
       console.log('[main] license status:', JSON.stringify(license));
-
-      if (!license.licensed && isGracePeriodExpired()) {
-        const { response } = await dialog.showMessageBox({
-          type: 'warning',
-          title: 'Subscription Required',
-          message: 'Your free trial has ended.',
-          detail: 'Please upgrade your plan at textyourlist.com to continue using Text Your List.',
-          buttons: ['Upgrade Now', 'Quit'],
-          defaultId: 0,
-          cancelId: 1,
-        });
-        if (response === 0) {
-          shell.openExternal('https://textyourlist.com/billing/checkout?plan=starter');
-        }
-        app.quit();
-        return;
-      }
-
       createWindow(port);
       autoUpdater.checkForUpdatesAndNotify().catch(() => {});
     } catch (err) {
