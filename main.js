@@ -7,22 +7,20 @@ const { autoUpdater } = require('electron-updater');
 
 app.setAppUserModelId('com.textyourlist.app');
 
-// Prevent multiple instances — second launch focuses the existing window instead
-const gotLock = app.requestSingleInstanceLock();
-if (!gotLock) {
-  app.quit();
-} else {
-  app.on('second-instance', () => {
-    if (mainWindow) { mainWindow.show(); mainWindow.focus(); }
-  });
-}
-
 let mainWindow = null;
 let tray = null;
 let serverProcess = null;
 let serverPort = null;
 let serverReady = false;
 app.isQuitting = false;
+
+function setTrayStatus(status) {
+  const icons = { gray: 'icon-gray.png', green: 'icon-green.png', yellow: 'icon-yellow.png' };
+  const iconFile = icons[status] || 'icon-gray.png';
+  if (tray) tray.setImage(nativeImage.createFromPath(path.join(__dirname, 'assets', iconFile)));
+}
+
+const gotLock = app.requestSingleInstanceLock();
 
 function getFreePort() {
   return new Promise((resolve, reject) => {
@@ -51,6 +49,27 @@ function waitForServer(port, timeout = 15000) {
   });
 }
 
+async function checkLicense(port) {
+  try {
+    const result = await new Promise((resolve, reject) => {
+      http.get(`http://127.0.0.1:${port}/internal/license-status`, (res) => {
+        let data = '';
+        res.on('data', (chunk) => { data += chunk; });
+        res.on('end', () => {
+          try {
+            resolve(JSON.parse(data || '{}'));
+          } catch (err) {
+            reject(err);
+          }
+        });
+      }).on('error', reject);
+    });
+    return result;
+  } catch {
+    return { licensed: true };
+  }
+}
+
 async function startServer() {
   const port = await getFreePort();
   serverPort = port;
@@ -72,7 +91,13 @@ async function startServer() {
     stdio: ['ignore', 'pipe', 'pipe'],
   });
 
-  serverProcess.stdout.on('data', (d) => console.log('[server]', d.toString().trim()));
+  serverProcess.stdout.on('data', (d) => {
+    const text = d.toString();
+    const trayMatch = text.match(/__TRAY:(\w+)__/);
+    if (trayMatch) setTrayStatus(trayMatch[1]);
+    const logLine = text.replace(/__TRAY:\w+__\n?/g, '').trim();
+    if (logLine) console.log('[server]', logLine);
+  });
   serverProcess.stderr.on('data', (d) => console.error('[server]', d.toString().trim()));
 
   serverProcess.on('exit', (code) => {
@@ -121,6 +146,7 @@ function createTray() {
   const iconPath = path.join(__dirname, 'assets', 'icon-gray.png');
   tray = new Tray(nativeImage.createFromPath(iconPath));
   tray.setToolTip('Text Your List');
+  setTrayStatus('gray');
 
   const menu = Menu.buildFromTemplate([
     {
@@ -153,17 +179,27 @@ function createTray() {
   });
 }
 
-app.whenReady().then(async () => {
-  try {
-    createTray();
-    const port = await startServer();
-    createWindow(port);
-    autoUpdater.checkForUpdatesAndNotify().catch(() => {});
-  } catch (err) {
-    console.error('Startup failed:', err);
-    app.quit();
-  }
-});
+if (!gotLock) {
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    if (mainWindow) { mainWindow.show(); mainWindow.focus(); }
+  });
+
+  app.whenReady().then(async () => {
+    try {
+      createTray();
+      const port = await startServer();
+      const license = await checkLicense(port);
+      console.log('[main] license status:', JSON.stringify(license));
+      createWindow(port);
+      autoUpdater.checkForUpdatesAndNotify().catch(() => {});
+    } catch (err) {
+      console.error('Startup failed:', err);
+      app.quit();
+    }
+  });
+}
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
@@ -183,4 +219,8 @@ app.on('before-quit', () => {
 
 ipcMain.on('open-external', (_, url) => {
   shell.openExternal(url);
+});
+
+ipcMain.on('set-tray-status', (_, status) => {
+  setTrayStatus(status);
 });

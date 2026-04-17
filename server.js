@@ -62,6 +62,16 @@ const PLANS = {
 const dataDir = path.join(__dirname, 'data');
 fs.mkdirSync(dataDir, { recursive: true });
 
+if (process.env.TYL_DESKTOP) {
+  // Clear stale sessions on restart — prevents old session from mapping to wrong user
+  const sessionsDir = path.join(dataDir, 'sessions');
+  if (fs.existsSync(sessionsDir)) {
+    for (const f of fs.readdirSync(sessionsDir)) {
+      try { fs.unlinkSync(path.join(sessionsDir, f)); } catch (_) {}
+    }
+  }
+}
+
 app.use(session({
   store: new FileStore({ path: path.join(dataDir, 'sessions'), ttl: 30 * 24 * 60 * 60 }),
   secret: process.env.SESSION_SECRET,
@@ -101,6 +111,17 @@ if (!process.env.TYL_DESKTOP) {
 app.use(express.json());
 
 app.get('/health', (req, res) => res.json({ ok: true }));
+
+app.get('/internal/license-status', (req, res) => {
+  const ip = req.ip || req.connection?.remoteAddress || '';
+  if (ip !== '127.0.0.1' && ip !== '::1' && ip !== '::ffff:127.0.0.1') {
+    return res.status(403).end();
+  }
+  const user = db.prepare('SELECT plan, subscription_status, manual_account FROM users ORDER BY id ASC LIMIT 1').get();
+  if (!user) return res.json({ licensed: false, reason: 'no_account' });
+  const licensed = user.manual_account || user.plan !== 'free' || user.subscription_status === 'active';
+  res.json({ licensed, plan: user.plan, status: user.subscription_status });
+});
 
 // ─── Middleware ───────────────────────────────────────────────────────────────
 
@@ -1980,6 +2001,7 @@ if (process.env.TYL_DESKTOP) {
       }
 
       db.prepare("UPDATE messages SET status='sending', picked_at=datetime('now'), attempts=attempts+1, last_attempt_at=datetime('now') WHERE id=?").run(message.id);
+      if (process.env.TYL_DESKTOP) process.stdout.write('__TRAY:green__\n');
 
       try {
         await sendFn(message.phone, message.body);
@@ -1996,8 +2018,11 @@ if (process.env.TYL_DESKTOP) {
       }
 
       recountJob(message.job_id);
+      const remaining = db.prepare("SELECT COUNT(*) as c FROM messages m JOIN jobs j ON j.id = m.job_id WHERE j.status = 'queued' AND m.status IN ('pending','sending')").get();
+      if (process.env.TYL_DESKTOP && (!remaining || remaining.c === 0)) process.stdout.write('__TRAY:gray__\n');
     } catch (err) {
       console.error('[desktop-sender] loop error:', err.message);
+      if (process.env.TYL_DESKTOP) process.stdout.write('__TRAY:gray__\n');
     }
   }
 
