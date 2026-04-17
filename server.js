@@ -283,6 +283,7 @@ function recountJob(jobId) {
 
 // Landing page at /
 app.get('/', (req, res) => {
+  if (process.env.TYL_DESKTOP) return res.redirect('/app');
   if (req.session.userId) return res.redirect('/app');
   res.sendFile(path.join(__dirname, 'public', 'landing.html'));
 });
@@ -298,10 +299,12 @@ app.get('/login', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'login.html'));
 });
 
-app.get('/signup', (req, res) => {
-  if (req.session.userId) return res.redirect('/app');
-  res.sendFile(path.join(__dirname, 'public', 'signup.html'));
-});
+if (!process.env.TYL_DESKTOP) {
+  app.get('/signup', (req, res) => {
+    if (req.session.userId) return res.redirect('/app');
+    res.sendFile(path.join(__dirname, 'public', 'signup.html'));
+  });
+}
 
 app.get('/admin', (req, res) => {
   if (!req.session.userId) return res.redirect('/login');
@@ -318,43 +321,45 @@ app.get('/reset-password', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'reset-password.html'));
 });
 
-// Change 9: Privacy and Terms pages (no auth required)
-app.get('/privacy', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'privacy.html'));
-});
+// Change 9: Privacy/help/SEO pages are web-only, not used in desktop mode
+if (!process.env.TYL_DESKTOP) {
+  app.get('/privacy', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'privacy.html'));
+  });
 
-app.get('/terms', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'terms.html'));
-});
+  app.get('/terms', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'terms.html'));
+  });
 
-app.get('/help/companion', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'help-companion.html'));
-});
+  app.get('/help/companion', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'help-companion.html'));
+  });
 
-app.get('/help/windows', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'help-windows.html'));
-});
+  app.get('/help/windows', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'help-windows.html'));
+  });
 
-app.get('/help/mac', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'help-mac.html'));
-});
+  app.get('/help/mac', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'help-mac.html'));
+  });
 
-// SEO landing pages
-app.get('/send-texts-individually', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'seo-send-texts-individually.html'));
-});
+  // SEO landing pages
+  app.get('/send-texts-individually', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'seo-send-texts-individually.html'));
+  });
 
-app.get('/church-texting-app', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'seo-church-texting-app.html'));
-});
+  app.get('/church-texting-app', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'seo-church-texting-app.html'));
+  });
 
-app.get('/text-from-computer', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'seo-text-from-computer.html'));
-});
+  app.get('/text-from-computer', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'seo-text-from-computer.html'));
+  });
 
-app.get('/csv-text-message-sender', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'seo-csv-text-message-sender.html'));
-});
+  app.get('/csv-text-message-sender', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'seo-csv-text-message-sender.html'));
+  });
+}
 
 app.get('/texting-for-coaches', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'seo-coaches-texting.html'));
@@ -2001,6 +2006,7 @@ if (process.env.TYL_DESKTOP) {
       }
 
       db.prepare("UPDATE messages SET status='sending', picked_at=datetime('now'), attempts=attempts+1, last_attempt_at=datetime('now') WHERE id=?").run(message.id);
+      console.log(`[desktop-sender] picking up message ${message.id} for ${message.phone}`);
       if (process.env.TYL_DESKTOP) process.stdout.write('__TRAY:green__\n');
 
       try {

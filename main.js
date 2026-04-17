@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Tray, Menu, nativeImage, shell, ipcMain } = require('electron');
+const { app, BrowserWindow, Tray, Menu, nativeImage, shell, ipcMain, session: electronSession } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const http = require('http');
@@ -15,9 +15,10 @@ let serverReady = false;
 app.isQuitting = false;
 
 function setTrayStatus(status) {
+  if (!tray) return; // No tray on macOS
   const icons = { gray: 'icon-gray.png', green: 'icon-green.png', yellow: 'icon-yellow.png' };
   const iconFile = icons[status] || 'icon-gray.png';
-  if (tray) tray.setImage(nativeImage.createFromPath(path.join(__dirname, 'assets', iconFile)));
+  tray.setImage(nativeImage.createFromPath(path.join(__dirname, 'assets', iconFile)));
 }
 
 const gotLock = app.requestSingleInstanceLock();
@@ -68,6 +69,12 @@ async function checkLicense(port) {
   } catch {
     return { licensed: true };
   }
+}
+
+async function clearBrowserSession() {
+  await electronSession.defaultSession.clearStorageData({
+    storages: ['cookies', 'localstorage', 'sessionstorage', 'indexdb', 'websql'],
+  });
 }
 
 async function startServer() {
@@ -132,8 +139,10 @@ function createWindow(port) {
 
   mainWindow.on('close', (e) => {
     if (!app.isQuitting) {
-      e.preventDefault();
-      mainWindow.hide();
+      if (process.platform === 'darwin') {
+        e.preventDefault();
+        mainWindow.hide();
+      }
     }
   });
 
@@ -143,6 +152,8 @@ function createWindow(port) {
 }
 
 function createTray() {
+  if (process.platform === 'darwin') return; // macOS uses dock, no tray needed
+
   const iconPath = path.join(__dirname, 'assets', 'icon-gray.png');
   tray = new Tray(nativeImage.createFromPath(iconPath));
   tray.setToolTip('Text Your List');
@@ -190,6 +201,7 @@ if (!gotLock) {
     try {
       createTray();
       const port = await startServer();
+      await clearBrowserSession();
       const license = await checkLicense(port);
       console.log('[main] license status:', JSON.stringify(license));
       createWindow(port);
