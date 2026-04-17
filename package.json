@@ -10,7 +10,7 @@
   },
   "dependencies": {
     "adm-zip": "^0.5.10",
-    "bcrypt": "^5.1.1",
+    "bcryptjs": "^2.4.3",
     "better-sqlite3": "^9.4.3",
     "connect-sqlite3": "^0.9.15",
     "cookie-parser": "^1.4.6",
