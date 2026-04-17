@@ -2504,7 +2504,7 @@ function renderBilling(main) {
         ${renewalInfo}
         ${u.subscription_status === 'past_due' ? `<p style="color:var(--danger);font-size:13px;margin-bottom:8px">Payment past due. Update payment method to continue sending.</p>` : ''}
         <div style="display:flex;gap:8px;margin-top:12px">
-          ${u.plan !== 'free' ? `<button class="btn btn-ghost btn-sm" id="manage-billing">Manage billing &rarr;</button>` : ''}
+          ${u.plan !== 'free' ? `<button class="btn btn-secondary btn-sm" id="manage-subscription-btn">Manage Subscription</button>` : ''}
           ${u.subscription_status === 'active' && u.plan !== 'free' ? `<button class="btn btn-ghost btn-sm" id="cancel-sub-btn" style="color:var(--danger)">Cancel subscription</button>` : ''}
         </div>
       </div>
@@ -2601,18 +2601,17 @@ function renderBilling(main) {
 
   const starterBtn = document.getElementById('upgrade-starter');
   const proBtn = document.getElementById('upgrade-pro');
-  const manageBtn = document.getElementById('manage-billing');
+  const manageBtn = document.getElementById('manage-subscription-btn');
   const cancelBtn = document.getElementById('cancel-sub-btn');
 
   if (starterBtn) starterBtn.addEventListener('click', () => upgrade('starter'));
   if (proBtn) proBtn.addEventListener('click', () => upgrade('pro'));
   if (manageBtn) {
     manageBtn.addEventListener('click', async () => {
-      try {
-        const result = await post('/billing/portal', {});
-        if (result.url) window.location.href = result.url;
-      } catch (err) {
-        msg.innerHTML = `<div class="alert alert-error">${escHtml(err.message)}</div>`;
+      if (window.electronAPI?.openBilling) {
+        window.electronAPI.openBilling();
+      } else {
+        window.location.href = '/billing/checkout?plan=starter';
       }
     });
   }

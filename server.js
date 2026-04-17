@@ -123,6 +123,14 @@ app.get('/internal/license-status', (req, res) => {
   res.json({ licensed, plan: user.plan, status: user.subscription_status });
 });
 
+app.get('/internal/open-billing', (req, res) => {
+  const localAddr = req.socket.localAddress || '';
+  if (!localAddr.includes('127.0.0.1') && localAddr !== '::1' && localAddr !== '::ffff:127.0.0.1') {
+    return res.status(403).json({ error: 'forbidden' });
+  }
+  res.json({ url: `${process.env.APP_URL}/billing/checkout?plan=starter` });
+});
+
 // ─── Middleware ───────────────────────────────────────────────────────────────
 
 function requireAuth(req, res, next) {

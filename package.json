@@ -24,7 +24,6 @@
     "multer": "^1.4.5-lts.1",
     "nodemailer": "^6.9.13",
     "stripe": "^14.21.0",
-    "session-file-store": "^1.5.0",
     "uuid": "^9.0.1"
   },
   "devDependencies": {
@@ -75,8 +74,8 @@
     },
     "publish": {
       "provider": "github",
-      "owner": "OWNER_PLACEHOLDER",
-      "repo": "REPO_PLACEHOLDER"
+      "owner": "goalexgoai",
+      "repo": "tyl-desktop"
     }
   }
 }
