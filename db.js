@@ -1,4 +1,4 @@
-const Database = require('better-sqlite3');
+const { Database } = require('node-sqlite3-wasm');
 const path = require('path');
 const crypto = require('crypto');
 const fs = require('fs');
@@ -7,8 +7,30 @@ const dbPath = process.env.TYL_DB_PATH || path.join(__dirname, 'tyl.db');
 fs.mkdirSync(path.dirname(dbPath), { recursive: true });
 
 const db = new Database(dbPath);
-db.pragma('journal_mode = WAL');
-db.pragma('foreign_keys = ON');
+db.exec('PRAGMA journal_mode = WAL');
+db.exec('PRAGMA foreign_keys = ON');
+
+// Shim: node-sqlite3-wasm prepared statements need params as arrays.
+// better-sqlite3 accepts spread params. Wrap prepare() to normalize both.
+const _prepare = db.prepare.bind(db);
+db.prepare = function(sql) {
+  const stmt = _prepare(sql);
+  const wrap = {
+    get(...args) {
+      const params = args.length === 1 && Array.isArray(args[0]) ? args[0] : args;
+      return stmt.get(params);
+    },
+    all(...args) {
+      const params = args.length === 1 && Array.isArray(args[0]) ? args[0] : args;
+      return stmt.all(params);
+    },
+    run(...args) {
+      const params = args.length === 1 && Array.isArray(args[0]) ? args[0] : args;
+      return stmt.run(params);
+    },
+  };
+  return wrap;
+};
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS users (

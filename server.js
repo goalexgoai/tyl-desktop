@@ -9,7 +9,7 @@ const crypto = require('crypto');
 const path = require('path');
 const bcrypt = require('bcryptjs');
 const session = require('express-session');
-const SQLiteStore = require('connect-sqlite3')(session);
+const FileStore = require('session-file-store')(session);
 const fs = require('fs');
 const os = require('os');
 const db = require('./db');
@@ -63,7 +63,7 @@ const dataDir = path.join(__dirname, 'data');
 fs.mkdirSync(dataDir, { recursive: true });
 
 app.use(session({
-  store: new SQLiteStore({ db: 'sessions.db', dir: dataDir }),
+  store: new FileStore({ path: path.join(dataDir, 'sessions'), ttl: 30 * 24 * 60 * 60 }),
   secret: process.env.SESSION_SECRET,
   resave: false,
   saveUninitialized: false,
