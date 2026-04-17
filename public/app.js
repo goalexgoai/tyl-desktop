@@ -330,6 +330,19 @@ async function releaseApiMessages(paceSeconds) {
   }
 }
 
+async function cancelApiMessages() {
+  if (!confirm('Cancel all pending API messages? This cannot be undone.')) return;
+  try {
+    const result = await post('/api/jobs/cancel-api', {});
+    currentUser = await get('/api/auth/me');
+    updateUserBadge();
+    render();
+    showToast(`${result.cancelled} message${result.cancelled===1?'':'s'} cancelled.`);
+  } catch (err) {
+    showToast('Could not cancel messages: ' + err.message);
+  }
+}
+
 function updateSetupCheckmark() {
   const done = localStorage.getItem('setup_complete') === '1';
   const el = document.getElementById('setup-checkmark');
@@ -403,6 +416,7 @@ function renderSend(main) {
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         <button class="btn btn-primary btn-sm" onclick="releaseApiMessages(0)">Send now (fast)</button>
         <button class="btn btn-ghost btn-sm" onclick="releaseApiMessages(15)">Send on drip (15s)</button>
+        <button class="btn btn-ghost btn-sm" style="color:var(--danger)" onclick="cancelApiMessages()">Cancel all</button>
       </div>
     </div>` : ''}
     <div class="main-body">

@@ -633,6 +633,18 @@ app.post('/api/jobs/release-api', requireAuth, (req, res) => {
   res.json({ released: jobs.length });
 });
 
+app.post('/api/jobs/cancel-api', requireAuth, (req, res) => {
+  const jobs = db.prepare("SELECT id FROM jobs WHERE user_id = ? AND status = 'api_pending'").all(req.user.id);
+  if (!jobs.length) return res.json({ cancelled: 0 });
+  db.transaction(() => {
+    jobs.forEach(j => {
+      db.prepare("UPDATE messages SET status='cancelled', updated_at=datetime('now') WHERE job_id=?").run(j.id);
+      db.prepare("UPDATE jobs SET status='cancelled', updated_at=datetime('now') WHERE id=?").run(j.id);
+    });
+  })();
+  res.json({ cancelled: jobs.length });
+});
+
 app.get('/api/jobs/:id', requireAuth, (req, res) => {
   const job = db.prepare('SELECT * FROM jobs WHERE id = ? AND user_id = ?').get(req.params.id, req.user.id);
   if (!job) return res.status(404).json({ error: 'Not found' });
