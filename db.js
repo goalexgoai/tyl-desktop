@@ -6,7 +6,20 @@ const fs = require('fs');
 const dbPath = process.env.TYL_DB_PATH || path.join(__dirname, 'tyl.db');
 fs.mkdirSync(path.dirname(dbPath), { recursive: true });
 
-const db = new Database(dbPath);
+function openDatabase(filePath) {
+  try {
+    return new Database(filePath);
+  } catch (e) {
+    // Database file corrupted — delete WAL/SHM files and retry with fresh database
+    console.error('[db] Failed to open database, resetting:', e.message);
+    for (const ext of ['', '-wal', '-shm']) {
+      try { fs.unlinkSync(filePath + ext); } catch (_) {}
+    }
+    return new Database(filePath);
+  }
+}
+
+const db = openDatabase(dbPath);
 db.exec('PRAGMA journal_mode = WAL');
 db.exec('PRAGMA foreign_keys = ON');
 
