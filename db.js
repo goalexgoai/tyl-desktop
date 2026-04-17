@@ -20,8 +20,9 @@ function openDatabase(filePath) {
 }
 
 const db = openDatabase(dbPath);
-db.exec('PRAGMA journal_mode = WAL');
-db.exec('PRAGMA foreign_keys = ON');
+// WAL mode removed — single-user desktop app doesn't need concurrent readers.
+// foreign_keys enforced per-connection:
+try { db.exec('PRAGMA foreign_keys = ON'); } catch (_) {}
 
 // Shim: node-sqlite3-wasm prepared statements need params as arrays.
 // better-sqlite3 accepts spread params. Wrap prepare() to normalize both.
