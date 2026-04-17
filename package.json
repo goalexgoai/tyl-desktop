@@ -1,0 +1,81 @@
+{
+  "name": "textyourlist",
+  "version": "1.0.0",
+  "description": "Text Your List — Send personal texts to your list",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build:mac": "electron-builder --mac",
+    "build:win": "electron-builder --win"
+  },
+  "dependencies": {
+    "adm-zip": "^0.5.10",
+    "bcrypt": "^5.1.1",
+    "better-sqlite3": "^9.4.3",
+    "connect-sqlite3": "^0.9.15",
+    "cookie-parser": "^1.4.6",
+    "csv-parse": "^5.5.3",
+    "dotenv": "^16.0.3",
+    "electron-updater": "^6.8.3",
+    "express": "^4.18.3",
+    "express-rate-limit": "^7.2.0",
+    "express-session": "^1.18.0",
+    "helmet": "^7.1.0",
+    "multer": "^1.4.5-lts.1",
+    "nodemailer": "^6.9.13",
+    "stripe": "^14.21.0",
+    "uuid": "^9.0.1"
+  },
+  "devDependencies": {
+    "electron": "^35.7.5",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.textyourlist.app",
+    "productName": "Text Your List",
+    "asar": true,
+    "files": [
+      "main.js",
+      "preload.js",
+      "server.js",
+      "db.js",
+      "send-mac.js",
+      "send-windows.js",
+      "assets/**",
+      "public/**",
+      "companion/**",
+      "node_modules/**"
+    ],
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        }
+      ],
+      "icon": "assets/icon.icns",
+      "category": "public.app-category.utilities",
+      "hardenedRuntime": false,
+      "gatekeeperAssess": false
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "assets/icon.ico"
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "OWNER_PLACEHOLDER",
+      "repo": "REPO_PLACEHOLDER"
+    }
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "name": "text-your-list-companion",
+  "version": "1.0.0",
+  "description": "Mac companion sender for Text Your List — sends queued messages through macOS Messages app",
+  "main": "sender.js",
+  "scripts": {
+    "start": "node sender.js",
+    "single": "CONFIG_PATH=./config.json node sender.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

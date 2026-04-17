@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sign up — Text Your List</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg width='48' height='48' viewBox='0 0 48 48' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Crect width='48' height='48' rx='24' fill='%238C2249'/%3E%3Crect x='9' y='13' width='30' height='5' rx='2.5' fill='white'/%3E%3Crect x='9' y='22' width='22' height='5' rx='2.5' fill='white' opacity='0.7'/%3E%3Crect x='9' y='31' width='26' height='5' rx='2.5' fill='white' opacity='0.45'/%3E%3Ccircle cx='37' cy='35' r='7' fill='%230F6E56'/%3E%3Cpath d='M33.5 35L35.8 37.5L40.5 32.5' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E" />
+  <!-- Google tag (gtag.js) -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-NKZFD2HBFH"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'G-NKZFD2HBFH');
+  </script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+      background: #f5f5f4;
+      display: flex; min-height: 100vh; align-items: center; justify-content: center;
+      padding: 20px;
+    }
+    .card {
+      background: #fff; border: 1px solid #e5e5e4; border-radius: 12px;
+      padding: 36px 32px; width: 100%; max-width: 400px;
+    }
+    .logo { font-size: 20px; font-weight: 800; letter-spacing: -0.5px; margin-bottom: 4px; }
+    .tagline { font-size: 14px; color: #666; margin-bottom: 24px; }
+    .free-badge { display: inline-block; background: #dcfce7; color: #15803d; font-size: 12px; font-weight: 700; padding: 2px 10px; border-radius: 99px; margin-bottom: 20px; }
+    label { display: block; font-size: 12.5px; font-weight: 600; color: #555; margin-bottom: 5px; text-transform: uppercase; letter-spacing: 0.4px; }
+    input[type="email"], input[type="password"] {
+      width: 100%; padding: 9px 12px; border: 1px solid #ddd; border-radius: 7px;
+      font-size: 14px; font-family: inherit; outline: none; margin-bottom: 16px;
+      transition: border-color 0.15s;
+    }
+    input:focus { border-color: #111; }
+    .btn {
+      width: 100%; padding: 11px; background: #111; color: #fff; border: none; border-radius: 7px;
+      font-size: 14.5px; font-weight: 600; cursor: pointer; font-family: inherit;
+      transition: opacity 0.15s;
+    }
+    .btn:hover:not(:disabled) { opacity: 0.85; }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .error { background: #fee2e2; color: #991b1b; border: 1px solid #fca5a5; border-radius: 6px; padding: 9px 12px; font-size: 13.5px; margin-bottom: 14px; display: none; }
+    .pw-hint { font-size: 11.5px; color: #888; margin-top: -10px; margin-bottom: 12px; }
+    .pw-hint.pw-error { color: #991b1b; }
+    .pw-strength { display: flex; gap: 4px; margin-top: 5px; margin-bottom: 12px; }
+    .pw-strength-bar { height: 3px; flex: 1; border-radius: 99px; background: #e5e5e4; transition: background 0.2s; }
+    .perks { list-style: none; margin-bottom: 20px; display: flex; flex-direction: column; gap: 7px; }
+    .perks li { font-size: 13.5px; color: #444; display: flex; gap: 8px; align-items: center; }
+    .perks li::before { content: '✓'; color: #16a34a; font-weight: 700; }
+    .footer-link { text-align: center; margin-top: 20px; font-size: 13.5px; color: #666; }
+    .footer-link a { color: #111; font-weight: 600; text-decoration: none; }
+    .footer-link a:hover { text-decoration: underline; }
+    .divider { border: none; border-top: 1px solid #eee; margin: 20px 0; }
+  </style>
+</head>
+<body>
+<div class="card">
+  <div class="logo" style="display:flex;align-items:center;gap:8px;justify-content:center"><svg width="32" height="32" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg"><rect width="36" height="36" rx="10" fill="#8C2249"/><rect x="7" y="10" width="22" height="4" rx="2" fill="white"/><rect x="7" y="17" width="16" height="4" rx="2" fill="white" opacity="0.7"/><rect x="7" y="24" width="19" height="4" rx="2" fill="white" opacity="0.5"/><circle cx="27" cy="26" r="5" fill="#0F6E56"/><path d="M24.5 26L26.2 27.8L29.5 24.5" stroke="white" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg><span><span style="color:#1A1A1A">Text </span><span style="color:#8C2249">Your</span><span style="color:#1A1A1A"> List</span></span></div>
+  <div class="tagline">Create your free account</div>
+  <span class="free-badge">50 free texts/month — no credit card</span>
+
+  <ul class="perks">
+    <li>Texts come from your real iPhone number</li>
+    <li>Send one-off or bulk with CSV upload</li>
+    <li>Set up in under 5 minutes</li>
+  </ul>
+
+  <hr class="divider" />
+
+  <div class="error" id="err"></div>
+  <form id="form">
+    <label>Email</label>
+    <input type="email" id="email" placeholder="you@example.com" autocomplete="email" required />
+    <label>Password</label>
+    <input type="password" id="password" placeholder="8+ chars, letter, number, special" autocomplete="new-password" required />
+    <div class="pw-strength">
+      <div class="pw-strength-bar" id="ps1"></div>
+      <div class="pw-strength-bar" id="ps2"></div>
+      <div class="pw-strength-bar" id="ps3"></div>
+      <div class="pw-strength-bar" id="ps4"></div>
+    </div>
+    <div class="pw-hint" id="pw-hint">8+ characters, one letter, one number, one special character (!@#$%^&amp;* etc.)</div>
+    <button type="submit" class="btn" id="btn">Create free account</button>
+  </form>
+  <div class="footer-link">Already have an account? <a href="/login">Log in</a></div>
+</div>
+<script>
+  // Read plan param from URL (e.g. /signup?plan=starter)
+  const _pendingPlan = new URLSearchParams(window.location.search).get('plan');
+  if (_pendingPlan && ['starter', 'pro'].includes(_pendingPlan)) {
+    localStorage.setItem('pending_plan', _pendingPlan);
+    // Update badge text to show plan context
+    const badge = document.querySelector('.free-badge');
+    if (badge) {
+      const label = _pendingPlan === 'starter' ? 'Starter' : 'Pro';
+      badge.textContent = `Signing up for ${label} — create your account first`;
+      badge.style.background = '#dbeafe';
+      badge.style.color = '#1d4ed8';
+    }
+  } else {
+    localStorage.removeItem('pending_plan');
+  }
+
+  // Password strength checker
+  function checkPasswordStrength(pw) {
+    const checks = {
+      length: pw.length >= 8,
+      letter: /[a-zA-Z]/.test(pw),
+      number: /[0-9]/.test(pw),
+      special: /[!@#$%^&*()\-_=+\[\]{};':"\\|,.<>\/?]/.test(pw),
+    };
+    const score = Object.values(checks).filter(Boolean).length;
+    return { score, checks };
+  }
+
+  const pwInput = document.getElementById('password');
+  const bars = [document.getElementById('ps1'), document.getElementById('ps2'), document.getElementById('ps3'), document.getElementById('ps4')];
+  const pwHint = document.getElementById('pw-hint');
+  const colors = ['#dc2626', '#f97316', '#eab308', '#16a34a'];
+
+  pwInput.addEventListener('input', () => {
+    const pw = pwInput.value;
+    if (!pw) {
+      bars.forEach(b => b.style.background = '#e5e5e4');
+      pwHint.textContent = '8+ characters, one letter, one number, one special character (!@#$%^&* etc.)';
+      pwHint.className = 'pw-hint';
+      return;
+    }
+    const { score, checks } = checkPasswordStrength(pw);
+    bars.forEach((b, i) => {
+      b.style.background = i < score ? colors[score - 1] : '#e5e5e4';
+    });
+    const missing = [];
+    if (!checks.length) missing.push('8+ characters');
+    if (!checks.letter) missing.push('a letter');
+    if (!checks.number) missing.push('a number');
+    if (!checks.special) missing.push('a special character');
+    if (missing.length === 0) {
+      pwHint.textContent = 'Strong password';
+      pwHint.className = 'pw-hint';
+    } else {
+      pwHint.textContent = 'Still need: ' + missing.join(', ');
+      pwHint.className = 'pw-hint pw-error';
+    }
+  });
+
+  function validatePasswordClient(pw) {
+    if (pw.length < 8) return '8+ characters required';
+    if (!/[a-zA-Z]/.test(pw)) return 'Must contain at least one letter';
+    if (!/[0-9]/.test(pw)) return 'Must contain at least one number';
+    if (!/[!@#$%^&*()\-_=+\[\]{};':"\\|,.<>\/?]/.test(pw)) return 'Must contain at least one special character';
+    return null;
+  }
+
+  document.getElementById('form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn = document.getElementById('btn');
+    const err = document.getElementById('err');
+    const pw = document.getElementById('password').value;
+
+    const pwErr = validatePasswordClient(pw);
+    if (pwErr) {
+      err.textContent = pwErr;
+      err.style.display = 'block';
+      return;
+    }
+
+    err.style.display = 'none';
+    btn.disabled = true;
+    btn.textContent = 'Creating account...';
+    try {
+      const res = await fetch('/api/auth/signup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: document.getElementById('email').value.trim(),
+          password: pw,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Signup failed');
+      // If a plan was selected, redirect to billing checkout
+      const pendingPlan = localStorage.getItem('pending_plan');
+      if (pendingPlan && ['starter', 'pro'].includes(pendingPlan)) {
+        localStorage.removeItem('pending_plan');
+        window.location.href = '/billing/checkout?plan=' + encodeURIComponent(pendingPlan);
+      } else {
+        window.location.href = '/app?new=1';
+      }
+    } catch (ex) {
+      err.textContent = ex.message;
+      err.style.display = 'block';
+      btn.disabled = false;
+      btn.textContent = 'Create free account';
+    }
+  });
+</script>
+</body>
+</html>

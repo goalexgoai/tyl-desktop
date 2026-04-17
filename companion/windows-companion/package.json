@@ -1,0 +1,13 @@
+{
+  "name": "text-your-list-windows-companion",
+  "version": "1.0.0",
+  "description": "Text Your List Windows companion — sends SMS via Android Messages for Web",
+  "main": "sender.js",
+  "scripts": {
+    "start": "node sender.js",
+    "setup": "node setup.js"
+  },
+  "dependencies": {
+    "playwright": "^1.42.0"
+  }
+}

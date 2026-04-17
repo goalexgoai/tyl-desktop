@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Companion App Setup and Troubleshooting — Text Your List</title>
+  <meta name="description" content="Step-by-step setup and troubleshooting for the Text Your List desktop companion app on Mac and Windows. Learn what the companion does, how to install it, and how to fix common issues." />
+  <!-- Google tag (gtag.js) -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-NKZFD2HBFH"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'G-NKZFD2HBFH');
+  </script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; background: #f5f5f4; color: #1a1a1a; line-height: 1.6; }
+    .topbar { background: #fff; border-bottom: 1px solid #e5e5e4; padding: 0 32px; height: 56px; display: flex; align-items: center; justify-content: space-between; }
+    .topbar-logo { font-size: 17px; font-weight: 700; color: #8C2249; text-decoration: none; }
+    .topbar-back { font-size: 13.5px; color: #666; text-decoration: none; }
+    .topbar-back:hover { color: #8C2249; }
+    .container { max-width: 760px; margin: 40px auto; padding: 0 24px 80px; }
+    h1 { font-size: 28px; font-weight: 800; margin-bottom: 8px; }
+    .subtitle { color: #666; font-size: 15px; margin-bottom: 40px; }
+    .section { background: #fff; border-radius: 12px; border: 1px solid #e5e5e4; padding: 28px 32px; margin-bottom: 20px; }
+    .section h2 { font-size: 17px; font-weight: 700; color: #8C2249; margin-bottom: 16px; display: flex; align-items: center; gap: 10px; }
+    .section h2 .num { background: #8C2249; color: #fff; border-radius: 50%; width: 26px; height: 26px; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; flex-shrink: 0; }
+    ol, ul { padding-left: 20px; }
+    li { margin-bottom: 8px; font-size: 14.5px; }
+    .tip { background: #f0fdf4; border-left: 3px solid #16a34a; border-radius: 4px; padding: 12px 16px; margin-top: 12px; font-size: 13.5px; color: #166534; }
+    .warn { background: #fff7ed; border-left: 3px solid #ea580c; border-radius: 4px; padding: 12px 16px; margin-top: 12px; font-size: 13.5px; color: #9a3412; }
+    .tray-icons { display: flex; gap: 20px; margin-top: 12px; flex-wrap: wrap; }
+    .tray-icon { display: flex; align-items: center; gap: 8px; font-size: 13.5px; }
+    .dot { width: 14px; height: 14px; border-radius: 50%; flex-shrink: 0; }
+    .dot-gray { background: #9ca3af; }
+    .dot-green { background: #16a34a; }
+    .dot-yellow { background: #ca8a04; }
+    .stuck { background: #fff; border-radius: 12px; border: 1px solid #e5e5e4; padding: 28px 32px; margin-top: 32px; text-align: center; }
+    .stuck h2 { font-size: 17px; font-weight: 700; margin-bottom: 8px; }
+    .stuck p { font-size: 14px; color: #555; }
+    .stuck a { color: #8C2249; }
+    .help-nav { display: flex; gap: 16px; margin-bottom: 32px; flex-wrap: wrap; }
+    .help-nav a { font-size: 13px; color: #8C2249; text-decoration: none; border: 1px solid #e5e5e4; border-radius: 6px; padding: 6px 14px; background: #fff; }
+    .help-nav a:hover { background: #f9f5f7; }
+    .help-nav a.active { background: #8C2249; color: #fff; border-color: #8C2249; }
+  </style>
+</head>
+<body>
+<div class="topbar">
+  <a class="topbar-logo" href="/">Text Your List</a>
+  <a class="topbar-back" href="/app">&#8592; Back to App</a>
+</div>
+<div class="container">
+  <h1>Companion App Help</h1>
+  <p class="subtitle">Step-by-step setup and troubleshooting for the Text Your List desktop companion.</p>
+
+  <div class="help-nav">
+    <a href="/help/companion" class="active">Companion App</a>
+    <a href="/help/windows">Windows: Phone Link</a>
+    <a href="/help/mac">Mac: Messages</a>
+  </div>
+
+  <div class="section">
+    <h2><span class="num">1</span>What does the companion app do?</h2>
+    <p style="font-size:14.5px">The companion app sits quietly in the background — in the <strong>system tray</strong> (bottom-right corner on Windows) or the <strong>menu bar</strong> (top-right corner on Mac). When you click Send in the Text Your List web app, the companion app wakes up and uses Microsoft Phone Link (Windows) or Apple Messages (Mac) to send the text messages from your phone through your computer.</p>
+    <div class="tip">Think of it as a bridge. The texts actually come from your phone — your computer just tells your phone what to send.</div>
+  </div>
+
+  <div class="section">
+    <h2><span class="num">2</span>How to download and install</h2>
+    <ol>
+      <li>Log in to <strong>app.textyourlist.com</strong> and go to the <strong>Getting Started</strong> page.</li>
+      <li>Click the download button for your operating system (Windows or Mac).</li>
+      <li>Once the file downloads, <strong>double-click it to run it</strong> — there is no install wizard. It starts immediately.</li>
+      <li><strong>On Windows:</strong> Look for the Text Your List icon in the system tray at the bottom-right of your screen.</li>
+      <li><strong>On Mac:</strong> Look for the icon in the menu bar at the top-right of your screen.</li>
+      <li>The first time you run it, it will automatically set itself to start when you log in to your computer — so you only have to do this once.</li>
+    </ol>
+    <div class="warn"><strong>Windows:</strong> You may see a "Windows protected your PC" warning. Click <strong>More info</strong>, then <strong>Run anyway</strong>. This is normal for apps not sold through the Microsoft Store.</div>
+    <div class="warn" style="margin-top:10px"><strong>Mac:</strong> You may see a message saying "Apple could not verify this app." Click <strong>Done</strong> (not Move to Trash), then open <strong>System Settings &gt; Privacy &amp; Security</strong>, scroll down, and click <strong>Open Anyway</strong>. You only need to do this once. If your Mac asks you to install <strong>Rosetta</strong>, click Install — it's a free Apple tool and takes about a minute.</div>
+  </div>
+
+  <div class="section">
+    <h2><span class="num">3</span>What do the icon colors mean?</h2>
+    <p style="font-size:14px;margin-bottom:12px">On Windows this icon appears in the system tray (bottom-right). On Mac it appears in the menu bar (top-right).</p>
+    <div class="tray-icons">
+      <div class="tray-icon"><div class="dot dot-gray"></div> <span><strong>Gray</strong> — Connecting to your account</span></div>
+      <div class="tray-icon"><div class="dot dot-green"></div> <span><strong>Green</strong> — Connected and ready to send</span></div>
+      <div class="tray-icon"><div class="dot dot-yellow"></div> <span><strong>Yellow</strong> — Currently sending a message</span></div>
+    </div>
+    <div class="tip">If it stays gray for more than 30 seconds, check that you have an internet connection and that you're logged in to the same account on your computer and in the web app. Try re-downloading the companion from the Getting Started page if the problem persists.</div>
+  </div>
+
+  <div class="section">
+    <h2><span class="num">4</span>I downloaded it but nothing happened</h2>
+    <ol>
+      <li>The companion app runs silently — it doesn't open a window.</li>
+      <li><strong>On Windows:</strong> Look in the bottom-right corner of your taskbar. You may need to click the small up arrow (^) to see hidden tray icons.</li>
+      <li><strong>On Mac:</strong> Look in the top-right corner of your menu bar.</li>
+      <li>If you see the icon there, you're all set — it's running.</li>
+      <li>If you don't see it anywhere, try double-clicking the downloaded file again.</li>
+    </ol>
+  </div>
+
+  <div class="section">
+    <h2><span class="num">5</span>The app says Error or Failed when sending</h2>
+    <ol>
+      <li><strong>Make sure Phone Link (Windows) or Messages (Mac) is open</strong> before you send. The companion app needs to find that app on your screen to type and send the message.</li>
+      <li>If Phone Link or Messages is open and you're still getting an error, try closing and reopening it.</li>
+      <li>Make sure your phone is nearby — within about 30 feet — especially if you're sending from an iPhone.</li>
+      <li>Try sending a single quick message first to make sure everything is working before sending a bulk list.</li>
+    </ol>
+    <div class="warn"><strong>Windows users:</strong> Do not click anywhere on your screen while sending. The companion types into Phone Link automatically, and clicking elsewhere will interrupt it.</div>
+    <div class="tip"><strong>Mac users:</strong> You can keep using your computer normally while it sends. Mac uses AppleScript to communicate with Messages in the background — no keyboard simulation involved.</div>
+  </div>
+
+  <div class="section">
+    <h2><span class="num">6</span>I closed the app — how do I reopen it?</h2>
+    <ol>
+      <li>After the first run, the companion should start automatically every time you log in to your computer.</li>
+      <li><strong>Windows:</strong> Check the system tray at the bottom-right. You may need to click the ^ arrow to see hidden icons.</li>
+      <li><strong>Mac:</strong> Check the menu bar icons at the top-right of your screen.</li>
+      <li>If it's not there, go to your <strong>Downloads</strong> folder (or wherever you saved it) and double-click the file again.</li>
+      <li>Right-clicking the icon (Windows) or clicking it (Mac) shows a menu where you can also create a Desktop Shortcut for easier access.</li>
+    </ol>
+  </div>
+
+  <div class="section">
+    <h2><span class="num">7</span>The app says it sent, but the text never arrived</h2>
+    <ol>
+      <li>Check that Phone Link or Messages actually shows the message in the conversation — if it does, the companion worked and the issue is on the phone/carrier side.</li>
+      <li>If the message doesn't appear in Phone Link or Messages at all, your phone may have been out of Bluetooth range during sending.</li>
+      <li>For iPhone users: your iPhone must be <strong>nearby and awake</strong>. If the screen locked during a bulk send, later messages may not have gone through.</li>
+      <li>Try sending a test message to yourself to confirm everything is connected.</li>
+    </ol>
+  </div>
+
+  <div class="stuck">
+    <h2>Still stuck?</h2>
+    <p>Email us and we'll help you get set up: <a href="mailto:support@textyourlist.com">support@textyourlist.com</a></p>
+  </div>
+</div>
+</body>
+</html>

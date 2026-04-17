@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Mac Setup Guide: Sending Texts with Apple Messages — Text Your List</title>
+  <meta name="description" content="How to set up Text Your List on a Mac. Configure Apple Messages, enable SMS relay for Android contacts, allow automation access, and troubleshoot common issues." />
+  <!-- Google tag (gtag.js) -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-NKZFD2HBFH"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'G-NKZFD2HBFH');
+  </script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; background: #f5f5f4; color: #1a1a1a; line-height: 1.6; }
+    .topbar { background: #fff; border-bottom: 1px solid #e5e5e4; padding: 0 32px; height: 56px; display: flex; align-items: center; justify-content: space-between; }
+    .topbar-logo { font-size: 17px; font-weight: 700; color: #8C2249; text-decoration: none; }
+    .topbar-back { font-size: 13.5px; color: #666; text-decoration: none; }
+    .topbar-back:hover { color: #8C2249; }
+    .container { max-width: 760px; margin: 40px auto; padding: 0 24px 80px; }
+    h1 { font-size: 28px; font-weight: 800; margin-bottom: 8px; }
+    .subtitle { color: #666; font-size: 15px; margin-bottom: 40px; }
+    .section { background: #fff; border-radius: 12px; border: 1px solid #e5e5e4; padding: 28px 32px; margin-bottom: 20px; }
+    .section h2 { font-size: 17px; font-weight: 700; color: #8C2249; margin-bottom: 16px; display: flex; align-items: center; gap: 10px; }
+    .section h2 .num { background: #8C2249; color: #fff; border-radius: 50%; width: 26px; height: 26px; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; flex-shrink: 0; }
+    ol, ul { padding-left: 20px; }
+    li { margin-bottom: 8px; font-size: 14.5px; }
+    .tip { background: #f0fdf4; border-left: 3px solid #16a34a; border-radius: 4px; padding: 12px 16px; margin-top: 12px; font-size: 13.5px; color: #166534; }
+    .warn { background: #fff7ed; border-left: 3px solid #ea580c; border-radius: 4px; padding: 12px 16px; margin-top: 12px; font-size: 13.5px; color: #9a3412; }
+    .iphone-note { background: #f0f4ff; border-left: 3px solid #2563eb; border-radius: 4px; padding: 14px 16px; margin-top: 14px; font-size: 13.5px; color: #1e3a8a; }
+    .iphone-note strong { display: block; margin-bottom: 4px; font-size: 14px; }
+    kbd { background: #f0f0f0; border: 1px solid #ccc; border-radius: 4px; padding: 1px 6px; font-size: 13px; font-family: inherit; }
+    .stuck { background: #fff; border-radius: 12px; border: 1px solid #e5e5e4; padding: 28px 32px; margin-top: 32px; text-align: center; }
+    .stuck h2 { font-size: 17px; font-weight: 700; margin-bottom: 8px; }
+    .stuck p { font-size: 14px; color: #555; }
+    .stuck a { color: #8C2249; }
+    .help-nav { display: flex; gap: 16px; margin-bottom: 32px; flex-wrap: wrap; }
+    .help-nav a { font-size: 13px; color: #8C2249; text-decoration: none; border: 1px solid #e5e5e4; border-radius: 6px; padding: 6px 14px; background: #fff; }
+    .help-nav a:hover { background: #f9f5f7; }
+    .help-nav a.active { background: #8C2249; color: #fff; border-color: #8C2249; }
+  </style>
+</head>
+<body>
+<div class="topbar">
+  <a class="topbar-logo" href="/">Text Your List</a>
+  <a class="topbar-back" href="/app">&#8592; Back to App</a>
+</div>
+<div class="container">
+  <h1>Mac: Setting Up Messages</h1>
+  <p class="subtitle">On Mac, Text Your List uses the built-in Apple Messages app to send texts through your iPhone. No extra apps needed.</p>
+
+  <div class="help-nav">
+    <a href="/help/companion">Companion App</a>
+    <a href="/help/windows">Windows: Phone Link</a>
+    <a href="/help/mac" class="active">Mac: Messages</a>
+  </div>
+
+  <div class="section">
+    <h2><span class="num">1</span>What does Text Your List use on Mac?</h2>
+    <p style="font-size:14.5px">On Mac, Text Your List uses the <strong>Messages app</strong> — the same green app you use to text from your Mac already. It's built into macOS, so there's nothing extra to install. The companion app works with Messages to send your texts through your iPhone's number.</p>
+    <div class="tip">If you already text from your Mac using Messages, you're most of the way there — just make sure it's open when you send.</div>
+  </div>
+
+  <div class="section">
+    <h2><span class="num">2</span>How to open Messages</h2>
+    <ol>
+      <li>Press <kbd>Cmd</kbd> + <kbd>Space</kbd> to open Spotlight search.</li>
+      <li>Type <strong>Messages</strong> and press Enter.</li>
+      <li>Or click the green Messages icon in your Dock if it's there.</li>
+    </ol>
+  </div>
+
+  <div class="section">
+    <h2><span class="num">3</span>Sign in to Messages with your Apple ID</h2>
+    <ol>
+      <li>Open Messages.</li>
+      <li>In the menu bar at the top, click <strong>Messages</strong> &gt; <strong>Settings</strong> (or <strong>Preferences</strong> on older Macs).</li>
+      <li>Click the <strong>iMessage</strong> tab.</li>
+      <li>If you're not signed in, click <strong>Sign In</strong> and enter your Apple ID and password.</li>
+      <li>Once signed in, you'll see your Apple ID email and phone number listed.</li>
+    </ol>
+    <div class="tip">Use the same Apple ID that's on your iPhone. This is what links your Mac to your phone number.</div>
+  </div>
+
+  <div class="section">
+    <h2><span class="num">4</span>Make sure your phone number is active in Messages</h2>
+    <ol>
+      <li>Go to <strong>Messages &gt; Settings &gt; iMessage</strong>.</li>
+      <li>Under "You can be reached for messages at," make sure your <strong>phone number is checked</strong> (not just your email address).</li>
+      <li>If your phone number isn't listed, open Settings on your iPhone, go to <strong>Messages &gt; Send &amp; Receive</strong>, and make sure your number is checked there too.</li>
+    </ol>
+    <div class="warn">If only your email address is checked in Messages, texts will send as iMessages from your email — not as SMS from your phone number. Make sure your phone number is checked.</div>
+  </div>
+
+  <div class="section">
+    <h2><span class="num">5</span>Allow access to Messages when prompted</h2>
+    <p style="font-size:14.5px">The first time you send, macOS will show a popup asking:</p>
+    <p style="font-size:14px;margin:10px 0 0 0;font-style:italic;color:#444">"TextYourListCompanion" wants access to control "Messages".</p>
+    <p style="font-size:14px;margin-top:6px">Click <strong>OK</strong> to allow it. This permission is required for the companion to type and send messages through the Messages app. You only need to grant this once — macOS remembers it.</p>
+    <div class="tip">If you accidentally clicked Don't Allow, go to <strong>System Settings &gt; Privacy &amp; Security &gt; Automation</strong>, find Text Your List Companion, and turn on the Messages toggle.</div>
+  </div>
+
+  <div class="section">
+    <h2><span class="num">6</span>When does your iPhone need to be nearby?</h2>
+    <p style="font-size:14.5px">The Mac companion sends through your iPhone via SMS relay, so your iPhone needs to be nearby for all sends — both iPhone and Android contacts.</p>
+    <ul style="margin-top:12px">
+      <li>Keep your iPhone within about 30 feet of your Mac while sending.</li>
+      <li>Make sure Bluetooth is on on your iPhone: <strong>Settings &gt; Bluetooth</strong>.</li>
+      <li>Your iPhone does not need to have the screen on, but it must not be in Airplane Mode.</li>
+    </ul>
+    <div class="tip">Messages sent via the Mac companion appear as SMS (green bubble) on the recipient's phone. They deliver reliably to both iPhone and Android contacts.</div>
+  </div>
+
+  <div class="section">
+    <h2><span class="num">7</span>Mac says "Apple could not verify" or "app is damaged"</h2>
+    <p style="font-size:14.5px">The companion app is not yet in the Mac App Store, so macOS shows a security warning the first time you open it. This is normal — here's how to get past it:</p>
+    <ol style="margin-top:12px">
+      <li>After double-clicking the app and seeing the warning, <strong>click Done</strong> (not Move to Trash). This just dismisses the dialog — the app is not deleted.</li>
+      <li>Open <strong>System Settings</strong> (the gear icon in your Dock or Apple menu).</li>
+      <li>Click <strong>Privacy &amp; Security</strong> in the left sidebar.</li>
+      <li>Scroll down until you see a message like <em>"textyourlistcompanion was blocked..."</em></li>
+      <li>Click <strong>Open Anyway</strong> next to that message.</li>
+      <li>You may be asked to enter your Mac password. Enter it and click OK.</li>
+      <li>Try double-clicking the companion app again — it should open this time.</li>
+    </ol>
+    <div class="tip">You only need to do this once. After you click Open Anyway, macOS remembers your choice and the app will open normally every time.</div>
+    <div class="iphone-note">
+      <strong>Apple Silicon Mac (M1, M2, M3)?</strong>
+      If macOS asks you to install Rosetta, click Install. Rosetta is a free Apple tool that lets M1/M2/M3 Macs run apps built for older Intel Macs. It takes about a minute to install and only happens once.
+    </div>
+  </div>
+
+  <div class="section">
+    <h2><span class="num">8</span>I don't see the Mac companion download</h2>
+    <ol>
+      <li>Log in at <strong>app.textyourlist.com</strong> and go to the <strong>Getting Started</strong> page.</li>
+      <li>You should see separate download buttons for Windows and Mac.</li>
+      <li>Click the Mac download. It will download a .zip file.</li>
+      <li>Double-click the .zip to extract it, then double-click the app inside.</li>
+    </ol>
+  </div>
+
+  <div class="section">
+    <h2><span class="num">9</span>Messages opened but the companion says there's an error</h2>
+    <ol>
+      <li>Make sure Messages is <strong>open and in the foreground</strong> — not minimized or hidden behind other windows.</li>
+      <li>Make sure you're signed in to Messages with your Apple ID (step 3 above).</li>
+      <li>Try closing Messages completely (<kbd>Cmd</kbd> + <kbd>Q</kbd>) and reopening it, then try sending again.</li>
+      <li>Make sure your iPhone is nearby and Bluetooth is enabled on both your iPhone and Mac.</li>
+    </ol>
+    <div class="tip">On Mac, the companion sends through Messages via AppleScript — it does not simulate mouse clicks or keyboard typing. You can use your computer normally while it sends.</div>
+  </div>
+
+  <div class="section">
+    <h2><span class="num">10</span>Texts show as sent but recipients didn't get them</h2>
+    <ol>
+      <li>Check the Messages app on your Mac — if the conversation shows the message was sent, the companion worked correctly.</li>
+      <li>If the message shows a red "Not Delivered" error in Messages, your iPhone may be out of range or the connection dropped. Move your iPhone closer and try again.</li>
+      <li>Send a test text to yourself first to confirm everything is connected before running a bulk list.</li>
+    </ol>
+  </div>
+
+  <div class="stuck">
+    <h2>Still stuck?</h2>
+    <p>Email us and we'll help you get set up: <a href="mailto:support@textyourlist.com">support@textyourlist.com</a></p>
+  </div>
+</div>
+</body>
+</html>

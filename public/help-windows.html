@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Windows Setup Guide: Sending Texts with Phone Link — Text Your List</title>
+  <meta name="description" content="How to set up Text Your List on Windows using Microsoft Phone Link. Connect your Android phone, pair via QR code, and troubleshoot common issues." />
+  <!-- Google tag (gtag.js) -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-NKZFD2HBFH"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'G-NKZFD2HBFH');
+  </script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; background: #f5f5f4; color: #1a1a1a; line-height: 1.6; }
+    .topbar { background: #fff; border-bottom: 1px solid #e5e5e4; padding: 0 32px; height: 56px; display: flex; align-items: center; justify-content: space-between; }
+    .topbar-logo { font-size: 17px; font-weight: 700; color: #8C2249; text-decoration: none; }
+    .topbar-back { font-size: 13.5px; color: #666; text-decoration: none; }
+    .topbar-back:hover { color: #8C2249; }
+    .container { max-width: 760px; margin: 40px auto; padding: 0 24px 80px; }
+    h1 { font-size: 28px; font-weight: 800; margin-bottom: 8px; }
+    .subtitle { color: #666; font-size: 15px; margin-bottom: 40px; }
+    .section { background: #fff; border-radius: 12px; border: 1px solid #e5e5e4; padding: 28px 32px; margin-bottom: 20px; }
+    .section h2 { font-size: 17px; font-weight: 700; color: #8C2249; margin-bottom: 16px; display: flex; align-items: center; gap: 10px; }
+    .section h2 .num { background: #8C2249; color: #fff; border-radius: 50%; width: 26px; height: 26px; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; flex-shrink: 0; }
+    ol, ul { padding-left: 20px; }
+    li { margin-bottom: 8px; font-size: 14.5px; }
+    .tip { background: #f0fdf4; border-left: 3px solid #16a34a; border-radius: 4px; padding: 12px 16px; margin-top: 12px; font-size: 13.5px; color: #166534; }
+    .warn { background: #fff7ed; border-left: 3px solid #ea580c; border-radius: 4px; padding: 12px 16px; margin-top: 12px; font-size: 13.5px; color: #9a3412; }
+    .iphone-note { background: #f0f4ff; border-left: 3px solid #2563eb; border-radius: 4px; padding: 14px 16px; margin-top: 14px; font-size: 13.5px; color: #1e3a8a; }
+    .iphone-note strong { display: block; margin-bottom: 4px; font-size: 14px; }
+    .stuck { background: #fff; border-radius: 12px; border: 1px solid #e5e5e4; padding: 28px 32px; margin-top: 32px; text-align: center; }
+    .stuck h2 { font-size: 17px; font-weight: 700; margin-bottom: 8px; }
+    .stuck p { font-size: 14px; color: #555; }
+    .stuck a { color: #8C2249; }
+    .help-nav { display: flex; gap: 16px; margin-bottom: 32px; flex-wrap: wrap; }
+    .help-nav a { font-size: 13px; color: #8C2249; text-decoration: none; border: 1px solid #e5e5e4; border-radius: 6px; padding: 6px 14px; background: #fff; }
+    .help-nav a:hover { background: #f9f5f7; }
+    .help-nav a.active { background: #8C2249; color: #fff; border-color: #8C2249; }
+  </style>
+</head>
+<body>
+<div class="topbar">
+  <a class="topbar-logo" href="/">Text Your List</a>
+  <a class="topbar-back" href="/app">&#8592; Back to App</a>
+</div>
+<div class="container">
+  <h1>Windows: Setting Up Phone Link</h1>
+  <p class="subtitle">Phone Link is a free Microsoft app that connects your Windows PC to your phone so you can send texts from your computer.</p>
+
+  <div class="help-nav">
+    <a href="/help/companion">Companion App</a>
+    <a href="/help/windows" class="active">Windows: Phone Link</a>
+    <a href="/help/mac">Mac: Messages</a>
+  </div>
+
+  <div class="section">
+    <h2><span class="num">1</span>What is Phone Link and why do I need it?</h2>
+    <p style="font-size:14.5px">Phone Link is a free app made by Microsoft that comes pre-installed on most Windows 11 computers. It connects your Windows PC to your phone over Bluetooth, letting your computer send texts through your phone's number. Text Your List uses it to send your messages — your texts come from your real phone number, not a third-party service.</p>
+    <div class="tip">Phone Link is free and already on most Windows 11 computers. You may just need to open it and sign in.</div>
+  </div>
+
+  <div class="section">
+    <h2><span class="num">2</span>How to open Phone Link</h2>
+    <ol>
+      <li>Click the <strong>Start menu</strong> (the Windows icon in the bottom-left or bottom-center of your screen).</li>
+      <li>Type <strong>Phone Link</strong> and press Enter when you see it in the results.</li>
+      <li>If you don't see "Phone Link," try typing <strong>Your Phone</strong> instead — older versions of Windows use that name.</li>
+      <li>The app will open. If you've never used it before, it will walk you through connecting your phone.</li>
+    </ol>
+    <div class="tip">You can also pin Phone Link to your taskbar so it's always one click away: right-click the app in the Start menu and choose "Pin to taskbar."</div>
+  </div>
+
+  <div class="section">
+    <h2><span class="num">3</span>How to link your phone to Phone Link</h2>
+    <ol>
+      <li>Open Phone Link on your computer.</li>
+      <li>Follow the on-screen instructions. It will show a <strong>QR code</strong> or a code to enter on your phone.</li>
+      <li>On your phone, open the camera app and point it at the QR code, or open a browser and go to the link shown on screen.</li>
+      <li>Follow the steps on your phone to grant the necessary permissions.</li>
+      <li>Once linked, Phone Link will show your phone's messages. You should see a list of recent conversations.</li>
+    </ol>
+    <div class="warn">If you have multiple phones linked to the same Microsoft account, make sure the right one is selected in Phone Link before you send.</div>
+  </div>
+
+  <div class="section">
+    <h2><span class="num">4</span>Important: iPhone users — keep your phone nearby</h2>
+    <div class="iphone-note">
+      <strong>iPhone users must read this.</strong>
+      Phone Link connects to iPhones over <strong>Bluetooth</strong>, not Wi-Fi. This means your iPhone must be within about 30 feet of your computer while you're sending. If your phone is in another room, texts may not go through.
+    </div>
+    <ol style="margin-top:16px">
+      <li>Keep your iPhone on the same desk or table as your computer while sending.</li>
+      <li>Make sure Bluetooth is turned on on your iPhone (Settings &gt; Bluetooth).</li>
+      <li>Your iPhone screen does not need to be on, but the phone should not be in Airplane Mode.</li>
+      <li>If you're sending a long list, leave your phone nearby for the full duration of the send.</li>
+    </ol>
+  </div>
+
+  <div class="section">
+    <h2><span class="num">5</span>Setting the right phone number (multiple numbers)</h2>
+    <ol>
+      <li>Open Phone Link on your computer.</li>
+      <li>Click the <strong>Settings</strong> icon (gear icon, usually top-right).</li>
+      <li>Look for a section called <strong>Messages</strong> or <strong>Calls</strong> and check which number or line is set as the default.</li>
+      <li>If you have a work phone and personal phone, make sure the right one is set to active.</li>
+    </ol>
+  </div>
+
+  <div class="section">
+    <h2><span class="num">6</span>Phone Link won't open</h2>
+    <ol>
+      <li>Try searching for <strong>Your Phone</strong> in the Start menu — some older Windows 10 computers use this name instead of Phone Link.</li>
+      <li>If neither works, open the <strong>Microsoft Store</strong> (search for it in Start), search for "Phone Link," and install or update it.</li>
+      <li>Restart your computer and try again.</li>
+    </ol>
+  </div>
+
+  <div class="section">
+    <h2><span class="num">7</span>Phone Link shows a blank screen or won't sign in</h2>
+    <ol>
+      <li>Make sure you're signed in to your <strong>Microsoft account</strong> in Phone Link. Click "Sign in" if prompted.</li>
+      <li>If you're signed in but see a blank screen, try closing Phone Link completely (right-click the taskbar icon and choose Quit or Close) and reopening it.</li>
+      <li>On your phone, open the <strong>Link to Windows</strong> app (Android) or check your Phone Link pairing (iPhone) and confirm the connection is active.</li>
+    </ol>
+  </div>
+
+  <div class="section">
+    <h2><span class="num">8</span>Texts show as sent but recipients didn't get them</h2>
+    <ol>
+      <li>Check if the message appears in Phone Link's own conversation history. If it shows there, the message was sent — the delay may be on your carrier's side.</li>
+      <li>For iPhone users: your iPhone may have gone out of Bluetooth range or the screen locked during a long bulk send. Keep the phone nearby and awake.</li>
+      <li>Try sending a test message to yourself from Phone Link directly to confirm the connection is working outside of Text Your List.</li>
+    </ol>
+  </div>
+
+  <div class="section">
+    <h2><span class="num">9</span>The companion app says "Phone Link is not running"</h2>
+    <ol>
+      <li><strong>Phone Link must be open on your screen</strong> before you click Send. The companion app needs to find it.</li>
+      <li>Open Phone Link, wait for it to fully load and show your conversations, then go back to Text Your List and try sending again.</li>
+      <li>Make sure Phone Link is not minimized to the taskbar — it should be visible.</li>
+    </ol>
+    <div class="warn">Do not click anywhere else on your screen while Text Your List is sending. The companion app types directly into Phone Link, and clicking elsewhere will interrupt it.</div>
+  </div>
+
+  <div class="stuck">
+    <h2>Still stuck?</h2>
+    <p>Email us and we'll help you get set up: <a href="mailto:support@textyourlist.com">support@textyourlist.com</a></p>
+  </div>
+</div>
+</body>
+</html>

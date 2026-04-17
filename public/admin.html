@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Admin — Text Your List</title>
+  <link rel="stylesheet" href="/style.css" />
+  <style>
+    body { background: #f5f5f4; }
+    .admin-wrap { max-width: 1100px; margin: 0 auto; padding: 32px 24px; }
+    .admin-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 28px; }
+    .admin-header h1 { font-size: 22px; font-weight: 700; }
+    .metrics-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 12px; margin-bottom: 28px; }
+    .metric-box { background: #fff; border: 1px solid #e5e5e4; border-radius: 10px; padding: 16px 18px; }
+    .metric-num { font-size: 24px; font-weight: 800; }
+    .metric-label { font-size: 11px; color: #666; margin-top: 2px; text-transform: uppercase; letter-spacing: 0.4px; }
+    .plan-select { padding: 4px 8px; border: 1px solid #ddd; border-radius: 5px; font-size: 13px; }
+    .action-btn { padding: 4px 10px; border: none; border-radius: 5px; font-size: 12.5px; cursor: pointer; font-family: inherit; }
+    .action-btn-primary { background: #111; color: #fff; }
+    .action-btn-primary:hover { opacity: 0.8; }
+    .action-btn-ghost { background: transparent; border: 1px solid #ddd; color: #333; }
+    .action-btn-ghost:hover { background: #f4f4f4; }
+    .action-btn-danger { background: #dc2626; color: #fff; }
+    .action-btn-danger:hover { opacity: 0.85; }
+    .action-btn-warn { background: #666; color: #fff; }
+    .action-btn-warn:hover { opacity: 0.8; }
+    .add-user-form { background: #fff; border: 1px solid #e5e5e4; border-radius: 10px; padding: 20px 24px; margin-bottom: 20px; }
+    .add-user-form h3 { font-size: 15px; font-weight: 700; margin-bottom: 16px; }
+    .form-inline { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
+    .form-inline .fi { display: flex; flex-direction: column; gap: 4px; }
+    .form-inline label { font-size: 11px; font-weight: 600; color: #666; text-transform: uppercase; letter-spacing: 0.4px; }
+    .form-inline input, .form-inline select { padding: 7px 10px; border: 1px solid #ddd; border-radius: 6px; font-size: 13.5px; font-family: inherit; }
+    .status-badge { font-size: 11px; padding: 2px 8px; border-radius: 99px; font-weight: 500; }
+    .status-active { background: #dcfce7; color: #15803d; }
+    .status-free { background: #f3f4f6; color: #374151; }
+    .status-cancelled { background: #fee2e2; color: #dc2626; }
+    .status-past_due { background: #fef3c7; color: #b45309; }
+    .status-manual { background: #dbeafe; color: #1d4ed8; }
+    .status-trialing { background: #ede9fe; color: #6d28d9; }
+    @media (max-width: 900px) {
+      .metrics-grid { grid-template-columns: repeat(4, 1fr); }
+    }
+    @media (max-width: 600px) {
+      .metrics-grid { grid-template-columns: repeat(2, 1fr); }
+    }
+  </style>
+</head>
+<body>
+<div class="admin-wrap">
+  <div class="admin-header">
+    <h1>Text Your List Admin</h1>
+    <div style="display:flex;gap:8px">
+      <a href="/app" class="btn btn-ghost btn-sm">Back to app</a>
+      <button class="btn btn-ghost btn-sm" id="logout-btn">Log out</button>
+    </div>
+  </div>
+
+  <!-- SaaS Metrics -->
+  <div class="metrics-grid" id="metrics-grid">
+    <div class="metric-box"><div class="metric-num" id="m-total">—</div><div class="metric-label">Total users</div></div>
+    <div class="metric-box"><div class="metric-num" id="m-paid">—</div><div class="metric-label">Paid (active Stripe)</div></div>
+    <div class="metric-box"><div class="metric-num" id="m-mrr">—</div><div class="metric-label">MRR</div><div style="font-size:10.5px;color:#aaa;margin-top:2px">excl. admins &amp; manual</div></div>
+    <div class="metric-box"><div class="metric-num" id="m-arr">—</div><div class="metric-label">ARR (est)</div></div>
+    <div class="metric-box"><div class="metric-num" id="m-sends">—</div><div class="metric-label">Sends this month</div></div>
+    <div class="metric-box"><div class="metric-num" id="m-new">—</div><div class="metric-label">New (7 days)</div></div>
+    <div class="metric-box"><div class="metric-num" id="m-churn">—</div><div class="metric-label">Churn (30 days)</div></div>
+  </div>
+
+  <!-- Plan Breakdown — Change 6 -->
+  <div style="background:#fff;border:1px solid #e5e5e4;border-radius:10px;padding:16px 24px;margin-bottom:20px">
+    <div style="font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:#666;margin-bottom:12px">Plan Breakdown</div>
+    <div style="display:flex;flex-wrap:wrap;gap:16px" id="plan-breakdown">
+      <div><span style="font-size:11px;color:#888;text-transform:uppercase;letter-spacing:0.4px">Free</span><br/><span style="font-size:20px;font-weight:700" id="pb-free">—</span></div>
+      <div><span style="font-size:11px;color:#888;text-transform:uppercase;letter-spacing:0.4px">Starter Monthly</span><br/><span style="font-size:20px;font-weight:700" id="pb-sm">—</span></div>
+      <div><span style="font-size:11px;color:#888;text-transform:uppercase;letter-spacing:0.4px">Starter Annual</span><br/><span style="font-size:20px;font-weight:700" id="pb-sa">—</span></div>
+      <div><span style="font-size:11px;color:#888;text-transform:uppercase;letter-spacing:0.4px">Pro Monthly</span><br/><span style="font-size:20px;font-weight:700" id="pb-pm">—</span></div>
+      <div><span style="font-size:11px;color:#888;text-transform:uppercase;letter-spacing:0.4px">Pro Annual</span><br/><span style="font-size:20px;font-weight:700" id="pb-pa">—</span></div>
+      <div><span style="font-size:11px;color:#888;text-transform:uppercase;letter-spacing:0.4px">Manual / Unbilled</span><br/><span style="font-size:20px;font-weight:700" id="pb-manual">—</span></div>
+      <div><span style="font-size:11px;color:#888;text-transform:uppercase;letter-spacing:0.4px">Admin accounts</span><br/><span style="font-size:20px;font-weight:700" id="pb-admins">—</span></div>
+    </div>
+    <div id="pb-mrr-note" style="font-size:12px;color:#888;margin-top:8px"></div>
+  </div>
+
+  <!-- Add User -->
+  <div class="add-user-form">
+    <h3>Add User Manually</h3>
+    <div id="add-alert" style="margin-bottom:10px"></div>
+    <div class="form-inline">
+      <div class="fi">
+        <label>Email</label>
+        <input type="email" id="add-email" placeholder="user@example.com" style="width:220px" />
+      </div>
+      <div class="fi">
+        <label>Password</label>
+        <input type="password" id="add-password" placeholder="Set a password" style="width:180px" />
+      </div>
+      <div class="fi">
+        <label>Plan</label>
+        <select id="add-plan">
+          <option value="free">Free</option>
+          <option value="starter">Starter</option>
+          <option value="pro">Pro</option>
+        </select>
+      </div>
+      <div class="fi">
+        <label>Admin?</label>
+        <select id="add-admin">
+          <option value="0">No</option>
+          <option value="1">Yes</option>
+        </select>
+      </div>
+      <div class="fi">
+        <label>Manual (no billing)</label>
+        <select id="add-manual">
+          <option value="1">Yes — bypass Stripe</option>
+          <option value="0">No</option>
+        </select>
+      </div>
+      <button class="action-btn action-btn-primary" id="add-btn">Add User</button>
+    </div>
+  </div>
+
+  <!-- Server Health -->
+  <div id="health-bar" style="background:#fff;border:1px solid #e5e5e4;border-radius:10px;padding:14px 24px;margin-bottom:20px;display:flex;gap:28px;flex-wrap:wrap;align-items:center">
+    <span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#666">Server Health</span>
+    <span id="h-uptime" style="font-size:13px;color:#333">—</span>
+    <span id="h-disk" style="font-size:13px;color:#333">—</span>
+    <span id="h-mem" style="font-size:13px;color:#333">—</span>
+    <span id="h-db" style="font-size:13px;color:#333">—</span>
+    <span id="h-jobs" style="font-size:13px;color:#333">—</span>
+    <span id="h-companions" style="font-size:13px;color:#333">—</span>
+  </div>
+
+  <!-- Users Table -->
+  <div class="card">
+    <div class="card-header" style="justify-content:space-between;flex-wrap:wrap;gap:8px">
+      <h3>Users <span id="users-count" style="font-size:13px;font-weight:400;color:#888"></span></h3>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <input type="text" id="search-input" placeholder="Search email..." style="padding:5px 10px;border:1px solid #ddd;border-radius:6px;font-size:13px;width:180px" />
+        <select id="filter-plan" style="padding:5px 8px;border:1px solid #ddd;border-radius:6px;font-size:13px">
+          <option value="">All plans</option>
+          <option value="free">Free</option>
+          <option value="starter">Starter</option>
+          <option value="pro">Pro</option>
+        </select>
+        <select id="filter-status" style="padding:5px 8px;border:1px solid #ddd;border-radius:6px;font-size:13px">
+          <option value="">All statuses</option>
+          <option value="active">Active</option>
+          <option value="free">Free</option>
+          <option value="cancelled">Cancelled</option>
+          <option value="past_due">Past due</option>
+          <option value="manual">Manual</option>
+        </select>
+        <button class="btn btn-ghost btn-sm" id="refresh-btn">Refresh</button>
+      </div>
+    </div>
+    <div id="users-table" style="overflow-x:auto">Loading...</div>
+    <div id="pagination" style="display:flex;gap:8px;align-items:center;padding:12px 16px;border-top:1px solid #f0f0f0"></div>
+  </div>
+</div>
+
+<script>
+  const PLAN_PRICES = { free: 0, starter: 9, pro: 29 };
+
+  async function apiFetch(method, path, body) {
+    const res = await fetch(path, {
+      method,
+      headers: { 'Content-Type': 'application/json' },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    if (res.status === 401 || res.status === 403) {
+      alert('Access denied');
+      window.location.href = '/app';
+      throw new Error('Access denied');
+    }
+    return res.json();
+  }
+
+  async function loadMetrics() {
+    try {
+      const m = await apiFetch('GET', '/api/admin/metrics');
+      document.getElementById('m-total').textContent = m.totalUsers;
+      document.getElementById('m-paid').textContent = m.paidUsers;
+      document.getElementById('m-mrr').textContent = '$' + m.mrr;
+      document.getElementById('m-arr').textContent = '$' + m.arr;
+      document.getElementById('m-sends').textContent = m.totalSendsMonth;
+      document.getElementById('m-new').textContent = m.newSignups7d;
+      document.getElementById('m-churn').textContent = m.churn30d;
+      // Plan breakdown
+      if (m.planBreakdown) {
+        document.getElementById('pb-free').textContent = m.planBreakdown.free;
+        document.getElementById('pb-sm').textContent = m.planBreakdown.starterMonthly;
+        document.getElementById('pb-sa').textContent = m.planBreakdown.starterAnnual;
+        document.getElementById('pb-pm').textContent = m.planBreakdown.proMonthly;
+        document.getElementById('pb-pa').textContent = m.planBreakdown.proAnnual;
+        document.getElementById('pb-manual').textContent = m.planBreakdown.manual;
+        if (m.planBreakdown.admins !== undefined) document.getElementById('pb-admins').textContent = m.planBreakdown.admins;
+      }
+      if (m.mrrNote) {
+        const noteEl = document.getElementById('pb-mrr-note');
+        if (noteEl) noteEl.textContent = m.mrrNote;
+      }
+    } catch (_) {}
+  }
+
+  let currentOffset = 0;
+  const PAGE_SIZE = 50;
+
+  async function loadHealth() {
+    try {
+      const h = await apiFetch('GET', '/api/admin/health');
+      const mb = v => Math.round(v / 1024 / 1024);
+      const gb = v => (v / 1024 / 1024 / 1024).toFixed(1);
+      const uptimeFmt = s => {
+        const d = Math.floor(s/86400), hr = Math.floor((s%86400)/3600), m = Math.floor((s%3600)/60);
+        return d > 0 ? `${d}d ${hr}h uptime` : `${hr}h ${m}m uptime`;
+      };
+      const diskColor = h.disk.pct > 85 ? '#dc2626' : h.disk.pct > 70 ? '#d97706' : '#16a34a';
+      const memColor  = h.mem.pct  > 85 ? '#dc2626' : h.mem.pct  > 70 ? '#d97706' : '#16a34a';
+      document.getElementById('h-uptime').textContent = uptimeFmt(h.uptime);
+      document.getElementById('h-disk').innerHTML = `Disk: <b style="color:${diskColor}">${h.disk.pct}%</b> (${gb(h.disk.used)}/${gb(h.disk.total)} GB)`;
+      document.getElementById('h-mem').innerHTML  = `RAM: <b style="color:${memColor}">${h.mem.pct}%</b> (${mb(h.mem.used)}/${mb(h.mem.total)} MB)`;
+      document.getElementById('h-db').textContent = `DB: ${mb(h.db.size)} MB`;
+      document.getElementById('h-jobs').textContent = `Active jobs: ${h.activeJobs}`;
+      document.getElementById('h-companions').innerHTML = `Companions online: <b style="color:${h.activeCompanions>0?'#16a34a':'#999'}">${h.activeCompanions}</b>`;
+    } catch (_) {}
+  }
+
+  async function loadUsers() {
+    const el = document.getElementById('users-table');
+    el.innerHTML = '<div style="padding:20px;color:#666">Loading...</div>';
+    const search = document.getElementById('search-input').value.trim();
+    const plan   = document.getElementById('filter-plan').value;
+    const status = document.getElementById('filter-status').value;
+    const params = new URLSearchParams({ limit: PAGE_SIZE, offset: currentOffset });
+    if (search) params.set('search', search);
+    if (plan)   params.set('plan', plan);
+    if (status) params.set('status', status);
+    try {
+      const { users, total } = await apiFetch('GET', `/api/admin/users?${params}`);
+      document.getElementById('users-count').textContent = `(${total} total)`;
+      if (!users.length) { el.innerHTML = '<div style="padding:20px;color:#666">No users found</div>'; renderPagination(0); return; }
+
+      el.innerHTML = `<table>
+        <thead><tr>
+          <th>Email</th>
+          <th>Plan</th>
+          <th>Status</th>
+          <th>Sends</th>
+          <th>Companion</th>
+          <th>Joined</th>
+          <th>Actions</th>
+        </tr></thead>
+        <tbody>
+          ${users.map(u => {
+            const secsAgo = u.companion_last_seen ? (Date.now() - new Date(u.companion_last_seen + 'Z').getTime()) / 1000 : null;
+            const companionBadge = secsAgo === null ? '<span style="color:#ccc;font-size:11px">—</span>'
+              : secsAgo < 90  ? '<span style="color:#16a34a;font-size:12px">● Live</span>'
+              : secsAgo < 300 ? `<span style="color:#d97706;font-size:12px">● ${Math.round(secsAgo/60)}m ago</span>`
+              : '<span style="color:#999;font-size:12px">● Offline</span>';
+            return `<tr data-uid="${u.id}">
+            <td>
+              ${esc(u.email)}
+              ${u.is_admin ? ' <span class="badge">admin</span>' : ''}
+              ${u.manual_account ? ' <span class="badge" style="background:#dbeafe;color:#1d4ed8">manual</span>' : ''}
+            </td>
+            <td>
+              <select class="plan-select" data-uid="${u.id}">
+                <option value="free" ${u.plan==='free'?'selected':''}>Free</option>
+                <option value="starter" ${u.plan==='starter'?'selected':''}>Starter</option>
+                <option value="pro" ${u.plan==='pro'?'selected':''}>Pro</option>
+              </select>
+              <div style="margin-top:4px;font-size:11px;color:#666">
+                Expires: <input type="date" class="plan-expires-input" style="font-size:11px;padding:2px 4px;border:1px solid #ddd;border-radius:3px;width:120px" value="${u.plan_expires_at ? u.plan_expires_at.slice(0,10) : ''}" placeholder="never" title="Leave blank for no expiry. User reverts to Free on this date." />
+              </div>
+            </td>
+            <td><span class="status-badge status-${esc(u.subscription_status||'free')}">${esc(u.subscription_status||'free')}</span></td>
+            <td>
+              ${u.monthly_sends || 0}
+              <button class="action-btn action-btn-warn" style="font-size:10.5px;padding:2px 6px;margin-left:4px" onclick="resetSends(${u.id})">Reset</button>
+            </td>
+            <td>${companionBadge}</td>
+            <td style="color:#666;font-size:12px;white-space:nowrap">${fmt(u.created_at)}</td>
+            <td style="display:flex;gap:4px;flex-wrap:wrap">
+              <button class="action-btn action-btn-primary" onclick="saveUser(${u.id}, this)">Save</button>
+              <button class="action-btn action-btn-ghost" onclick="resetUserPassword(${u.id})">Reset PW</button>
+              <button class="action-btn action-btn-danger" onclick="deleteUser(${u.id}, '${esc(u.email)}')">Delete</button>
+              <div style="position:relative;display:inline-block">
+                <button class="action-btn action-btn-ghost" onclick="toggleMoreMenu(this)">&#8943;</button>
+                <div class="more-menu" style="display:none;position:absolute;right:0;top:100%;background:#fff;border:1px solid #ddd;border-radius:6px;box-shadow:0 4px 12px rgba(0,0,0,0.1);min-width:180px;z-index:100;padding:4px 0">
+                  <div class="more-item" onclick="toggleAdmin(${u.id}, ${u.is_admin?1:0}, this.closest('.more-menu').previousElementSibling)" style="padding:8px 14px;font-size:13px;cursor:pointer;color:${u.is_admin?'#dc2626':'#333'}">${u.is_admin?'&#9660; Remove admin':'&#9650; Make admin'}</div>
+                  <div class="more-item" onclick="toggleManual(${u.id}, ${u.manual_account?1:0}, this.closest('.more-menu').previousElementSibling)" style="padding:8px 14px;font-size:13px;cursor:pointer" title="Manual = I manage this user's billing outside Stripe. Plan changes won't trigger charges.">${u.manual_account?'&#9940; Remove manual billing':'&#9998; Set manual billing'}</div>
+                </div>
+              </div>
+            </td>
+          </tr>`;}).join('')}
+        </tbody>
+      </table>`;
+      renderPagination(total);
+    } catch (err) {
+      el.innerHTML = `<div style="padding:20px;color:#dc2626">Error: ${esc(err.message)}</div>`;
+    }
+  }
+
+  function renderPagination(total) {
+    const el = document.getElementById('pagination');
+    if (total <= PAGE_SIZE) { el.innerHTML = ''; return; }
+    const totalPages = Math.ceil(total / PAGE_SIZE);
+    const currentPage = Math.floor(currentOffset / PAGE_SIZE) + 1;
+    el.innerHTML = `
+      <button class="action-btn action-btn-ghost" onclick="goPage(${currentPage-2})" ${currentPage===1?'disabled':''}>← Prev</button>
+      <span style="font-size:13px;color:#666">Page ${currentPage} of ${totalPages}</span>
+      <button class="action-btn action-btn-ghost" onclick="goPage(${currentPage})" ${currentPage===totalPages?'disabled':''}>Next →</button>
+    `;
+  }
+
+  function goPage(zeroIndex) {
+    currentOffset = zeroIndex * PAGE_SIZE;
+    loadUsers();
+  }
+
+  async function load() {
+    await Promise.all([loadMetrics(), loadUsers(), loadHealth()]);
+  }
+
+  let searchTimer;
+  document.getElementById('search-input').addEventListener('input', () => {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => { currentOffset = 0; loadUsers(); }, 300);
+  });
+  document.getElementById('filter-plan').addEventListener('change', () => { currentOffset = 0; loadUsers(); });
+  document.getElementById('filter-status').addEventListener('change', () => { currentOffset = 0; loadUsers(); });
+
+  async function saveUser(uid, btn) {
+    const row = btn.closest('tr');
+    const plan = row.querySelector('.plan-select').value;
+    const expiresInput = row.querySelector('.plan-expires-input');
+    const plan_expires_at = expiresInput ? (expiresInput.value || null) : undefined;
+    btn.textContent = '...';
+    await apiFetch('PATCH', `/api/admin/users/${uid}`, { plan, plan_expires_at });
+    btn.textContent = '✓';
+    setTimeout(() => { btn.textContent = 'Save'; loadMetrics(); }, 1500);
+  }
+
+  async function resetSends(uid) {
+    if (!confirm('Reset monthly send count to 0?')) return;
+    await apiFetch('PATCH', `/api/admin/users/${uid}`, { monthly_sends: 0 });
+    loadUsers();
+  }
+
+  async function toggleAdmin(uid, currentIsAdmin, btn) {
+    const newVal = currentIsAdmin ? 0 : 1;
+    if (newVal && !confirm('Promote this user to admin?')) return;
+    if (!newVal && !confirm('Demote this user from admin?')) return;
+    await apiFetch('PATCH', `/api/admin/users/${uid}`, { is_admin: newVal });
+    loadUsers();
+  }
+
+  async function toggleManual(uid, currentManual, btn) {
+    const newVal = currentManual ? 0 : 1;
+    const label = newVal ? 'Mark as manual (bypass billing)?' : 'Remove manual billing bypass?';
+    if (!confirm(label)) return;
+    await apiFetch('PATCH', `/api/admin/users/${uid}`, {
+      manual_account: newVal,
+      subscription_status: newVal ? 'manual' : 'active',
+    });
+    loadUsers();
+  }
+
+  // Change 6: Admin reset password
+  async function resetUserPassword(uid) {
+    try {
+      const data = await apiFetch('POST', `/api/admin/users/${uid}/reset-token`);
+      await navigator.clipboard.writeText(data.resetLink);
+      alert(`Reset link copied to clipboard — send it to ${data.email}\n\nLink: ${data.resetLink}`);
+    } catch (err) {
+      alert('Error: ' + (err.message || 'Could not generate reset link'));
+    }
+  }
+
+  async function deleteUser(uid, email) {
+    if (!confirm(`Delete user ${email}? This cannot be undone.`)) return;
+    if (!confirm(`Are you sure? Deleting ${email} will remove their account and all associated data.`)) return;
+    try {
+      await apiFetch('DELETE', `/api/admin/users/${uid}`);
+      loadUsers();
+      loadMetrics();
+    } catch (err) {
+      alert('Error: ' + err.message);
+    }
+  }
+
+  function toggleMoreMenu(btn) {
+    const menu = btn.nextElementSibling;
+    const isOpen = menu.style.display !== 'none';
+    // Close all other open menus first
+    document.querySelectorAll('.more-menu').forEach(m => m.style.display = 'none');
+    menu.style.display = isOpen ? 'none' : 'block';
+  }
+  document.addEventListener('click', e => {
+    if (!e.target.closest('.more-menu') && !e.target.matches('[onclick*="toggleMoreMenu"]')) {
+      document.querySelectorAll('.more-menu').forEach(m => m.style.display = 'none');
+    }
+  });
+
+  document.getElementById('add-btn').addEventListener('click', async () => {
+    const email = document.getElementById('add-email').value.trim();
+    const password = document.getElementById('add-password').value;
+    const plan = document.getElementById('add-plan').value;
+    const is_admin = document.getElementById('add-admin').value === '1';
+    const manual = document.getElementById('add-manual').value === '1';
+    const alertEl = document.getElementById('add-alert');
+    alertEl.innerHTML = '';
+
+    if (!email || !password) {
+      alertEl.innerHTML = '<div class="alert alert-error">Email and password are required.</div>';
+      return;
+    }
+
+    try {
+      await apiFetch('POST', '/api/admin/users', { email, password, plan, is_admin, manual });
+      alertEl.innerHTML = `<div class="alert alert-success">User ${esc(email)} added successfully.</div>`;
+      document.getElementById('add-email').value = '';
+      document.getElementById('add-password').value = '';
+      loadUsers();
+      loadMetrics();
+    } catch (err) {
+      alertEl.innerHTML = `<div class="alert alert-error">${esc(err.message)}</div>`;
+    }
+  });
+
+  document.getElementById('refresh-btn').addEventListener('click', load);
+
+  function esc(s) {
+    return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  function fmt(d) {
+    if (!d) return '—';
+    return new Date(d + (d.includes('T') ? '' : 'Z')).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+  }
+
+  document.getElementById('logout-btn').addEventListener('click', async () => {
+    await fetch('/api/auth/logout', { method: 'POST' });
+    window.location.href = '/login';
+  });
+
+  load();
+</script>
+</body>
+</html>

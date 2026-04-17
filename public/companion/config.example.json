@@ -1,0 +1,14 @@
+{
+  "apiUrl": "https://your-textblast-server.com",
+  "apiKey": "tbk_your_api_key_here",
+
+  "mode": "single",
+
+  "paceSeconds": 30,
+
+  "pollIntervalSeconds": 10,
+
+  "port": 7777,
+
+  "service": "iMessage"
+}

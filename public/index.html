@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <!-- Google tag (gtag.js) -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-NKZFD2HBFH"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'G-NKZFD2HBFH');
+  </script>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Text Your List</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+<div class="layout">
+
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="sidebar-logo">
+      <h1>Text Your List</h1>
+      <span>Outreach platform</span>
+    </div>
+    <button class="nav-item" data-view="start">
+      <span class="icon">&#9654;</span> Getting Started
+    </button>
+    <button class="nav-item active" data-view="campaigns">
+      <span class="icon">&#9648;</span> Campaigns
+    </button>
+    <button class="nav-item" data-view="suppression">
+      <span class="icon">&#9711;</span> Suppression List
+    </button>
+    <button class="nav-item" data-view="keys">
+      <span class="icon">&#9670;</span> API Keys
+    </button>
+    <button class="nav-item" data-view="logs">
+      <span class="icon">&#9632;</span> Send Logs
+    </button>
+    <button class="nav-item" data-view="docs">
+      <span class="icon">&#9644;</span> API Docs
+    </button>
+  </aside>
+
+  <!-- Main -->
+  <main class="main" id="main">
+    <!-- Views injected by JS -->
+  </main>
+
+</div>
+
+<!-- Wizard overlay (injected by JS when needed) -->
+<div id="wizard-root"></div>
+
+<script src="/app.js"></script>
+</body>
+</html>
