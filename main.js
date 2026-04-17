@@ -7,6 +7,16 @@ const { autoUpdater } = require('electron-updater');
 
 app.setAppUserModelId('com.textyourlist.app');
 
+// Prevent multiple instances — second launch focuses the existing window instead
+const gotLock = app.requestSingleInstanceLock();
+if (!gotLock) {
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    if (mainWindow) { mainWindow.show(); mainWindow.focus(); }
+  });
+}
+
 let mainWindow = null;
 let tray = null;
 let serverProcess = null;

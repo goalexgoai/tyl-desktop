@@ -46,6 +46,21 @@ db.prepare = function(sql) {
   return wrap;
 };
 
+// Shim: better-sqlite3 db.transaction(fn) → returns a function that runs fn inside BEGIN/COMMIT
+db.transaction = function(fn) {
+  return function(...args) {
+    db.exec('BEGIN');
+    try {
+      const result = fn(...args);
+      db.exec('COMMIT');
+      return result;
+    } catch (err) {
+      try { db.exec('ROLLBACK'); } catch (_) {}
+      throw err;
+    }
+  };
+};
+
 db.exec(`
   CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
