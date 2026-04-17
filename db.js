@@ -7,14 +7,18 @@ const dbPath = process.env.TYL_DB_PATH || path.join(__dirname, 'tyl.db');
 fs.mkdirSync(path.dirname(dbPath), { recursive: true });
 
 function openDatabase(filePath) {
+  // Always remove stale WAL/SHM files before opening.
+  // A crashed session leaves these behind; SQLite treats them as an active lock.
+  // Committed transactions are already checkpointed into the main .db file.
+  for (const ext of ['-wal', '-shm']) {
+    try { fs.unlinkSync(filePath + ext); } catch (_) {}
+  }
   try {
     return new Database(filePath);
   } catch (e) {
-    // Database file corrupted — delete WAL/SHM files and retry with fresh database
+    // Database itself corrupted — wipe and start fresh
     console.error('[db] Failed to open database, resetting:', e.message);
-    for (const ext of ['', '-wal', '-shm']) {
-      try { fs.unlinkSync(filePath + ext); } catch (_) {}
-    }
+    try { fs.unlinkSync(filePath); } catch (_) {}
     return new Database(filePath);
   }
 }
