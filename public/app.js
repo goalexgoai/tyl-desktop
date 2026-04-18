@@ -26,7 +26,6 @@ const del    = (p) => api('DELETE', p);
 // ── State ──────────────────────────────────────────────────────────────────
 
 let currentView = 'send';
-let currentSendTab = 'quicksend';
 let monitorInterval = null;
 let currentUser = null;
 let setupPhoneType = null;
@@ -213,12 +212,6 @@ async function init() {
     updateUserBadge();
     updateSetupCheckmark();
 
-    // Show upgrade button in sidebar if not pro
-    if (currentUser.plan !== 'pro' && !currentUser.is_admin && !currentUser.manual_account) {
-      const upgradeBtn = document.getElementById('upgrade-sidebar-btn');
-      if (upgradeBtn) upgradeBtn.style.display = '';
-    }
-
     // Admin link — insert at top of sidebar-bottom (before Developer)
     if (currentUser.is_admin) {
       const adminLink = document.createElement('button');
@@ -269,25 +262,6 @@ async function init() {
     await post('/api/auth/logout');
     window.location.href = '/login';
   });
-
-  document.getElementById('account-btn').addEventListener('click', openAccountPanel);
-
-  const upgradeBtn = document.getElementById('upgrade-sidebar-btn');
-  if (upgradeBtn) upgradeBtn.addEventListener('click', () => navigate('billing'));
-
-  // In desktop mode, rename "Getting Started" to "Help"
-  if (window.electronAPI?.isDesktop) {
-    const setupBtn = document.getElementById('nav-setup-guide');
-    if (setupBtn) {
-      setupBtn.childNodes.forEach(node => {
-        if (node.nodeType === Node.TEXT_NODE && node.textContent.trim() === 'Getting Started') {
-          node.textContent = ' Help';
-        }
-      });
-    }
-    const checkmark = document.getElementById('setup-checkmark');
-    if (checkmark) checkmark.style.display = 'none';
-  }
 
   // Emoji bar — delegated click handler for dynamically rendered views
   document.getElementById('main').addEventListener('click', e => {
@@ -386,25 +360,31 @@ function navigate(view) {
 function render() {
   const main = document.getElementById('main');
   switch (currentView) {
-    case 'start':     renderGettingStarted(main); break;
-    case 'send':      renderSend(main); break;
-    case 'developer': renderDeveloper(main); break;
-    case 'billing':   renderBilling(main); break;
-    default:          main.innerHTML = '<div class="main-body">Not found</div>';
+    case 'send':        renderSend(main); break;
+    case 'quick-send':  renderQuickSendPage(main); break;
+    case 'contacts':    renderContactsPage(main); break;
+    case 'templates':   renderTemplatesPage(main); break;
+    case 'suppression': renderSuppressionPage(main); break;
+    case 'history':     renderHistoryPage(main); break;
+    case 'account':     renderAccount(main); break;
+    case 'developer':   renderDeveloper(main); break;
+    case 'help':        renderHelp(main); break;
+    case 'billing':     renderBilling(main); break;
+    case 'start':       renderGettingStarted(main); break;
+    default:            main.innerHTML = '<div class="main-body">Not found</div>';
   }
 }
 
-// ── Send page — tabs: Quick Send, Contacts, Suppression, Templates, History ──
+// ── Send Messages page (Bulk Send) ──────────────────────────────────────────
 
 function renderSend(main) {
   const u = currentUser;
-  const remaining = Math.max(0, u.monthly_limit - u.monthly_sends);
   const periodStart = new Date(u.period_start + 'T00:00:00Z');
   const daysUntilReset = Math.max(0, 30 - Math.floor((new Date() - periodStart) / (1000*60*60*24)));
 
   main.innerHTML = `
     <div class="main-header">
-      <h2>Send</h2>
+      <h2>Send Messages</h2>
       <div style="font-size:12.5px;color:var(--text-muted)">
         ${u.monthly_sends} / ${u.monthly_limit} sends &nbsp;&middot;&nbsp; resets in ${daysUntilReset} day${daysUntilReset===1?'':'s'}
       </div>
@@ -419,20 +399,56 @@ function renderSend(main) {
         <button class="btn btn-ghost btn-sm" style="color:var(--danger)" onclick="cancelApiMessages()">Cancel all</button>
       </div>
     </div>` : ''}
-    <div class="main-body">
-      <div class="send-tabs">
-        <button class="send-tab ${currentSendTab==='quicksend'?'active':''}" onclick="switchSendTab('quicksend')">Quick Send</button>
-        <button class="send-tab ${currentSendTab==='bulksend'?'active':''}" onclick="switchSendTab('bulksend')">Bulk Send</button>
-        <button class="send-tab ${currentSendTab==='contacts'?'active':''}" onclick="switchSendTab('contacts')">Contacts</button>
-        <button class="send-tab ${currentSendTab==='suppression'?'active':''}" onclick="switchSendTab('suppression')">Suppression</button>
-        <button class="send-tab ${currentSendTab==='templates'?'active':''}" onclick="switchSendTab('templates')">Templates</button>
-        <button class="send-tab ${currentSendTab==='history'?'active':''}" onclick="switchSendTab('history')">History</button>
-      </div>
-      <div id="send-tab-body"></div>
-    </div>`;
+    <div class="main-body"><div id="send-body"></div></div>`;
 
-  renderSendTab();
+  renderBulkSend(document.getElementById('send-body'));
   checkCompanionBanner();
+}
+
+// ── Per-view page wrappers (promote tabs to top-level nav) ──────────────────
+
+function renderQuickSendPage(main) {
+  const u = currentUser;
+  const periodStart = new Date(u.period_start + 'T00:00:00Z');
+  const daysUntilReset = Math.max(0, 30 - Math.floor((new Date() - periodStart) / (1000*60*60*24)));
+  main.innerHTML = `
+    <div class="main-header">
+      <h2>Quick Send</h2>
+      <div style="font-size:12.5px;color:var(--text-muted)">${u.monthly_sends} / ${u.monthly_limit} sends &nbsp;&middot;&nbsp; resets in ${daysUntilReset} day${daysUntilReset===1?'':'s'}</div>
+    </div>
+    <div class="main-body"><div id="send-body"></div></div>`;
+  renderQuickSend(document.getElementById('send-body'));
+}
+
+function renderContactsPage(main) {
+  main.innerHTML = `
+    <div class="main-header"><h2>Contact Lists</h2></div>
+    <div class="main-body"><div id="send-body"></div></div>`;
+  renderContacts(document.getElementById('send-body'));
+}
+
+function renderTemplatesPage(main) {
+  main.innerHTML = `
+    <div class="main-header"><h2>Message Templates</h2></div>
+    <div class="main-body"><div id="send-body"></div></div>`;
+  renderTemplatesTab(document.getElementById('send-body'));
+}
+
+function renderSuppressionPage(main) {
+  main.innerHTML = `
+    <div class="main-header">
+      <h2>Suppression List</h2>
+      <div style="font-size:13px;color:var(--text-muted)">Numbers on this list are automatically skipped during bulk sends.</div>
+    </div>
+    <div class="main-body"><div id="send-body"></div></div>`;
+  renderSuppressionTab(document.getElementById('send-body'));
+}
+
+async function renderHistoryPage(main) {
+  main.innerHTML = `
+    <div class="main-header"><h2>Send History</h2></div>
+    <div class="main-body"><div id="send-body"></div></div>`;
+  renderHistoryTab(document.getElementById('send-body'));
 }
 
 async function checkCompanionBanner() {
@@ -449,32 +465,10 @@ async function checkCompanionBanner() {
       el.innerHTML = `<div style="background:#fef3c7;border:1px solid #fbbf24;border-radius:8px;padding:10px 16px;margin:0 0 12px;font-size:13.5px;display:flex;align-items:center;gap:10px">
         <span style="font-size:16px">&#9888;</span>
         <span><strong>Companion app not connected.</strong> Your messages are queued but won't send until your companion app is open and running.
-        <a href="#" onclick="navigate('start');return false" style="color:var(--accent);text-decoration:underline">Go to Getting Started</a> to download it.</span>
+        <a href="#" onclick="navigate('help');return false" style="color:var(--accent);text-decoration:underline">Go to Help</a> to download it.</span>
       </div>`;
     }
   } catch (e) { /* ignore */ }
-}
-
-function switchSendTab(tab) {
-  currentSendTab = tab;
-  const tabMap = { 'Quick Send': 'quicksend', 'Bulk Send': 'bulksend', 'Contacts': 'contacts', 'Suppression': 'suppression', 'Templates': 'templates', 'History': 'history' };
-  document.querySelectorAll('.send-tab').forEach(el => {
-    el.classList.toggle('active', tabMap[el.textContent.trim()] === tab);
-  });
-  renderSendTab();
-}
-
-function renderSendTab() {
-  const body = document.getElementById('send-tab-body');
-  if (!body) return;
-  switch (currentSendTab) {
-    case 'quicksend':   renderQuickSend(body); break;
-    case 'bulksend':    renderBulkSend(body); break;
-    case 'contacts':    renderContacts(body); break;
-    case 'suppression': renderSuppressionTab(body); break;
-    case 'templates':   renderTemplatesTab(body); break;
-    case 'history':     renderHistoryTab(body); break;
-  }
 }
 
 // ── Quick Send ────────────────────────────────────────────────────────────
@@ -651,7 +645,7 @@ async function loadTemplateIntoTextarea(textareaId) {
       <div style="text-align:center;padding:24px 0;color:var(--text-muted)">
         <div style="font-size:32px;margin-bottom:12px">&#9644;</div>
         <p style="margin-bottom:16px;font-size:13.5px">You haven't saved any templates yet.</p>
-        <button class="btn btn-primary" onclick="document.getElementById('wizard-root').innerHTML='';switchSendTab('templates');setTimeout(()=>openTemplateEditor(),100)">+ Create your first template</button>
+        <button class="btn btn-primary" onclick="document.getElementById('wizard-root').innerHTML='';navigate('templates');setTimeout(()=>openTemplateEditor(),100)">+ Create your first template</button>
       </div>
       <div style="text-align:right;margin-top:16px">
         <button class="btn btn-ghost" onclick="document.getElementById('wizard-root').innerHTML=''">Cancel</button>
@@ -1115,8 +1109,7 @@ async function renderBulkSend(body) {
       }
       currentUser = await get('/api/auth/me');
       updateUserBadge();
-      currentSendTab = 'history';
-      navigate('send');
+      navigate('history');
       setTimeout(() => openJobDetail(result.job_id), 300);
     } catch (err) {
       alertEl.innerHTML = `<div class="alert alert-error">${escHtml(err.message)}${err.data&&err.data.upgrade?' <button class="btn btn-primary btn-sm" onclick="navigate(\'billing\')">Upgrade</button>':''}</div>`;
@@ -1617,7 +1610,6 @@ function openListUpload() {
 async function sendFromList(listId) {
   // Navigate to bulk send pre-loaded with this list
   window.pendingBulkListId = listId;
-  currentSendTab = 'bulksend';
   navigate('send');
 }
 
@@ -1728,8 +1720,7 @@ async function loadSuppressionList() {
 async function removeSuppressed(phone) {
   if (!confirm(`Remove ${phone} from suppression list?`)) return;
   await del(`/api/suppression/${encodeURIComponent(phone)}`);
-  renderSend(document.getElementById('main'));
-  setTimeout(() => { currentSendTab = 'suppression'; renderSendTab(); }, 50);
+  navigate('suppression');
 }
 
 // ── Templates tab ─────────────────────────────────────────────────────────
@@ -1905,7 +1896,6 @@ function viewTemplate(name, body) {
 }
 
 function openTemplateInBulkSend(body) {
-  currentSendTab = 'bulksend';
   navigate('send');
   // After bulk send tab renders, fill message and show contact-list prompt
   setTimeout(() => {
@@ -1940,7 +1930,7 @@ async function renderHistoryTab(body) {
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
       <h3 style="font-size:15px;font-weight:700">Campaign History</h3>
       <div style="display:flex;gap:8px">
-        <button class="btn btn-primary btn-sm" onclick="switchSendTab('bulksend')">+ New campaign</button>
+        <button class="btn btn-primary btn-sm" onclick="navigate('send')">+ New campaign</button>
         <button class="btn btn-ghost btn-sm" id="hist-refresh">Refresh</button>
       </div>
     </div>
@@ -2027,8 +2017,7 @@ async function openJobDetail(jobId) {
     <div id="job-detail">Loading...</div>
   </div>`;
   document.getElementById('btn-back').addEventListener('click', () => {
-    currentSendTab = 'history';
-    navigate('send');
+    navigate('history');
   });
   await refreshJobDetail(jobId);
   monitorInterval = setInterval(() => refreshJobDetail(jobId), 4000);
@@ -2141,101 +2130,26 @@ async function renderDeveloper(main) {
       </div>
       <div class="card" id="keys-list" style="margin-bottom:32px">Loading...</div>
 
-      <!-- API Docs section — Change 4 -->
-      <h3 style="font-size:16px;font-weight:700;margin-bottom:16px">API Documentation</h3>
-
-      <!-- Companion requirement note — hidden in desktop mode -->
-      ${window.electronAPI?.isDesktop ? '' : `<div class="api-companion-note" style="margin-bottom:16px">
-        <strong>Important:</strong> Your Text Your List companion app must be open and running on your computer for messages to send. Messages queue up on the server and are delivered when your companion is active.
-      </div>`}
-
-      <!-- API Send endpoint -->
-      <div class="api-endpoint-box" style="margin-bottom:16px">
-        <div style="font-size:12px;font-weight:700;color:#92400e;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px">Your send endpoint — paste this into Make, Zapier, or any HTTP tool</div>
-        <div style="display:flex;align-items:center;gap:10px">
-          <div class="api-endpoint-url">POST https://app.textyourlist.com/api/make/send</div>
-          <button class="btn btn-ghost btn-sm" onclick="copyText('https://app.textyourlist.com/api/make/send');showToast('Copied!')">Copy</button>
-        </div>
-        ${!isProOrAdmin ? `<div style="margin-top:10px;font-size:12.5px;color:#b45309;font-weight:600">API send access requires Pro plan. <button class="btn btn-primary btn-sm" onclick="navigate('billing')">Upgrade to Pro</button></div>` : ''}
-      </div>
-
+      <!-- API Docs — link to web -->
       <div class="card" style="margin-bottom:16px">
-        <div class="card-header"><h3>Authentication</h3></div>
+        <div class="card-header"><h3>API Documentation</h3></div>
         <div class="card-body">
-          <p style="color:var(--text-muted);margin-bottom:10px">All API endpoints require a Bearer token. Create keys above.</p>
-          <div class="code-block-wrap">
-            <div class="code-block">Authorization: Bearer <span style="background:#fffbeb;padding:1px 4px;border-radius:3px;color:#b45309">tbk_your_api_key_here</span></div>
-            <button class="code-copy-btn" onclick="copyText('Authorization: Bearer tbk_your_api_key_here');showToast('Copied!')">Copy</button>
-          </div>
-        </div>
-      </div>
-
-      <div class="card" style="margin-bottom:16px">
-        <div class="card-header"><h3>Send a single message (Pro plan required)</h3></div>
-        <div class="card-body">
-          <div class="code-block-wrap">
-            <pre class="code-block"><code>POST https://app.textyourlist.com/api/make/send
-Authorization: Bearer <span style="background:#fffbeb;padding:1px 4px;border-radius:3px;color:#b45309">tbk_your_api_key_here</span>
-Content-Type: application/json
-
-{
-  "phone": "<span style="background:#fffbeb;padding:1px 4px;border-radius:3px;color:#b45309">+15555555555</span>",
-  "message": "Hi! Your appointment is confirmed."
-}
-
-// Response:
-{ "job_id": "...", "message_id": "...", "status": "queued" }</code></pre>
-            <button class="code-copy-btn" onclick="copyText('POST https://app.textyourlist.com/api/make/send\nAuthorization: Bearer tbk_your_api_key_here\nContent-Type: application/json\n\n{\"phone\": \"+15555555555\", \"message\": \"Hi! Your appointment is confirmed.\"}');showToast('Copied!')">Copy</button>
-          </div>
-        </div>
-      </div>
-
-      <div class="card" style="margin-bottom:16px">
-        <div class="card-header"><h3>How API messages are handled</h3></div>
-        <div class="card-body">
-          <p style="color:var(--text-muted);margin-bottom:10px">When a message arrives via API, the app needs to be open and your phone tunnel must be connected before it can send. Here is what happens depending on your settings:</p>
-          <ul style="color:var(--text-muted);font-size:13.5px;line-height:1.7;padding-left:18px;margin-bottom:10px">
-            <li><strong>Hold for approval (default)</strong> — the message is saved to your queue and held. The next time you open the app, you will see a banner letting you choose: send now (fast), send with Smart Throttle (randomized 20–27s), or cancel.</li>
-            <li><strong>Send automatically — fast</strong> — the message is queued immediately and sent as soon as the app is open and the phone is connected. Use this if your middleware (e.g. Make) is already handling timing.</li>
-            <li><strong>Send automatically — Smart Throttle</strong> — randomized 20–27s delay between sends to mimic natural human timing. Good for batches where you want extra protection for your number.</li>
-          </ul>
-          <p style="color:var(--text-muted);font-size:13px">Change your default in <strong>Account &rarr; API Send Default</strong> (Pro plan). Messages that arrive while the app is closed are always stored safely and processed on the next open.</p>
-        </div>
-      </div>
-
-      ${window.electronAPI?.isDesktop ? '' : `<div class="card" style="margin-bottom:16px">
-        <div class="card-header"><h3>Companion Poll &amp; Ack</h3></div>
-        <div class="card-body">
-          <p style="color:var(--text-muted);margin-bottom:12px">The companion calls GET /api/poll to claim the next message, then POST /api/ack to report the result.</p>
-          <div class="code-block-wrap">
-            <pre class="code-block"><code>GET /api/poll
-Authorization: Bearer <span style="background:#fffbeb;padding:1px 4px;border-radius:3px;color:#b45309">tbk_your_api_key_here</span>
-// Returns: { message: { id, phone, body } } or { message: null }
-
-POST /api/ack
-Authorization: Bearer <span style="background:#fffbeb;padding:1px 4px;border-radius:3px;color:#b45309">tbk_your_api_key_here</span>
-{ "message_id": "...", "status": "sent" }
-{ "message_id": "...", "status": "failed", "error": "reason" }</code></pre>
-            <button class="code-copy-btn" onclick="copyText('GET /api/poll\\nAuthorization: Bearer tbk_your_api_key_here');showToast('Copied!')">Copy</button>
-          </div>
-        </div>
-      </div>`}
-
-      <div class="card">
-        <div class="card-header"><h3>Suppression list</h3></div>
-        <div class="card-body">
-          <div class="code-block-wrap">
-            <pre class="code-block"><code>POST /api/suppression
-Authorization: Bearer <span style="background:#fffbeb;padding:1px 4px;border-radius:3px;color:#b45309">tbk_your_api_key_here</span>
-{ "phone": "<span style="background:#fffbeb;padding:1px 4px;border-radius:3px;color:#b45309">+15555555555</span>", "reason": "Opt-out" }
-
-DELETE /api/suppression/%2B15555555555</code></pre>
-            <button class="code-copy-btn" onclick="copyText('POST /api/suppression\nAuthorization: Bearer tbk_your_api_key_here\n{\"phone\": \"+15555555555\", \"reason\": \"Opt-out\"}');showToast('Copied!')">Copy</button>
-          </div>
+          <p style="font-size:13.5px;color:var(--text-muted);margin-bottom:16px">Full API documentation, example payloads, and Make/Zapier integration guides are on our website.</p>
+          <button class="btn btn-ghost" id="dev-docs-btn">View API Docs &rarr;</button>
         </div>
       </div>
 
     </div>`;
+
+  // Wire docs link
+  const docsBtn = document.getElementById('dev-docs-btn');
+  if (docsBtn) {
+    docsBtn.addEventListener('click', () => {
+      const url = 'https://textyourlist.com/help/api';
+      if (window.electronAPI?.openExternal) window.electronAPI.openExternal(url);
+      else window.open(url, '_blank');
+    });
+  }
 
   // Load keys
   loadKeys();
@@ -3181,8 +3095,7 @@ function openWizard(prefillCsv) {
         currentUser = await get('/api/auth/me');
         updateUserBadge();
         closeWizard();
-        currentSendTab = 'history';
-        navigate('send');
+        navigate('history');
         setTimeout(() => openJobDetail(result.job_id), 300);
       } catch (err) {
         const alertEl = document.getElementById('step4-alert');
@@ -3208,14 +3121,10 @@ function closeWizard() {
   document.getElementById('wizard-root').innerHTML = '';
 }
 
-// ── Account panel — Change 10 ─────────────────────────────────────────────
+// ── Account Settings (full view) ───────────────────────────────────────────
 
-function openAccountPanel() {
+function renderAccount(main) {
   const u = currentUser;
-  const panel = document.getElementById('account-panel');
-  const overlay = document.getElementById('account-panel-overlay');
-  if (!panel || !overlay) return;
-
   const planInfo = (() => {
     if (u.subscription_status === 'active' && u.billing_period_end) {
       const interval = u.billing_interval === 'annual' ? 'billed annually' : 'billed monthly';
@@ -3229,88 +3138,112 @@ function openAccountPanel() {
     return `<div style="font-size:13.5px;color:var(--text-muted)">${u.plan_label}</div>`;
   })();
 
-  panel.innerHTML = `
-    <button class="account-panel-close" onclick="closeAccountPanel()">&times;</button>
-    <h2 style="font-size:18px;font-weight:700;margin-bottom:24px">Account</h2>
+  main.innerHTML = `
+    <div class="main-header"><h2>Account Settings</h2></div>
+    <div class="main-body">
 
-    <div class="account-panel-section">
-      <h3>Plan &amp; Billing</h3>
-      ${planInfo}
-      <div style="margin-top:10px">
-        <div style="font-size:13px;color:var(--text-muted)">Sends: ${u.monthly_sends} / ${u.monthly_limit} this period</div>
-        <div class="progress-bar" style="margin-top:6px">
-          <div class="progress-fill" style="width:${Math.min(100, Math.round(u.monthly_sends/u.monthly_limit*100))}%"></div>
+      <div class="card" style="max-width:560px;margin-bottom:20px">
+        <div class="card-header"><h3>Plan &amp; Billing</h3></div>
+        <div class="card-body">
+          ${planInfo}
+          <div style="margin-top:10px">
+            <div style="font-size:13px;color:var(--text-muted)">Sends: ${u.monthly_sends} / ${u.monthly_limit} this period</div>
+            <div class="progress-bar" style="margin-top:6px">
+              <div class="progress-fill" style="width:${Math.min(100, Math.round(u.monthly_sends/u.monthly_limit*100))}%"></div>
+            </div>
+          </div>
+          <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap">
+            ${u.plan !== 'pro' && !u.is_admin && !u.manual_account ? `<button class="btn btn-primary btn-sm" id="acct-upgrade-btn">Upgrade Plan</button>` : ''}
+            ${u.plan !== 'free' ? `<button class="btn btn-ghost btn-sm" id="acct-manage-billing">Manage Billing</button>` : ''}
+            ${u.subscription_status === 'active' && u.plan !== 'free' ? `<button class="btn btn-ghost btn-sm" id="acct-cancel-sub" style="color:var(--danger)">Cancel Subscription</button>` : ''}
+          </div>
         </div>
       </div>
-      <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap">
-        ${u.plan !== 'pro' && !u.is_admin && !u.manual_account ? `<button class="btn btn-primary btn-sm" onclick="closeAccountPanel();navigate('billing')">Upgrade Plan</button>` : ''}
-        ${u.plan !== 'free' ? `<button class="btn btn-ghost btn-sm" id="panel-manage-billing">Manage Billing</button>` : ''}
-      </div>
-    </div>
 
-    <div class="account-panel-section">
-      <h3>Account Settings</h3>
-      <div style="font-size:13.5px;color:var(--text-muted);margin-bottom:14px">${escHtml(u.email)}</div>
-      <div id="chpw-alert"></div>
-      <div class="form-row">
-        <label>Current Password</label>
-        <input type="password" id="chpw-current" placeholder="Current password" />
+      <div class="card" style="max-width:560px;margin-bottom:20px">
+        <div class="card-header"><h3>Account</h3></div>
+        <div class="card-body">
+          <div style="font-size:13.5px;color:var(--text-muted);margin-bottom:14px">${escHtml(u.email)}</div>
+          <div id="chpw-alert"></div>
+          <div class="form-row">
+            <label>Current Password</label>
+            <input type="password" id="chpw-current" placeholder="Current password" style="max-width:320px" />
+          </div>
+          <div class="form-row">
+            <label>New Password</label>
+            <input type="password" id="chpw-new" placeholder="New password (8+ chars, letter, number, special)" style="max-width:320px" />
+          </div>
+          <button class="btn btn-ghost btn-sm" id="chpw-save">Change Password</button>
+        </div>
       </div>
-      <div class="form-row">
-        <label>New Password</label>
-        <input type="password" id="chpw-new" placeholder="New password (8+ chars, letter, number, special)" />
-      </div>
-      <button class="btn btn-ghost btn-sm" id="chpw-save">Change Password</button>
-    </div>
 
-    ${(u.plan === 'pro' || u.is_admin || u.manual_account) ? `
-    <div class="account-panel-section">
-      <h3>API Send Default <span style="font-size:11px;font-weight:500;background:var(--accent-light,#e8f0ff);color:var(--accent);padding:2px 7px;border-radius:10px;margin-left:6px">Pro</span></h3>
-      <p style="font-size:13px;color:var(--text-muted);margin-bottom:12px">When a message arrives via API (Make, Zapier, HTTP), how should it be handled?</p>
-      <div id="api-pace-alert"></div>
-      <div style="display:flex;flex-direction:column;gap:10px">
-        <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer">
-          <input type="radio" name="api_pace" value="null" style="margin-top:3px" ${u.api_default_pace == null ? 'checked' : ''}>
-          <span>
-            <strong style="font-size:13.5px">Hold for approval</strong>
-            <div style="font-size:12.5px;color:var(--text-muted)">Message waits in queue — you choose send now, drip, or cancel</div>
-          </span>
-        </label>
-        <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer">
-          <input type="radio" name="api_pace" value="0" style="margin-top:3px" ${u.api_default_pace === 0 ? 'checked' : ''}>
-          <span>
-            <strong style="font-size:13.5px">Send automatically — fast</strong>
-            <div style="font-size:12.5px;color:var(--text-muted)">Queued immediately when app is open and phone is connected</div>
-          </span>
-        </label>
-        <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer">
-          <input type="radio" name="api_pace" value="20" style="margin-top:3px" ${(u.api_default_pace === 20 || u.api_default_pace === 15) ? 'checked' : ''}>
-          <span>
-            <strong style="font-size:13.5px">Send automatically — Smart Throttle</strong>
-            <div style="font-size:12.5px;color:var(--text-muted)">Randomized 20–27s delay between sends to mimic natural timing</div>
-          </span>
-        </label>
-      </div>
-      <button class="btn btn-ghost btn-sm" id="save-api-pace" style="margin-top:14px">Save</button>
-    </div>` : ''}
+      ${(u.plan === 'pro' || u.is_admin || u.manual_account) ? `
+      <div class="card" style="max-width:560px;margin-bottom:20px">
+        <div class="card-header"><h3>API Send Default <span style="font-size:11px;font-weight:500;background:var(--accent-light,#e8f0ff);color:var(--accent);padding:2px 7px;border-radius:10px;margin-left:6px">Pro</span></h3></div>
+        <div class="card-body">
+          <p style="font-size:13px;color:var(--text-muted);margin-bottom:12px">When a message arrives via API (Make, Zapier, HTTP), how should it be handled?</p>
+          <div id="api-pace-alert"></div>
+          <div style="display:flex;flex-direction:column;gap:10px">
+            <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer">
+              <input type="radio" name="api_pace" value="null" style="margin-top:3px" ${u.api_default_pace == null ? 'checked' : ''}>
+              <span>
+                <strong style="font-size:13.5px">Hold for approval</strong>
+                <div style="font-size:12.5px;color:var(--text-muted)">Message waits in queue — you choose send now, drip, or cancel</div>
+              </span>
+            </label>
+            <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer">
+              <input type="radio" name="api_pace" value="0" style="margin-top:3px" ${u.api_default_pace === 0 ? 'checked' : ''}>
+              <span>
+                <strong style="font-size:13.5px">Send automatically — fast</strong>
+                <div style="font-size:12.5px;color:var(--text-muted)">Queued immediately when app is running</div>
+              </span>
+            </label>
+            <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer">
+              <input type="radio" name="api_pace" value="20" style="margin-top:3px" ${(u.api_default_pace === 20 || u.api_default_pace === 15) ? 'checked' : ''}>
+              <span>
+                <strong style="font-size:13.5px">Send automatically — Smart Throttle</strong>
+                <div style="font-size:12.5px;color:var(--text-muted)">Randomized 20–27s delay between sends to mimic natural timing</div>
+              </span>
+            </label>
+          </div>
+          <button class="btn btn-ghost btn-sm" id="save-api-pace" style="margin-top:14px">Save</button>
+        </div>
+      </div>` : ''}
 
-    <div class="account-panel-section">
-      <h3>Support</h3>
-      <a href="mailto:support@textyourlist.com" class="btn btn-ghost btn-sm">Contact Support</a>
     </div>`;
 
-  overlay.style.display = 'block';
-  panel.style.display = 'block';
+  const upgBtn = document.getElementById('acct-upgrade-btn');
+  if (upgBtn) {
+    upgBtn.addEventListener('click', () => {
+      if (window.electronAPI?.openBilling) window.electronAPI.openBilling();
+      else navigate('billing');
+    });
+  }
 
-  const manageBillingBtn = document.getElementById('panel-manage-billing');
+  const manageBillingBtn = document.getElementById('acct-manage-billing');
   if (manageBillingBtn) {
     manageBillingBtn.addEventListener('click', async () => {
       try {
         const result = await post('/billing/portal', {});
-        if (result.url) window.location.href = result.url;
-      } catch (err) {
-        alert(err.message);
-      }
+        if (result.url) {
+          if (window.electronAPI?.openExternal) window.electronAPI.openExternal(result.url);
+          else window.location.href = result.url;
+        }
+      } catch (err) { alert(err.message); }
+    });
+  }
+
+  const cancelBtn = document.getElementById('acct-cancel-sub');
+  if (cancelBtn) {
+    cancelBtn.addEventListener('click', async () => {
+      if (!confirm('Cancel your subscription? You\'ll keep access until the end of your billing period.')) return;
+      try {
+        await post('/billing/cancel', {});
+        currentUser = await get('/api/auth/me');
+        updateUserBadge();
+        renderAccount(document.getElementById('main'));
+        showToast('Subscription cancelled.');
+      } catch (err) { alert(err.message); }
     });
   }
 
@@ -3338,11 +3271,7 @@ function openAccountPanel() {
       alertEl.innerHTML = '';
       const pace = selected.value === 'null' ? null : parseInt(selected.value, 10);
       try {
-        await fetch('/api/user/settings', {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ api_default_pace: pace }),
-        }).then(r => r.json());
+        await patch('/api/user/settings', { api_default_pace: pace });
         alertEl.innerHTML = '<div class="alert alert-success">Saved.</div>';
         currentUser.api_default_pace = pace;
       } catch (err) {
@@ -3352,9 +3281,56 @@ function openAccountPanel() {
   }
 }
 
-function closeAccountPanel() {
-  document.getElementById('account-panel').style.display = 'none';
-  document.getElementById('account-panel-overlay').style.display = 'none';
+// ── Help ───────────────────────────────────────────────────────────────────
+
+function renderHelp(main) {
+  main.innerHTML = `
+    <div class="main-header"><h2>Help</h2></div>
+    <div class="main-body">
+      <div class="card" style="max-width:560px;margin-bottom:20px">
+        <div class="card-header"><h3>Support</h3></div>
+        <div class="card-body">
+          <p style="font-size:14px;margin-bottom:16px">Have a question or issue? Our support team is here to help.</p>
+          <div style="display:flex;gap:10px;flex-wrap:wrap">
+            <a href="mailto:support@textyourlist.com" class="btn btn-primary">Email Support</a>
+            <button class="btn btn-ghost" id="help-docs-btn">View Documentation</button>
+          </div>
+        </div>
+      </div>
+      <div class="card" style="max-width:560px;margin-bottom:20px">
+        <div class="card-header"><h3>Quick Tips</h3></div>
+        <div class="card-body" style="font-size:13.5px;line-height:1.6;display:flex;flex-direction:column;gap:12px">
+          <div><strong>Daily send limit</strong><br>We recommend sending no more than 200 texts per day to protect your phone number from spam filters.</div>
+          <div><strong>Merge fields</strong><br>Use <code>{first_name}</code>, <code>{last_name}</code>, or any CSV column in your message to personalize each text.</div>
+          <div><strong>Suppression list</strong><br>Numbers on your suppression list are automatically skipped in all bulk sends.</div>
+          <div><strong>Quick Send</strong><br>Use Quick Send to send a one-off test message to a single number before doing a bulk send.</div>
+        </div>
+      </div>
+      <div class="card" style="max-width:560px">
+        <div class="card-header"><h3>About</h3></div>
+        <div class="card-body" style="font-size:13.5px;color:var(--text-muted)">
+          Text Your List schedules messages sent from your own device. You are responsible for compliance with applicable messaging laws.
+          <div style="margin-top:12px;display:flex;gap:12px">
+            <button class="btn btn-ghost btn-sm js-help-ext" data-url="https://textyourlist.com/terms">Terms of Use</button>
+            <button class="btn btn-ghost btn-sm js-help-ext" data-url="https://textyourlist.com/privacy">Privacy Policy</button>
+          </div>
+        </div>
+      </div>
+    </div>`;
+
+  document.getElementById('help-docs-btn').addEventListener('click', () => {
+    const url = 'https://textyourlist.com/help';
+    if (window.electronAPI?.openExternal) window.electronAPI.openExternal(url);
+    else window.open(url, '_blank');
+  });
+
+  main.querySelectorAll('.js-help-ext').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const url = btn.dataset.url;
+      if (window.electronAPI?.openExternal) window.electronAPI.openExternal(url);
+      else window.open(url, '_blank');
+    });
+  });
 }
 
 // ── Init ──────────────────────────────────────────────────────────────────

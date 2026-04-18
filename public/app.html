@@ -35,29 +35,44 @@
       <span id="user-plan-label">Loading...</span>
     </div>
 
-    <!-- Main nav: Account first, then Getting Started, Send -->
-    <button class="nav-item" id="account-btn">
-      <span class="icon">&#9711;</span> Account
-    </button>
-
-    <button class="nav-item" data-view="start" id="nav-setup-guide">
-      <span class="icon">&#9733;</span> Getting Started
-      <span id="setup-checkmark" style="display:none;color:#16a34a;margin-left:auto;font-size:13px">&#10003;</span>
-    </button>
-
+    <!-- Main nav -->
     <button class="nav-item active" data-view="send">
-      <span class="icon">&#9648;</span> Send
+      <span class="icon">&#9654;</span> Send Messages
+    </button>
+
+    <button class="nav-item" data-view="quick-send">
+      <span class="icon">&#9993;</span> Quick Send
+    </button>
+
+    <button class="nav-item" data-view="contacts">
+      <span class="icon">&#9776;</span> Contact Lists
+    </button>
+
+    <button class="nav-item" data-view="templates">
+      <span class="icon">&#9741;</span> Message Templates
+    </button>
+
+    <button class="nav-item" data-view="suppression">
+      <span class="icon">&#128683;</span> Suppression List
+    </button>
+
+    <button class="nav-item" data-view="history">
+      <span class="icon">&#128337;</span> Send History
     </button>
 
     <div style="flex:1"></div>
 
-    <!-- Bottom section: Developer, Upgrade, Log out -->
+    <!-- Bottom section -->
     <div class="sidebar-bottom">
-      <button class="nav-item" data-view="developer">
+      <div class="sidebar-divider"></div>
+      <button class="nav-item" data-view="account">
+        <span class="icon">&#9881;</span> Account Settings
+      </button>
+      <button class="nav-item" data-view="developer" id="nav-developer">
         <span class="icon">&#9670;</span> Developer
       </button>
-      <button class="nav-item" id="upgrade-sidebar-btn" data-view="billing" style="display:none">
-        <span class="icon">&#9650;</span> Upgrade
+      <button class="nav-item" data-view="help">
+        <span class="icon">&#63;</span> Help
       </button>
       <button class="nav-item" id="logout-btn">
         <span class="icon">&#8594;</span> Log out
@@ -70,12 +85,6 @@
     <!-- Views injected by JS -->
   </main>
 
-</div>
-
-<!-- Account panel overlay -->
-<div id="account-panel-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.3);z-index:200" onclick="closeAccountPanel()"></div>
-<div id="account-panel" style="display:none;position:fixed;top:0;right:0;width:380px;max-width:100vw;height:100vh;background:#fff;box-shadow:-4px 0 24px rgba(0,0,0,0.12);z-index:201;overflow-y:auto;padding:28px 28px 40px">
-  <!-- injected by JS -->
 </div>
 
 <!-- App footer disclaimer -->
