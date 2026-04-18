@@ -82,7 +82,18 @@ async function startServer() {
   serverPort = port;
 
   const dbPath = path.join(app.getPath('userData'), 'tyl.db');
-  const serverPath = path.join(__dirname, 'server.js');
+
+  // When packaged, files land in app.asar (virtual) but __dirname points into it.
+  // spawn()'s cwd must be a real OS directory — app.asar is a file, not a dir.
+  // Use the unpacked sibling directory when packaged; fall back to __dirname in dev.
+  let serverDir, serverPath;
+  if (app.isPackaged) {
+    serverDir = path.join(process.resourcesPath, 'app.asar.unpacked');
+    serverPath = path.join(serverDir, 'server.js');
+  } else {
+    serverDir = __dirname;
+    serverPath = path.join(__dirname, 'server.js');
+  }
 
   const env = {
     ...process.env,
@@ -94,7 +105,7 @@ async function startServer() {
 
   serverProcess = spawn(process.execPath, [serverPath], {
     env,
-    cwd: __dirname,
+    cwd: serverDir,
     stdio: ['ignore', 'pipe', 'pipe'],
   });
 
