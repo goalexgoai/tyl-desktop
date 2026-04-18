@@ -263,4 +263,14 @@ try {
   db.exec(`ALTER TABLE users ADD COLUMN last_web_auth_at TEXT`);
 } catch (_) {}
 
+// Stable remote user ID — allows upsert by web identity rather than email
+try {
+  db.exec(`ALTER TABLE users ADD COLUMN web_user_id INTEGER`);
+} catch (_) {}
+
+// Offline grace password hash — local bcrypt hash stored on successful web auth for offline validation
+try {
+  db.exec(`ALTER TABLE users ADD COLUMN offline_hash TEXT`);
+} catch (_) {}
+
 module.exports = db;
