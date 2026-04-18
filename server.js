@@ -432,7 +432,7 @@ function validatePassword(password) {
   return null;
 }
 
-const normalizeIp = (ip) => (ip || '').replace(/^::ffff:/, '');
+const normalizeIp = (ip) => (ip || '').replace(/^::ffff:/, '').replace(/^::1$/, '127.0.0.1');
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 20,
