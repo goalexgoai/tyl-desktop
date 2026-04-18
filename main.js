@@ -123,23 +123,33 @@ async function startServer() {
     stdio: ['ignore', 'pipe', 'pipe'],
   });
 
+  let serverLog = '';
   serverProcess.stdout.on('data', (d) => {
     const text = d.toString();
+    serverLog += text;
     const trayMatch = text.match(/__TRAY:(\w+)__/);
     if (trayMatch) setTrayStatus(trayMatch[1]);
     const logLine = text.replace(/__TRAY:\w+__\n?/g, '').trim();
     if (logLine) console.log('[server]', logLine);
   });
-  serverProcess.stderr.on('data', (d) => console.error('[server]', d.toString().trim()));
+  serverProcess.stderr.on('data', (d) => {
+    serverLog += d.toString();
+    console.error('[server]', d.toString().trim());
+  });
 
   serverProcess.on('exit', (code) => {
     console.log(`[server] exited with code ${code}`);
     if (mainWindow && !app.isQuitting) {
-      mainWindow.loadURL(`data:text/html,<h2>Server stopped unexpectedly (code ${code}). Restart the app.</h2>`);
+      mainWindow.loadURL(`data:text/html,<h2>Server stopped (code ${code}). Restart the app.</h2>`);
     }
   });
 
-  await waitForServer(port);
+  try {
+    await waitForServer(port);
+  } catch (timeoutErr) {
+    serverProcess.kill();
+    throw new Error('Server startup timeout.\n\nServer output:\n' + (serverLog.trim() || '(none)'));
+  }
   serverReady = true;
   console.log(`[main] server ready on port ${port}`);
   return port;
