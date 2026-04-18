@@ -852,6 +852,7 @@ async function renderBulkSend(body) {
         autoDetectColumns(bsState);
         document.getElementById('bs-csv-status').innerHTML = `<div class="alert alert-success" style="margin:0">&#10003; List "${escHtml(list.name)}" loaded — ${list.row_count} contacts</div>`;
         updateMergeChips('bs-message', bsState.columnMap);
+        refreshBsPreview();
         const nameEl = document.getElementById('bs-campaign-name');
         if (nameEl && !nameEl.value) nameEl.value = list.name + ' — ' + new Date().toLocaleDateString();
         updateEstimate();
@@ -881,15 +882,11 @@ async function renderBulkSend(body) {
   // Character count + identical warning
   const msgEl = document.getElementById('bs-message');
   const charEl = document.getElementById('bs-char');
-  msgEl.addEventListener('input', () => {
-    const len = msgEl.value.length;
-    const segs = Math.ceil(len / 160) || 1;
-    charEl.textContent = `${len} chars · ${segs} segment${segs>1?'s':''}`;
-    charEl.className = 'char-count' + (len > 306 ? ' char-danger' : len > 160 ? ' char-warn' : '');
+
+  function refreshBsPreview() {
     const warn = document.getElementById('bs-identical-warn');
     if (warn) warn.style.display = msgEl.value.includes('{') || !msgEl.value.trim() ? 'none' : 'block';
 
-    // Show personalization nudge while drafting if template has no placeholders
     const nudgeEl = document.getElementById('bs-personalization-nudge');
     if (nudgeEl) nudgeEl.style.display = msgEl.value.trim() && !msgEl.value.includes('{') ? 'block' : 'none';
 
@@ -910,6 +907,14 @@ async function renderBulkSend(body) {
     } else if (previewEl) {
       previewEl.style.display = 'none';
     }
+  }
+
+  msgEl.addEventListener('input', () => {
+    const len = msgEl.value.length;
+    const segs = Math.ceil(len / 160) || 1;
+    charEl.textContent = `${len} chars · ${segs} segment${segs>1?'s':''}`;
+    charEl.className = 'char-count' + (len > 306 ? ' char-danger' : len > 160 ? ' char-warn' : '');
+    refreshBsPreview();
   });
 
   // Pace + estimate
@@ -969,6 +974,7 @@ async function renderBulkSend(body) {
       document.getElementById('bs-csv-status').innerHTML = `<div style="font-size:13px;color:var(--text-muted)">Columns: ${data.columns.map(c => `<code title="${escHtml(c)}" style="font-family:var(--mono);font-size:12px;background:rgba(0,0,0,0.06);padding:1px 4px;border-radius:3px">${escHtml(abbreviateColumnLabel(c))}</code>`).join(', ')}</div>`;
       updateMergeChips('bs-message', bsState.columnMap);
       document.getElementById('bs-new-list-note').style.display = 'none';
+      refreshBsPreview();
       // Auto-fill campaign name
       const nameEl = document.getElementById('bs-campaign-name');
       if (nameEl && !nameEl.value) nameEl.value = file.name.replace(/\.csv$/i,'') + ' — ' + new Date().toLocaleDateString();
@@ -1007,6 +1013,7 @@ async function renderBulkSend(body) {
         document.getElementById('bs-csv-status').innerHTML = `<div class="alert alert-success" style="margin:0">&#10003; List "${escHtml(list.name)}" loaded — ${list.row_count} contacts</div>`;
         updateMergeChips('bs-message', bsState.columnMap);
         const nameEl = document.getElementById('bs-campaign-name');
+        refreshBsPreview();
         if (nameEl && !nameEl.value) nameEl.value = list.name + ' — ' + new Date().toLocaleDateString();
         updateEstimate();
       } catch (err) {
