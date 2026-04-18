@@ -258,4 +258,9 @@ try {
   db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_api_keys_key_hash ON api_keys(key_hash)`);
 } catch (_) {}
 
+// Web auth timestamp — tracks last successful web authentication for 7-day offline grace
+try {
+  db.exec(`ALTER TABLE users ADD COLUMN last_web_auth_at TEXT`);
+} catch (_) {}
+
 module.exports = db;

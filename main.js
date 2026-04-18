@@ -100,6 +100,9 @@ async function startServer() {
   process.env.TYL_DESKTOP = '1';
   process.env.SESSION_SECRET = sessionSecret;
   if (!process.env.NODE_ENV) process.env.NODE_ENV = 'production';
+  // Web auth — credentials baked into desktop build for talking to the hosted web server.
+  process.env.TYL_WEB_URL = process.env.TYL_WEB_URL || 'https://app.textyourlist.com';
+  process.env.DESKTOP_LICENSE_SECRET = process.env.DESKTOP_LICENSE_SECRET || 'cd69e5f72254cff5b33050350de14925296a19a35b18bf92d3677eddaf17dc7f';
 
   // Run server in-process — avoids all ABI/WASM issues with spawned child.
   // better-sqlite3 native bindings work fine in Electron's main process.

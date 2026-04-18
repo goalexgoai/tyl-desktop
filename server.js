@@ -174,9 +174,10 @@ function requireApiKey(req, res, next) {
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 async function syncLicenseFromWeb(userId, email) {
-  const licenseUrl = process.env.TYL_LICENSE_URL;
+  const webUrl = process.env.TYL_WEB_URL || 'https://app.textyourlist.com';
+  const licenseUrl = process.env.TYL_LICENSE_URL || `${webUrl}/api/desktop-license`;
   const licenseSecret = process.env.DESKTOP_LICENSE_SECRET;
-  if (!licenseUrl || !licenseSecret || !email) return;
+  if (!licenseSecret || !email) return;
 
   try {
     const https = require('https');
@@ -343,21 +344,11 @@ app.get('/app', (req, res) => {
 
 app.get('/login', (req, res) => {
   if (req.session.userId) return res.redirect('/app');
-  // On desktop first run (no users yet), redirect to signup so they can create an account.
-  if (process.env.TYL_DESKTOP) {
-    const hasUsers = db.prepare('SELECT 1 FROM users LIMIT 1').get();
-    if (!hasUsers) return res.redirect('/signup');
-  }
   res.sendFile(path.join(__dirname, 'public', 'login.html'));
 });
 
 app.get('/signup', (req, res) => {
   if (req.session.userId) return res.redirect('/app');
-  // On desktop, only allow signup when no users exist yet (first-run setup).
-  if (process.env.TYL_DESKTOP) {
-    const hasUsers = db.prepare('SELECT 1 FROM users LIMIT 1').get();
-    if (hasUsers) return res.redirect('/login');
-  }
   res.sendFile(path.join(__dirname, 'public', 'signup.html'));
 });
 
@@ -468,46 +459,154 @@ const apiSendLimiter = rateLimit({
   message: { error: 'API send rate limit exceeded. Max 120 requests per minute per API key.' },
 });
 
+// Web auth helper — calls the hosted web server to validate credentials and get user data.
+// On success, creates or updates a minimal local user row for the send engine.
+// Returns the local user id.
+async function webAuthAndUpsertUser(email, password) {
+  const webUrl = process.env.TYL_WEB_URL || 'https://app.textyourlist.com';
+  const secret = process.env.DESKTOP_LICENSE_SECRET || '';
+  const https = require('https');
+  const http = require('http');
+  const url = new URL(`${webUrl}/api/desktop-auth`);
+  const body = JSON.stringify({ email, password });
+  const client = url.protocol === 'http:' ? http : https;
+
+  const data = await new Promise((resolve, reject) => {
+    const req = client.request({
+      hostname: url.hostname,
+      port: url.port || (url.protocol === 'http:' ? 80 : 443),
+      path: url.pathname,
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(body),
+        'x-desktop-secret': secret,
+      },
+    }, (res) => {
+      let buf = '';
+      res.on('data', d => buf += d);
+      res.on('end', () => {
+        try { resolve({ status: res.statusCode, body: JSON.parse(buf) }); }
+        catch (_) { resolve({ status: res.statusCode, body: {} }); }
+      });
+    });
+    req.on('error', reject);
+    req.write(body);
+    req.end();
+  });
+
+  if (data.status === 401) throw Object.assign(new Error(data.body.error || 'Invalid email or password'), { status: 401 });
+  if (data.status === 403) throw Object.assign(new Error('Desktop not authorized'), { status: 403 });
+  if (data.status !== 200) throw Object.assign(new Error(data.body.error || 'Auth service unavailable'), { status: data.status });
+
+  const u = data.body;
+  // Upsert local user row — needed by desktopSendLoop which joins against local users table.
+  const existing = db.prepare('SELECT id FROM users WHERE email = ?').get(u.email);
+  if (existing) {
+    db.prepare(
+      'UPDATE users SET plan = ?, subscription_status = ?, billing_period_end = ?, manual_account = ?, is_admin = ?, last_active_at = datetime(\'now\'), last_web_auth_at = datetime(\'now\') WHERE id = ?'
+    ).run(u.plan, u.subscription_status, u.billing_period_end || null, u.manual_account ? 1 : 0, u.is_admin ? 1 : 0, existing.id);
+    return { ...u, localId: existing.id };
+  } else {
+    // No real password stored locally — auth always goes through web. Store placeholder.
+    const result = db.prepare(
+      'INSERT INTO users (email, password_hash, is_admin, plan, subscription_status, billing_period_end, manual_account, last_web_auth_at) VALUES (?, ?, ?, ?, ?, ?, ?, datetime(\'now\'))'
+    ).run(u.email, 'web-auth', u.is_admin ? 1 : 0, u.plan, u.subscription_status, u.billing_period_end || null, u.manual_account ? 1 : 0);
+    return { ...u, localId: result.lastInsertRowid };
+  }
+}
+
+// Web signup helper — creates account on the web server from desktop.
+async function webSignupAndUpsertUser(email, password) {
+  const webUrl = process.env.TYL_WEB_URL || 'https://app.textyourlist.com';
+  const secret = process.env.DESKTOP_LICENSE_SECRET || '';
+  const https = require('https');
+  const http = require('http');
+  const url = new URL(`${webUrl}/api/desktop-signup`);
+  const body = JSON.stringify({ email, password });
+  const client = url.protocol === 'http:' ? http : https;
+
+  const data = await new Promise((resolve, reject) => {
+    const req = client.request({
+      hostname: url.hostname,
+      port: url.port || (url.protocol === 'http:' ? 80 : 443),
+      path: url.pathname,
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(body),
+        'x-desktop-secret': secret,
+      },
+    }, (res) => {
+      let buf = '';
+      res.on('data', d => buf += d);
+      res.on('end', () => {
+        try { resolve({ status: res.statusCode, body: JSON.parse(buf) }); }
+        catch (_) { resolve({ status: res.statusCode, body: {} }); }
+      });
+    });
+    req.on('error', reject);
+    req.write(body);
+    req.end();
+  });
+
+  if (data.status === 409) throw Object.assign(new Error(data.body.error || 'Account already exists'), { status: 409 });
+  if (data.status === 400) throw Object.assign(new Error(data.body.error || 'Invalid email or password'), { status: 400 });
+  if (data.status === 403) throw Object.assign(new Error('Desktop not authorized'), { status: 403 });
+  if (data.status !== 201) throw Object.assign(new Error(data.body.error || 'Signup failed'), { status: data.status });
+
+  const u = data.body;
+  const result = db.prepare(
+    'INSERT INTO users (email, password_hash, is_admin, plan, subscription_status, last_web_auth_at) VALUES (?, ?, ?, ?, ?, datetime(\'now\'))'
+  ).run(u.email, 'web-auth', u.is_admin ? 1 : 0, u.plan, u.subscription_status);
+  return { ...u, localId: result.lastInsertRowid };
+}
+
 app.post('/api/auth/signup', authLimiter, async (req, res) => {
   const { email, password } = req.body;
   if (!email || !password) return res.status(400).json({ error: 'Email and password required' });
-
-  const pwError = validatePassword(password);
-  if (pwError) return res.status(400).json({ error: pwError });
-
-  const existing = db.prepare('SELECT id FROM users WHERE email = ?').get(email.toLowerCase().trim());
-  if (existing) return res.status(409).json({ error: 'An account with that email already exists' });
-
-  const hash = await bcrypt.hash(password, 12);
-  const isFirst = db.prepare('SELECT COUNT(*) as c FROM users').get().c === 0;
-
-  const result = db.prepare(
-    'INSERT INTO users (email, password_hash, is_admin, plan, subscription_status) VALUES (?, ?, ?, ?, ?)'
-  ).run(email.toLowerCase().trim(), hash, isFirst ? 1 : 0, 'free', 'free');
-
-  const userId = result.lastInsertRowid;
-
-  req.session.regenerate((err) => {
-    if (err) return res.status(500).json({ error: 'Session error' });
-    req.session.userId = userId;
-    res.status(201).json({ ok: true, email: email.toLowerCase().trim() });
-  });
+  try {
+    const user = await webSignupAndUpsertUser(email, password);
+    req.session.regenerate((err) => {
+      if (err) return res.status(500).json({ error: 'Session error' });
+      req.session.userId = user.localId;
+      res.status(201).json({ ok: true, email: user.email });
+    });
+  } catch (err) {
+    res.status(err.status || 500).json({ error: err.message });
+  }
 });
 
 app.post('/api/auth/login', authLimiter, async (req, res) => {
   const { email, password } = req.body;
   if (!email || !password) return res.status(400).json({ error: 'Email and password required' });
-  const user = db.prepare('SELECT * FROM users WHERE email = ?').get(email.toLowerCase().trim());
-  if (!user) return res.status(401).json({ error: 'Invalid email or password' });
-  const match = await bcrypt.compare(password, user.password_hash);
-  if (!match) return res.status(401).json({ error: 'Invalid email or password' });
-  req.session.regenerate((err) => {
-    if (err) return res.status(500).json({ error: 'Session error' });
-    req.session.userId = user.id;
-    db.prepare("UPDATE users SET last_active_at = datetime('now') WHERE id = ?").run(user.id);
-    syncLicenseFromWeb(user.id, user.email).catch(() => {});
-    res.json({ ok: true, email: user.email, is_admin: user.is_admin });
-  });
+  try {
+    const user = await webAuthAndUpsertUser(email, password);
+    req.session.regenerate((err) => {
+      if (err) return res.status(500).json({ error: 'Session error' });
+      req.session.userId = user.localId;
+      res.json({ ok: true, email: user.email, is_admin: user.is_admin });
+    });
+  } catch (err) {
+    // 7-day offline grace: if web is unreachable (network error, not auth failure) and
+    // a local cached user exists with a recent web auth, allow login.
+    if (!err.status && email) {
+      const cached = db.prepare(
+        "SELECT * FROM users WHERE email = ? AND last_web_auth_at > datetime('now', '-7 days')"
+      ).get(email.toLowerCase().trim());
+      if (cached) {
+        console.log('[auth] offline grace login for', email);
+        req.session.regenerate((sessionErr) => {
+          if (sessionErr) return res.status(500).json({ error: 'Session error' });
+          req.session.userId = cached.id;
+          req.session.offlineGrace = true;
+          res.json({ ok: true, email: cached.email, is_admin: cached.is_admin, offline: true });
+        });
+        return;
+      }
+    }
+    res.status(err.status || 503).json({ error: err.message });
+  }
 });
 
 app.post('/api/auth/logout', (req, res) => {
@@ -578,9 +677,11 @@ app.post('/api/auth/change-password', requireAuth, async (req, res) => {
   res.json({ ok: true });
 });
 
-app.get('/api/auth/me', requireAuth, (req, res) => {
-  const user = req.user;
-  syncLicenseFromWeb(user.id, user.email).catch(() => {});
+app.get('/api/auth/me', requireAuth, async (req, res) => {
+  let user = req.user;
+  // Re-sync plan from web on each /me call so plan changes reflect immediately.
+  // syncLicenseFromWeb is a lightweight GET, so awaiting it is safe.
+  try { await syncLicenseFromWeb(user.id, user.email); user = db.prepare('SELECT * FROM users WHERE id = ?').get(user.id); } catch (_) {}
   // Change 8: check if billing_period_end has passed and downgrade if so
   if (user.subscription_status === 'cancelled' && user.billing_period_end) {
     if (new Date(user.billing_period_end) < new Date()) {
