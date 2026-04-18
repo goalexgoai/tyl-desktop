@@ -343,15 +343,23 @@ app.get('/app', (req, res) => {
 
 app.get('/login', (req, res) => {
   if (req.session.userId) return res.redirect('/app');
+  // On desktop first run (no users yet), redirect to signup so they can create an account.
+  if (process.env.TYL_DESKTOP) {
+    const hasUsers = db.prepare('SELECT 1 FROM users LIMIT 1').get();
+    if (!hasUsers) return res.redirect('/signup');
+  }
   res.sendFile(path.join(__dirname, 'public', 'login.html'));
 });
 
-if (!process.env.TYL_DESKTOP) {
-  app.get('/signup', (req, res) => {
-    if (req.session.userId) return res.redirect('/app');
-    res.sendFile(path.join(__dirname, 'public', 'signup.html'));
-  });
-}
+app.get('/signup', (req, res) => {
+  if (req.session.userId) return res.redirect('/app');
+  // On desktop, only allow signup when no users exist yet (first-run setup).
+  if (process.env.TYL_DESKTOP) {
+    const hasUsers = db.prepare('SELECT 1 FROM users LIMIT 1').get();
+    if (hasUsers) return res.redirect('/login');
+  }
+  res.sendFile(path.join(__dirname, 'public', 'signup.html'));
+});
 
 app.get('/admin', (req, res) => {
   if (!req.session.userId) return res.redirect('/login');
