@@ -454,7 +454,7 @@ const apiSendLimiter = rateLimit({
   max: 120,
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: (req) => req.headers.authorization || req.ip,
+  keyGenerator: (req) => req.headers.authorization || (req.ip || '').replace(/^::ffff:/, ''),
   message: { error: 'API send rate limit exceeded. Max 120 requests per minute per API key.' },
 });
 
