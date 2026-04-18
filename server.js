@@ -432,11 +432,13 @@ function validatePassword(password) {
   return null;
 }
 
+const normalizeIp = (ip) => (ip || '').replace(/^::ffff:/, '');
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 20,
   standardHeaders: true,
   legacyHeaders: false,
+  keyGenerator: (req) => normalizeIp(req.ip),
   message: { error: 'Too many attempts. Please wait 15 minutes and try again.' },
 });
 
@@ -446,6 +448,7 @@ const resetLimiter = rateLimit({
   max: 5,
   standardHeaders: true,
   legacyHeaders: false,
+  keyGenerator: (req) => normalizeIp(req.ip),
   message: { error: 'Too many password reset attempts. Please wait 1 hour and try again.' },
 });
 
@@ -454,7 +457,7 @@ const apiSendLimiter = rateLimit({
   max: 120,
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: (req) => req.headers.authorization || (req.ip || '').replace(/^::ffff:/, ''),
+  keyGenerator: (req) => req.headers.authorization || normalizeIp(req.ip),
   message: { error: 'API send rate limit exceeded. Max 120 requests per minute per API key.' },
 });
 
