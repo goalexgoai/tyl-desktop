@@ -889,6 +889,10 @@ async function renderBulkSend(body) {
     const warn = document.getElementById('bs-identical-warn');
     if (warn) warn.style.display = msgEl.value.includes('{') || !msgEl.value.trim() ? 'none' : 'block';
 
+    // Show personalization nudge while drafting if template has no placeholders
+    const nudgeEl = document.getElementById('bs-personalization-nudge');
+    if (nudgeEl) nudgeEl.style.display = msgEl.value.trim() && !msgEl.value.includes('{') ? 'block' : 'none';
+
     // Live preview — show merged sample using first loaded contact row
     const previewEl = document.getElementById('bs-live-preview');
     const previewText = document.getElementById('bs-live-preview-text');

@@ -1653,7 +1653,9 @@ function sanitizeCsvForExport(csvData) {
     for (const row of rows) {
       const cells = headers.map(h => {
         let val = String(row[h] || '');
-        if (h.toLowerCase() !== 'phone' && formulaPattern.test(val)) {
+        // Exempt phone-like columns where + prefix is valid (international numbers)
+        const PHONE_HEADERS = new Set(['phone', 'mobile', 'phone_number', 'cell', 'cell_phone', 'telephone', 'tel']);
+        if (!PHONE_HEADERS.has(h.toLowerCase()) && formulaPattern.test(val)) {
           val = "'" + val;
         }
         return `"${val.replace(/"/g, '""')}"`;
