@@ -7,16 +7,22 @@ const dbPath = process.env.TYL_DB_PATH || path.join(__dirname, 'tyl.db');
 fs.mkdirSync(path.dirname(dbPath), { recursive: true });
 
 function openDatabase(filePath) {
-  // Always remove stale WAL/SHM files before opening.
-  // A crashed session leaves these behind; SQLite treats them as an active lock.
-  // Committed transactions are already checkpointed into the main .db file.
-  for (const ext of ['-wal', '-shm']) {
+  // Remove all stale lock/journal files a crashed session may have left behind.
+  for (const ext of ['-wal', '-shm', '-journal']) {
     try { fs.unlinkSync(filePath + ext); } catch (_) {}
   }
   try {
     return new Database(filePath);
   } catch (e) {
-    // Database itself corrupted — wipe and start fresh
+    if (e.message && e.message.includes('locked')) {
+      // Another process has the DB open — wipe lock files again and retry once.
+      console.error('[db] Database locked, clearing lock files and retrying...');
+      for (const ext of ['-wal', '-shm', '-journal']) {
+        try { fs.unlinkSync(filePath + ext); } catch (_) {}
+      }
+      try { return new Database(filePath); } catch (_) {}
+    }
+    // Database corrupted or unrecoverable — wipe and start fresh.
     console.error('[db] Failed to open database, resetting:', e.message);
     try { fs.unlinkSync(filePath); } catch (_) {}
     return new Database(filePath);
