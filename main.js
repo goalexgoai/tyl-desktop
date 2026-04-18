@@ -3,12 +3,14 @@ const path = require('path');
 const fs = require('fs');
 const http = require('http');
 const crypto = require('crypto');
+const { spawn } = require('child_process');
 const { autoUpdater } = require('electron-updater');
 
 app.setAppUserModelId('com.textyourlist.app');
 
 let mainWindow = null;
 let tray = null;
+let serverProcess = null;
 let serverPort = null;
 let serverReady = false;
 app.isQuitting = false;
@@ -82,36 +84,62 @@ async function startServer() {
 
   const dbPath = path.join(app.getPath('userData'), 'tyl.db');
 
-  // Set env vars server.js reads at module load time (before require).
-  // SESSION_SECRET: generate a stable random secret stored in userData so sessions
-  // survive app restarts within the same install.
+  // Locate server.js reliably whether packaged or in dev.
+  // In a packaged build, asarUnpack extracts server.js to app.asar.unpacked/.
+  // In dev, __dirname is the real project directory.
+  // We detect by checking if the unpacked path actually contains server.js —
+  // this avoids relying on app.isPackaged which can be unreliable when launched
+  // from Terminal.
+  const unpackedDir = path.join(process.resourcesPath, 'app.asar.unpacked');
+  const serverDir = fs.existsSync(path.join(unpackedDir, 'server.js'))
+    ? unpackedDir
+    : __dirname;
+  const serverPath = path.join(serverDir, 'server.js');
+
+  // Generate a stable session secret stored in userData so sessions survive restarts.
   const secretPath = path.join(app.getPath('userData'), '.session-secret');
   let sessionSecret;
   try {
     sessionSecret = fs.readFileSync(secretPath, 'utf8').trim();
   } catch {
     sessionSecret = crypto.randomBytes(32).toString('hex');
+    fs.mkdirSync(path.dirname(secretPath), { recursive: true });
     fs.writeFileSync(secretPath, sessionSecret, { mode: 0o600 });
   }
 
-  process.env.TYL_PORT = String(port);
-  process.env.TYL_DB_PATH = dbPath;
-  process.env.TYL_DESKTOP = '1';
-  process.env.SESSION_SECRET = sessionSecret;
-  if (!process.env.NODE_ENV) process.env.NODE_ENV = 'production';
+  const env = {
+    ...process.env,
+    TYL_PORT: String(port),
+    TYL_DB_PATH: dbPath,
+    TYL_DESKTOP: '1',
+    SESSION_SECRET: sessionSecret,
+    NODE_ENV: process.env.NODE_ENV || 'production',
+  };
 
-  // Run the server in-process rather than spawning a child process.
-  // Spawning fails on packaged macOS builds because __dirname resolves to a path
-  // inside app.asar, and the OS rejects it as a working directory (ENOTDIR).
-  try {
-    require('./server');
-  } catch (err) {
-    throw new Error('Server failed to load: ' + err.message);
-  }
+  serverProcess = spawn(process.execPath, [serverPath], {
+    env,
+    cwd: serverDir,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+
+  serverProcess.stdout.on('data', (d) => {
+    const text = d.toString();
+    const trayMatch = text.match(/__TRAY:(\w+)__/);
+    if (trayMatch) setTrayStatus(trayMatch[1]);
+    const logLine = text.replace(/__TRAY:\w+__\n?/g, '').trim();
+    if (logLine) console.log('[server]', logLine);
+  });
+  serverProcess.stderr.on('data', (d) => console.error('[server]', d.toString().trim()));
+
+  serverProcess.on('exit', (code) => {
+    console.log(`[server] exited with code ${code}`);
+    if (mainWindow && !app.isQuitting) {
+      mainWindow.loadURL(`data:text/html,<h2>Server stopped unexpectedly (code ${code}). Restart the app.</h2>`);
+    }
+  });
 
   await waitForServer(port);
   serverReady = true;
-  setTrayStatus('green');
   console.log(`[main] server ready on port ${port}`);
   return port;
 }
@@ -244,7 +272,7 @@ app.on('activate', () => {
 
 app.on('before-quit', () => {
   app.isQuitting = true;
-  // Server runs in-process — no child process to kill; it exits with the app.
+  if (serverProcess) serverProcess.kill();
 });
 
 ipcMain.on('open-external', (_, url) => {
