@@ -109,6 +109,7 @@ async function startServer() {
 
   const env = {
     ...process.env,
+    ELECTRON_RUN_AS_NODE: '1',   // required: makes Electron binary behave as Node.js
     TYL_PORT: String(port),
     TYL_DB_PATH: dbPath,
     TYL_DESKTOP: '1',
