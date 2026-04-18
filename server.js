@@ -1,7 +1,7 @@
 require('dotenv').config();
 const express = require('express');
 const helmet = require('helmet');
-const { rateLimit, ipKeyGenerator } = require('express-rate-limit');
+const { rateLimit } = require('express-rate-limit');
 const multer = require('multer');
 const { parse } = require('csv-parse/sync');
 const { v4: uuidv4 } = require('uuid');
@@ -439,7 +439,6 @@ const authLimiter = rateLimit({
   max: 20,
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: (req) => ipKeyGenerator(req.ip),
   message: { error: 'Too many attempts. Please wait 15 minutes and try again.' },
 });
 
@@ -449,7 +448,6 @@ const resetLimiter = rateLimit({
   max: 5,
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: (req) => ipKeyGenerator(req.ip),
   message: { error: 'Too many password reset attempts. Please wait 1 hour and try again.' },
 });
 
@@ -458,7 +456,7 @@ const apiSendLimiter = rateLimit({
   max: 120,
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: (req) => req.headers.authorization || ipKeyGenerator(req.ip),
+  keyGenerator: (req) => req.headers.authorization || req.ip || 'unknown',
   message: { error: 'API send rate limit exceeded. Max 120 requests per minute per API key.' },
 });
 
