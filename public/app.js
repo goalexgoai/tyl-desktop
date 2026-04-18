@@ -415,7 +415,7 @@ function renderSend(main) {
       <span>&#128274; <strong>${u.pending_api_count} message${u.pending_api_count===1?'':'s'} waiting</strong> from Make / Zapier / API — held for your approval.</span>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         <button class="btn btn-primary btn-sm" onclick="releaseApiMessages(0)">Send now (fast)</button>
-        <button class="btn btn-ghost btn-sm" onclick="releaseApiMessages(15)">Send on drip (15s)</button>
+        <button class="btn btn-ghost btn-sm" onclick="releaseApiMessages(20)">Send with Smart Throttle</button>
         <button class="btn btn-ghost btn-sm" style="color:var(--danger)" onclick="cancelApiMessages()">Cancel all</button>
       </div>
     </div>` : ''}
@@ -702,8 +702,25 @@ async function renderBulkSend(body) {
   let savedLists = [];
   try { savedLists = await get('/api/lists'); } catch (_) {}
 
+  // Health monitor data
+  const dailySends = u.daily_sends || 0;
+  const healthColor = dailySends <= 100 ? '#16a34a' : dailySends <= 150 ? '#d97706' : '#dc2626';
+  const healthLabel = dailySends <= 100 ? 'Safe' : dailySends <= 150 ? 'Caution' : 'Warning';
+  const healthPct = Math.min(100, Math.round(dailySends / 200 * 100));
+
   body.innerHTML = `
     <div style="max-width:700px">
+      <!-- Daily Health Monitor -->
+      <div style="background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:12px 16px;margin-bottom:16px;display:flex;align-items:center;gap:14px">
+        <div style="width:12px;height:12px;border-radius:50%;background:${healthColor};flex-shrink:0;box-shadow:0 0 6px ${healthColor}55"></div>
+        <div style="flex:1">
+          <div style="font-size:12.5px;font-weight:600;color:var(--text)">Today: ${dailySends} / 200 messages <span style="font-weight:400;color:${healthColor}">${healthLabel}</span></div>
+          <div style="background:#f3f4f6;border-radius:4px;height:5px;margin-top:5px;overflow:hidden">
+            <div style="height:100%;width:${healthPct}%;background:${healthColor};border-radius:4px;transition:width 0.3s"></div>
+          </div>
+        </div>
+        <div style="font-size:11px;color:var(--text-muted);text-align:right;flex-shrink:0">${200 - dailySends} left today</div>
+      </div>
       ${isFree ? `<div class="alert alert-info" style="margin-bottom:16px">Free plan: bulk sends are limited to <strong>10 contacts</strong> per send. <button class="btn btn-primary btn-sm" onclick="navigate('billing')">Upgrade for more</button></div>` : ''}
 
       <!-- Section 1: Choose contacts -->
@@ -750,6 +767,14 @@ async function renderBulkSend(body) {
           ${emojiBarHtml('bs-message')}
           <div class="char-count" id="bs-char">0 chars &middot; 1 segment</div>
           <div id="bs-identical-warn" class="alert alert-warn" style="display:none;margin-top:8px;margin-bottom:0">&#9888; This message is identical for every recipient. Add a merge field like {first_name} for better delivery rates and to avoid spam filters.</div>
+          <div id="bs-personalization-nudge" style="display:none;margin-top:8px;background:#fef9c3;border:1px solid #fbbf24;border-radius:8px;padding:10px 14px;font-size:13px">
+            &#128161; <strong>Tip:</strong> Adding a name like <code>{first_name}</code> makes each text feel personal and dramatically improves response rates.
+            <a href="#" style="color:#92400e;margin-left:6px;text-decoration:underline" onclick="document.getElementById('bs-personalization-nudge').style.display='none';return false">Got it</a>
+          </div>
+          <div id="bs-live-preview" style="display:none;margin-top:10px;background:#f8f9fa;border:1px solid #e5e7eb;border-radius:8px;padding:10px 14px">
+            <div style="font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px">Sample preview</div>
+            <div id="bs-live-preview-text" style="font-size:13.5px;color:var(--text);white-space:pre-wrap;word-break:break-word"></div>
+          </div>
           <div style="margin-top:10px">
             <a href="#" id="bs-save-template-link" style="font-size:12.5px;color:var(--accent);text-decoration:underline" onclick="saveBulkMessageAsTemplate();return false">Save as new template</a>
             <span id="bs-save-template-check" style="display:none;color:#16a34a;font-size:12.5px;margin-left:8px">&#10003; Saved to your templates</span>
@@ -775,10 +800,10 @@ async function renderBulkSend(body) {
               </div>
             </label>
             <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;text-transform:none;letter-spacing:0;font-weight:400;margin:0;color:var(--text)">
-              <input type="radio" name="bs-pace" id="bs-pace-drip" value="15" style="margin-top:3px;flex-shrink:0" />
+              <input type="radio" name="bs-pace" id="bs-pace-drip" value="20" style="margin-top:3px;flex-shrink:0" />
               <div>
-                <div style="font-weight:600;font-size:13.5px">Drip <span style="font-weight:400;color:var(--text-muted)">— adds a 15-second pause between each send</span></div>
-                <div style="font-size:12px;color:var(--text-muted);font-weight:400">Recommended for larger lists or if you want extra caution with your number.</div>
+                <div style="font-weight:600;font-size:13.5px">Smart Throttle <span style="font-weight:400;color:var(--text-muted)">— randomized 20–27s delay between sends</span></div>
+                <div style="font-size:12px;color:var(--text-muted);font-weight:400">Mimics natural human timing to protect your number. Recommended for larger or newer lists.</div>
               </div>
             </label>
           </div>
@@ -863,6 +888,24 @@ async function renderBulkSend(body) {
     charEl.className = 'char-count' + (len > 306 ? ' char-danger' : len > 160 ? ' char-warn' : '');
     const warn = document.getElementById('bs-identical-warn');
     if (warn) warn.style.display = msgEl.value.includes('{') || !msgEl.value.trim() ? 'none' : 'block';
+
+    // Live preview — show merged sample using first loaded contact row
+    const previewEl = document.getElementById('bs-live-preview');
+    const previewText = document.getElementById('bs-live-preview-text');
+    const tmpl = msgEl.value;
+    if (previewEl && previewText && tmpl.trim()) {
+      const sampleRow = (bsState.csvRows || [])[0] || {};
+      const cm = bsState.columnMap || {};
+      let preview = tmpl.replace(/\{(\w+)\}/g, (m, token) => {
+        if (cm[token] && sampleRow[cm[token]] !== undefined) return sampleRow[cm[token]];
+        if (sampleRow[token] !== undefined) return sampleRow[token];
+        return m;
+      });
+      previewText.textContent = preview;
+      previewEl.style.display = tmpl.includes('{') || Object.keys(sampleRow).length ? 'block' : 'none';
+    } else if (previewEl) {
+      previewEl.style.display = 'none';
+    }
   });
 
   // Pace + estimate
@@ -996,6 +1039,14 @@ async function renderBulkSend(body) {
     if (!bsState.columnMap.phone) { alertEl.innerHTML = '<div class="alert alert-error">No phone column detected. Check your CSV.</div>'; return; }
     if (!template) { alertEl.innerHTML = '<div class="alert alert-error">Message cannot be empty.</div>'; return; }
     if (!name) { alertEl.innerHTML = '<div class="alert alert-error">Campaign name is required.</div>'; return; }
+
+    // Personalization nudge — soft warning if no merge fields and sending to multiple contacts
+    const hasPersonalization = /\{[\w_]+\}/.test(template);
+    if (!hasPersonalization && queueNow) {
+      const nudgeEl = document.getElementById('bs-personalization-nudge');
+      if (nudgeEl) nudgeEl.style.display = 'block';
+      // Don't block — just nudge. User can proceed.
+    }
 
     if (queueNow) {
       // Count rows
@@ -1947,7 +1998,7 @@ async function loadCampaignHistory() {
           <div style="font-size:12px;color:var(--text-muted);margin-top:8px">
             Started ${fmt(j.created_at)}
             ${j.updated_at && j.updated_at !== j.created_at ? ` · Updated ${fmt(j.updated_at)}` : ''}
-            ${j.pace_seconds > 0 ? ` · Pace: every ${j.pace_seconds}s` : ''}
+            ${j.pace_seconds > 0 ? ` · Smart Throttle (~${j.pace_seconds}s)` : ''}
           </div>
         </div>`;
     }).join('');
@@ -2133,9 +2184,9 @@ Content-Type: application/json
         <div class="card-body">
           <p style="color:var(--text-muted);margin-bottom:10px">When a message arrives via API, the app needs to be open and your phone tunnel must be connected before it can send. Here is what happens depending on your settings:</p>
           <ul style="color:var(--text-muted);font-size:13.5px;line-height:1.7;padding-left:18px;margin-bottom:10px">
-            <li><strong>Hold for approval (default)</strong> — the message is saved to your queue and held. The next time you open the app, you will see a banner letting you choose: send now (fast), send on drip (15s between each), or cancel.</li>
+            <li><strong>Hold for approval (default)</strong> — the message is saved to your queue and held. The next time you open the app, you will see a banner letting you choose: send now (fast), send with Smart Throttle (randomized 20–27s), or cancel.</li>
             <li><strong>Send automatically — fast</strong> — the message is queued immediately and sent as soon as the app is open and the phone is connected. Use this if your middleware (e.g. Make) is already handling timing.</li>
-            <li><strong>Send automatically — drip (15s)</strong> — same as fast, but a 15-second pause is added between sends. Good for batches that should not all go out at once.</li>
+            <li><strong>Send automatically — Smart Throttle</strong> — randomized 20–27s delay between sends to mimic natural human timing. Good for batches where you want extra protection for your number.</li>
           </ul>
           <p style="color:var(--text-muted);font-size:13px">Change your default in <strong>Account &rarr; API Send Default</strong> (Pro plan). Messages that arrive while the app is closed are always stored safely and processed on the next open.</p>
         </div>
@@ -3222,10 +3273,10 @@ function openAccountPanel() {
           </span>
         </label>
         <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer">
-          <input type="radio" name="api_pace" value="15" style="margin-top:3px" ${u.api_default_pace === 15 ? 'checked' : ''}>
+          <input type="radio" name="api_pace" value="20" style="margin-top:3px" ${(u.api_default_pace === 20 || u.api_default_pace === 15) ? 'checked' : ''}>
           <span>
-            <strong style="font-size:13.5px">Send automatically — drip (15s)</strong>
-            <div style="font-size:12.5px;color:var(--text-muted)">Queued with a 15-second pause between sends</div>
+            <strong style="font-size:13.5px">Send automatically — Smart Throttle</strong>
+            <div style="font-size:12.5px;color:var(--text-muted)">Randomized 20–27s delay between sends to mimic natural timing</div>
           </span>
         </label>
       </div>

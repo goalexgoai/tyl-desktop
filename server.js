@@ -605,6 +605,7 @@ app.get('/api/auth/me', requireAuth, (req, res) => {
     billing_interval: fresh.billing_interval || null,
     pending_api_count: db.prepare("SELECT COUNT(*) as c FROM jobs WHERE user_id = ? AND status = 'api_pending'").get(fresh.id).c,
     api_default_pace: fresh.api_default_pace != null ? fresh.api_default_pace : null,
+    daily_sends: db.prepare("SELECT COUNT(*) as c FROM send_logs WHERE user_id = ? AND status = 'sent' AND date(created_at) = date('now')").get(fresh.id).c || 0,
   });
 });
 
@@ -618,8 +619,8 @@ app.patch('/api/user/settings', requireAuth, (req, res) => {
   let pace = null;
   if (api_default_pace !== null && api_default_pace !== undefined) {
     pace = parseInt(api_default_pace, 10);
-    if (isNaN(pace) || (pace !== 0 && pace !== 15)) {
-      return res.status(400).json({ error: 'api_default_pace must be null, 0, or 15' });
+    if (isNaN(pace) || (pace !== 0 && pace !== 15 && pace !== 20)) {
+      return res.status(400).json({ error: 'api_default_pace must be null, 0, or 20' });
     }
   }
   db.prepare('UPDATE users SET api_default_pace = ? WHERE id = ?').run(pace, req.user.id);
@@ -2165,7 +2166,7 @@ if (process.env.TYL_DESKTOP) {
 
       if (!message) return;
 
-      // Pace enforcement
+      // Pace enforcement with jitter — carriers flag perfectly rhythmic sends
       if (message.pace_seconds > 0) {
         const lastSent = db.prepare(`
           SELECT sent_at FROM messages
@@ -2174,7 +2175,10 @@ if (process.env.TYL_DESKTOP) {
         `).get(message.job_id);
         if (lastSent && lastSent.sent_at) {
           const elapsed = (Date.now() - new Date(lastSent.sent_at + 'Z').getTime()) / 1000;
-          if (elapsed < message.pace_seconds) return;
+          // Add deterministic jitter (0–7s) derived from message ID so each message gets a consistent delay
+          const idSum = message.id.split('').reduce((a, c) => a + c.charCodeAt(0), 0);
+          const jitter = idSum % 8;
+          if (elapsed < message.pace_seconds + jitter) return;
         }
       }
 
