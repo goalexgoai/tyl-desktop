@@ -148,7 +148,10 @@ async function startServer() {
     await waitForServer(port);
   } catch (timeoutErr) {
     serverProcess.kill();
-    throw new Error('Server startup timeout.\n\nServer output:\n' + (serverLog.trim() || '(none)'));
+    const logPath = path.join(app.getPath('userData'), 'startup-error.log');
+    fs.mkdirSync(path.dirname(logPath), { recursive: true });
+    fs.writeFileSync(logPath, serverLog);
+    throw new Error(`Server startup timeout.\n\nFull log written to:\n${logPath}\n\nLast 500 chars:\n${serverLog.slice(-500)}`);
   }
   serverReady = true;
   console.log(`[main] server ready on port ${port}`);
