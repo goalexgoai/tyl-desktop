@@ -449,6 +449,15 @@ const resetLimiter = rateLimit({
   message: { error: 'Too many password reset attempts. Please wait 1 hour and try again.' },
 });
 
+const apiSendLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => req.headers.authorization || req.ip,
+  message: { error: 'API send rate limit exceeded. Max 120 requests per minute per API key.' },
+});
+
 app.post('/api/auth/signup', authLimiter, async (req, res) => {
   const { email, password } = req.body;
   if (!email || !password) return res.status(400).json({ error: 'Email and password required' });
@@ -976,7 +985,7 @@ function queueSingleSend(userId, rawPhone, message, label, source, defaultPace) 
 }
 
 // API route — requires API key, used by Make/Zapier. Pro plan (or admin) required.
-app.post('/api/make/send', requireApiKey, (req, res) => {
+app.post('/api/make/send', apiSendLimiter, requireApiKey, (req, res) => {
   const { phone, message } = req.body;
   if (!phone || !message) return res.status(400).json({ error: 'phone and message are required' });
 
@@ -2134,14 +2143,22 @@ if (process.env.TYL_DESKTOP) {
 
   async function desktopSendLoop() {
     try {
-      // Find the next pending message across all users
+      // Find the next pending message across all users — skip jobs whose owner has an expired/cancelled subscription
       const message = db.prepare(`
         SELECT m.*, j.pace_seconds, j.user_id
         FROM messages m
         JOIN jobs j ON j.id = m.job_id
+        JOIN users u ON u.id = j.user_id
         WHERE m.status = 'pending'
           AND j.status = 'queued'
           AND (m.picked_at IS NULL OR m.picked_at < datetime('now', '-90 seconds'))
+          AND (
+            u.is_admin = 1
+            OR u.manual_account = 1
+            OR u.plan = 'free'
+            OR u.subscription_status = 'active'
+            OR (u.subscription_status = 'cancelled' AND u.billing_period_end > date('now'))
+          )
         ORDER BY m.created_at ASC
         LIMIT 1
       `).get();
