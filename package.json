@@ -1,7 +1,7 @@
 {
   "name": "textyourlist",
-  "version": "1.0.0",
-  "description": "Text Your List — Send personal texts to your list",
+  "version": "1.0.22",
+  "description": "Text Your List \u2014 Send personal texts to your list",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
