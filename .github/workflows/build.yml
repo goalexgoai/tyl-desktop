@@ -26,6 +26,18 @@ jobs:
       - name: Rebuild native modules for Electron (arm64)
         run: npx electron-builder install-app-deps --arch arm64
 
+      - name: Verify better-sqlite3 binary is arm64
+        run: |
+          NODE=$(node -e "const path=require('path');const b=require.resolve('better-sqlite3/build/Release/better_sqlite3.node');console.log(b)" 2>/dev/null || true)
+          BSNODE="node_modules/better-sqlite3/build/Release/better_sqlite3.node"
+          if [ -f "$BSNODE" ]; then
+            ARCH=$(file "$BSNODE")
+            echo "Binary: $ARCH"
+            echo "$ARCH" | grep -q "arm64" || (echo "ERROR: expected arm64, got wrong arch" && exit 1)
+          else
+            echo "WARNING: better_sqlite3.node not found at expected path"
+          fi
+
       - name: Build Mac arm64
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: false
@@ -52,6 +64,17 @@ jobs:
 
       - name: Rebuild native modules for Electron (x64)
         run: npx electron-builder install-app-deps --arch x64
+
+      - name: Verify better-sqlite3 binary is x86_64
+        run: |
+          BSNODE="node_modules/better-sqlite3/build/Release/better_sqlite3.node"
+          if [ -f "$BSNODE" ]; then
+            ARCH=$(file "$BSNODE")
+            echo "Binary: $ARCH"
+            echo "$ARCH" | grep -q "x86_64" || (echo "ERROR: expected x86_64, got wrong arch" && exit 1)
+          else
+            echo "WARNING: better_sqlite3.node not found at expected path"
+          fi
 
       - name: Build Mac x64
         env:

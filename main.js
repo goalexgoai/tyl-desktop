@@ -209,7 +209,7 @@ if (!gotLock) {
       const license = await checkLicense(port);
       console.log('[main] license status:', JSON.stringify(license));
       createWindow(port);
-      autoUpdater.checkForUpdatesAndNotify().catch(() => {});
+      if (app.isPackaged) autoUpdater.checkForUpdatesAndNotify().catch(() => {});
     } catch (err) {
       console.error('Startup failed:', err);
       const { dialog } = require('electron');
