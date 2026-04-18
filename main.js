@@ -218,6 +218,14 @@ if (!gotLock) {
       autoUpdater.checkForUpdatesAndNotify().catch(() => {});
     } catch (err) {
       console.error('Startup failed:', err);
+      const { dialog } = require('electron');
+      await dialog.showMessageBox({
+        type: 'error',
+        title: 'Text Your List — Startup Error',
+        message: 'The app failed to start.',
+        detail: err.message + '\n\n' + (err.stack || ''),
+        buttons: ['OK'],
+      }).catch(() => {});
       app.quit();
     }
   });
