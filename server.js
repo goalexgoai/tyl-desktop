@@ -618,10 +618,12 @@ app.patch('/api/user/settings', requireAuth, (req, res) => {
   const isPro = req.user.plan === 'pro' || isPrivileged;
   if (!isPro) return res.status(403).json({ error: 'Pro plan required to change API send default.' });
 
+  // Validate: null (hold), 0 (fast), 20 (Smart Throttle ~20-27s randomized)
+  const PACE_ALLOWLIST = [0, 20];
   let pace = null;
   if (api_default_pace !== null && api_default_pace !== undefined) {
     pace = parseInt(api_default_pace, 10);
-    if (isNaN(pace) || (pace !== 0 && pace !== 15 && pace !== 20)) {
+    if (isNaN(pace) || !PACE_ALLOWLIST.includes(pace)) {
       return res.status(400).json({ error: 'api_default_pace must be null, 0, or 20' });
     }
   }
@@ -966,12 +968,14 @@ function queueSingleSend(userId, rawPhone, message, label, source, defaultPace) 
   const msgId = uuidv4();
   const body  = message.trim();
   // API-sourced: if user has a default pace set, auto-queue; otherwise hold for approval
+  const PACE_ALLOWLIST_FN = [0, 20];
   let status = 'queued';
   let pace = 0;
   if (source === 'api') {
     if (defaultPace != null) {
+      const parsedPace = parseInt(defaultPace, 10);
+      pace = PACE_ALLOWLIST_FN.includes(parsedPace) ? parsedPace : 0;
       status = 'queued';
-      pace = Math.max(0, parseInt(defaultPace, 10) || 0);
     } else {
       status = 'api_pending';
     }
@@ -1012,7 +1016,7 @@ app.post('/api/make/send', apiSendLimiter, requireApiKey, (req, res) => {
     return res.status(402).json({ error: `Send limit reached (${req.user.plan} plan). Upgrade to send more.`, upgrade: true });
   }
 
-  // Pro users can set api_default_pace: null=hold, 0=fast, 15=drip
+  // Pro users can set api_default_pace: null=hold, 0=fast, 20=Smart Throttle
   const defaultPace = req.user.api_default_pace;
   const result = queueSingleSend(req.user.id, phone, message, `API: ${phone}`, 'api', defaultPace);
   if (result.error) return res.status(result.code === 'suppressed' ? 422 : 400).json(result);
@@ -2160,7 +2164,7 @@ if (process.env.TYL_DESKTOP) {
             OR u.manual_account = 1
             OR u.plan = 'free'
             OR u.subscription_status = 'active'
-            OR (u.subscription_status = 'cancelled' AND u.billing_period_end > date('now'))
+            OR (u.subscription_status = 'cancelled' AND u.billing_period_end >= date('now'))
           )
         ORDER BY m.created_at ASC
         LIMIT 1

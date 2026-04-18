@@ -719,7 +719,7 @@ async function renderBulkSend(body) {
             <div style="height:100%;width:${healthPct}%;background:${healthColor};border-radius:4px;transition:width 0.3s"></div>
           </div>
         </div>
-        <div style="font-size:11px;color:var(--text-muted);text-align:right;flex-shrink:0">${200 - dailySends} left today</div>
+        <div style="font-size:11px;color:var(--text-muted);text-align:right;flex-shrink:0">${Math.max(0, 200 - dailySends)} left today</div>
       </div>
       ${isFree ? `<div class="alert alert-info" style="margin-bottom:16px">Free plan: bulk sends are limited to <strong>10 contacts</strong> per send. <button class="btn btn-primary btn-sm" onclick="navigate('billing')">Upgrade for more</button></div>` : ''}
 
