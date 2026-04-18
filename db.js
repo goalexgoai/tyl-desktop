@@ -234,4 +234,22 @@ try {
   db.exec(`ALTER TABLE users ADD COLUMN api_default_pace INTEGER`);
 } catch (_) {}
 
+// API key hashing — store SHA-256 hash for auth instead of plaintext lookup
+try {
+  db.exec(`ALTER TABLE api_keys ADD COLUMN key_hash TEXT`);
+} catch (_) {}
+
+// Migrate existing plaintext keys → SHA-256 hash
+try {
+  const crypto = require('crypto');
+  const unmigratedKeys = db.prepare("SELECT id, key FROM api_keys WHERE key IS NOT NULL AND key != '' AND key_hash IS NULL").all();
+  const update = db.prepare('UPDATE api_keys SET key_hash = ? WHERE id = ?');
+  const migrate = db.transaction(() => { unmigratedKeys.forEach(k => update.run(crypto.createHash('sha256').update(k.key).digest('hex'), k.id)); });
+  migrate();
+} catch (_) {}
+
+try {
+  db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_api_keys_key_hash ON api_keys(key_hash)`);
+} catch (_) {}
+
 module.exports = db;

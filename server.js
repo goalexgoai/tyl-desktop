@@ -159,11 +159,12 @@ function requireApiKey(req, res, next) {
   const auth = req.headers.authorization || '';
   const key = auth.startsWith('Bearer ') ? auth.slice(7) : null;
   if (!key) return res.status(401).json({ error: 'API key required' });
-  const row = db.prepare('SELECT ak.*, u.plan, u.monthly_sends, u.period_start FROM api_keys ak JOIN users u ON u.id = ak.user_id WHERE ak.key = ? AND ak.active = 1').get(key);
+  // Auth by SHA-256 hash — plaintext key is never compared directly
+  const keyHash = crypto.createHash('sha256').update(key).digest('hex');
+  const row = db.prepare('SELECT ak.*, u.plan, u.monthly_sends, u.period_start FROM api_keys ak JOIN users u ON u.id = ak.user_id WHERE ak.key_hash = ? AND ak.active = 1').get(keyHash);
   if (!row) return res.status(401).json({ error: 'Invalid API key' });
   db.prepare("UPDATE api_keys SET last_used_at = datetime('now') WHERE id = ?").run(row.id);
   req.apiKey = row;
-  // Build a user-like object for limit checking
   req.user = db.prepare('SELECT * FROM users WHERE id = ?').get(row.user_id);
   next();
 }
@@ -743,6 +744,18 @@ app.post('/api/jobs', requireAuth, (req, res) => {
   let queued = 0, skippedSuppress = 0, skippedInvalid = 0;
 
   const doInserts = db.transaction(() => {
+    // Atomic re-check inside write lock to prevent races near plan limit
+    if (!isPrivilegedUser) {
+      const fresh = db.prepare('SELECT monthly_sends, plan FROM users WHERE id = ?').get(req.user.id);
+      const planObj = PLANS[fresh.plan] || PLANS.free;
+      const freshRemaining = planObj.monthly_limit - fresh.monthly_sends;
+      if (freshRemaining < parsedRows.length) {
+        const err = new Error('LIMIT_EXCEEDED');
+        err.remaining = freshRemaining;
+        err.limit = planObj.monthly_limit;
+        throw err;
+      }
+    }
     insertJob.run(jobId, req.user.id, name, template, Number(paceSeconds));
     for (const row of parsedRows) {
       const rawPhone = row[columnMap.phone];
@@ -763,7 +776,19 @@ app.post('/api/jobs', requireAuth, (req, res) => {
     db.prepare("UPDATE jobs SET total=?, updated_at=datetime('now') WHERE id=?").run(queued, jobId);
   });
 
-  doInserts();
+  try {
+    doInserts();
+  } catch (err) {
+    if (err.message === 'LIMIT_EXCEEDED') {
+      return res.status(402).json({
+        error: `Send limit reached. You have ${err.remaining} sends left this month on the ${PLANS[req.user.plan]?.label || req.user.plan} plan.`,
+        upgrade: true,
+        remaining: err.remaining,
+        limit: err.limit,
+      });
+    }
+    throw err;
+  }
   // Send count incremented at ack time (only confirmed sends count)
 
   res.status(201).json({ job_id: jobId, queued, skipped_suppressed: skippedSuppress, skipped_invalid: skippedInvalid });
@@ -1115,8 +1140,9 @@ app.post('/api/keys', requireAuth, (req, res) => {
   }
 
   const key = 'tbk_' + crypto.randomBytes(24).toString('hex');
-  db.prepare('INSERT INTO api_keys (user_id, key, name, scope) VALUES (?, ?, ?, ?)').run(req.user.id, key, name, scope);
-  res.status(201).json({ key, name, scope });
+  const keyHash = crypto.createHash('sha256').update(key).digest('hex');
+  db.prepare('INSERT INTO api_keys (user_id, key, key_hash, name, scope) VALUES (?, ?, ?, ?, ?)').run(req.user.id, key, keyHash, name, scope);
+  res.set('Cache-Control', 'no-store').status(201).json({ key, name, scope });
 });
 
 app.delete('/api/keys/:id', requireAuth, (req, res) => {
@@ -1600,6 +1626,30 @@ app.delete('/api/lists/:id', requireAuth, (req, res) => {
   res.json({ ok: true });
 });
 
+// Sanitize CSV cells to prevent formula injection when opened in Excel
+function sanitizeCsvForExport(csvData) {
+  const formulaPattern = /^[=+\-@\t\r]/;
+  try {
+    const rows = parse(csvData, { columns: true, skip_empty_lines: true, trim: false });
+    if (!rows.length) return csvData;
+    const headers = Object.keys(rows[0]);
+    const lines = [headers.map(h => `"${String(h).replace(/"/g, '""')}"`).join(',')];
+    for (const row of rows) {
+      const cells = headers.map(h => {
+        let val = String(row[h] || '');
+        if (h.toLowerCase() !== 'phone' && formulaPattern.test(val)) {
+          val = "'" + val;
+        }
+        return `"${val.replace(/"/g, '""')}"`;
+      });
+      lines.push(cells.join(','));
+    }
+    return lines.join('\n');
+  } catch (_) {
+    return csvData;
+  }
+}
+
 // Change 3: Download CSV
 app.get('/api/lists/:id/download', requireAuth, (req, res) => {
   const list = db.prepare('SELECT * FROM contact_lists WHERE id = ? AND user_id = ?').get(req.params.id, req.user.id);
@@ -1607,7 +1657,8 @@ app.get('/api/lists/:id/download', requireAuth, (req, res) => {
   const filename = list.name.replace(/[^a-z0-9]/gi, '_') + '.csv';
   res.setHeader('Content-Type', 'text/csv');
   res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-  res.send(list.csv_data);
+  res.setHeader('Cache-Control', 'no-store');
+  res.send(sanitizeCsvForExport(list.csv_data));
 });
 
 // Change 3: Replace CSV for a list
