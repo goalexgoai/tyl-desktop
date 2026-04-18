@@ -1,7 +1,7 @@
 require('dotenv').config();
 const express = require('express');
 const helmet = require('helmet');
-const rateLimit = require('express-rate-limit');
+const { rateLimit, ipKeyGenerator } = require('express-rate-limit');
 const multer = require('multer');
 const { parse } = require('csv-parse/sync');
 const { v4: uuidv4 } = require('uuid');
@@ -432,7 +432,7 @@ function validatePassword(password) {
   return null;
 }
 
-const normalizeIp = (ip) => (ip || '').replace(/^::ffff:/, '').replace(/^::1$/, '127.0.0.1');
+const normalizeIp = (ip) => ipKeyGenerator(ip || '');
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 20,
