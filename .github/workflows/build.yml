@@ -24,7 +24,7 @@ jobs:
         run: npm ci
 
       - name: Rebuild native modules for Electron (arm64)
-        run: npx electron-builder install-app-deps --arch arm64
+        run: npx electron-builder install-app-deps
 
       - name: Verify better-sqlite3 binary is arm64
         run: |
@@ -63,7 +63,7 @@ jobs:
         run: npm ci
 
       - name: Rebuild native modules for Electron (x64)
-        run: npx electron-builder install-app-deps --arch x64
+        run: npx electron-builder install-app-deps
 
       - name: Verify better-sqlite3 binary is x86_64
         run: |
@@ -101,7 +101,7 @@ jobs:
         run: npm ci
 
       - name: Rebuild native modules for Electron (x64)
-        run: npx electron-builder install-app-deps --arch x64
+        run: npx electron-builder install-app-deps
 
       - name: Build Windows
         run: npx electron-builder --win --publish never
