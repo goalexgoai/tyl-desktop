@@ -96,6 +96,7 @@ async function startServer() {
   // Set env vars before requiring server so it picks them up at module load time.
   process.env.TYL_PORT = String(port);
   process.env.TYL_DB_PATH = dbPath;
+  process.env.TYL_DATA_DIR = app.getPath('userData');
   process.env.TYL_DESKTOP = '1';
   process.env.SESSION_SECRET = sessionSecret;
   if (!process.env.NODE_ENV) process.env.NODE_ENV = 'production';

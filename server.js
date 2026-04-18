@@ -59,7 +59,9 @@ const PLANS = {
 
 // ─── Session ──────────────────────────────────────────────────────────────────
 
-const dataDir = path.join(__dirname, 'data');
+// TYL_DATA_DIR is set by Electron main.js to app.getPath('userData').
+// Falls back to __dirname/data for the hosted web server where __dirname is writable.
+const dataDir = process.env.TYL_DATA_DIR || path.join(__dirname, 'data');
 fs.mkdirSync(dataDir, { recursive: true });
 
 if (process.env.TYL_DESKTOP) {
