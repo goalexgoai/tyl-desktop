@@ -3,14 +3,12 @@ const path = require('path');
 const fs = require('fs');
 const http = require('http');
 const crypto = require('crypto');
-const { spawn } = require('child_process');
 const { autoUpdater } = require('electron-updater');
 
 app.setAppUserModelId('com.textyourlist.app');
 
 let mainWindow = null;
 let tray = null;
-let serverProcess = null;
 let serverPort = null;
 let serverReady = false;
 app.isQuitting = false;
@@ -84,18 +82,6 @@ async function startServer() {
 
   const dbPath = path.join(app.getPath('userData'), 'tyl.db');
 
-  // Locate server.js reliably whether packaged or in dev.
-  // In a packaged build, asarUnpack extracts server.js to app.asar.unpacked/.
-  // In dev, __dirname is the real project directory.
-  // We detect by checking if the unpacked path actually contains server.js —
-  // this avoids relying on app.isPackaged which can be unreliable when launched
-  // from Terminal.
-  const unpackedDir = path.join(process.resourcesPath, 'app.asar.unpacked');
-  const serverDir = fs.existsSync(path.join(unpackedDir, 'server.js'))
-    ? unpackedDir
-    : __dirname;
-  const serverPath = path.join(serverDir, 'server.js');
-
   // Generate a stable session secret stored in userData so sessions survive restarts.
   const secretPath = path.join(app.getPath('userData'), '.session-secret');
   let sessionSecret;
@@ -107,52 +93,18 @@ async function startServer() {
     fs.writeFileSync(secretPath, sessionSecret, { mode: 0o600 });
   }
 
-  const env = {
-    ...process.env,
-    ELECTRON_RUN_AS_NODE: '1',   // required: makes Electron binary behave as Node.js
-    TYL_PORT: String(port),
-    TYL_DB_PATH: dbPath,
-    TYL_DESKTOP: '1',
-    SESSION_SECRET: sessionSecret,
-    NODE_ENV: process.env.NODE_ENV || 'production',
-  };
+  // Set env vars before requiring server so it picks them up at module load time.
+  process.env.TYL_PORT = String(port);
+  process.env.TYL_DB_PATH = dbPath;
+  process.env.TYL_DESKTOP = '1';
+  process.env.SESSION_SECRET = sessionSecret;
+  if (!process.env.NODE_ENV) process.env.NODE_ENV = 'production';
 
-  serverProcess = spawn(process.execPath, [serverPath], {
-    env,
-    cwd: serverDir,
-    stdio: ['ignore', 'pipe', 'pipe'],
-  });
+  // Run server in-process — avoids all ABI/WASM issues with spawned child.
+  // better-sqlite3 native bindings work fine in Electron's main process.
+  require('./server');
 
-  let serverLog = '';
-  serverProcess.stdout.on('data', (d) => {
-    const text = d.toString();
-    serverLog += text;
-    const trayMatch = text.match(/__TRAY:(\w+)__/);
-    if (trayMatch) setTrayStatus(trayMatch[1]);
-    const logLine = text.replace(/__TRAY:\w+__\n?/g, '').trim();
-    if (logLine) console.log('[server]', logLine);
-  });
-  serverProcess.stderr.on('data', (d) => {
-    serverLog += d.toString();
-    console.error('[server]', d.toString().trim());
-  });
-
-  serverProcess.on('exit', (code) => {
-    console.log(`[server] exited with code ${code}`);
-    if (mainWindow && !app.isQuitting) {
-      mainWindow.loadURL(`data:text/html,<h2>Server stopped (code ${code}). Restart the app.</h2>`);
-    }
-  });
-
-  try {
-    await waitForServer(port);
-  } catch (timeoutErr) {
-    serverProcess.kill();
-    const logPath = path.join(app.getPath('userData'), 'startup-error.log');
-    fs.mkdirSync(path.dirname(logPath), { recursive: true });
-    fs.writeFileSync(logPath, serverLog);
-    throw new Error(`Server startup timeout.\n\nFull log written to:\n${logPath}\n\nLast 500 chars:\n${serverLog.slice(-500)}`);
-  }
+  await waitForServer(port);
   serverReady = true;
   console.log(`[main] server ready on port ${port}`);
   return port;
@@ -286,7 +238,7 @@ app.on('activate', () => {
 
 app.on('before-quit', () => {
   app.isQuitting = true;
-  if (serverProcess) serverProcess.kill();
+  // Server runs in-process — it exits with the main process automatically.
 });
 
 ipcMain.on('open-external', (_, url) => {
