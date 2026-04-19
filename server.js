@@ -53,8 +53,8 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 
 // Pro ($30/mo or $288/yr): 6,000 sends, unlimited API keys, all features, API webhook sends
 const PLANS = {
   free:    { label: 'Free',    monthly_limit: 50,   bulk_max_contacts: 10,   api_keys: 1,        companion: true, csv: true,  templates: false, api_send: false, price: 0  },
-  starter: { label: 'Starter', monthly_limit: 2000, bulk_max_contacts: 100,  api_keys: 1,        companion: true, csv: true,  templates: true,  api_send: false, price: 10 },
-  pro:     { label: 'Pro',     monthly_limit: 6000, bulk_max_contacts: 1000, api_keys: Infinity, companion: true, csv: true,  templates: true,  api_send: true,  price: 30 },
+  starter: { label: 'Starter', monthly_limit: 2000, bulk_max_contacts: 100,  api_keys: 1,        companion: true, csv: true,  templates: true,  api_send: false, price: 8  },
+  pro:     { label: 'Pro',     monthly_limit: 6000, bulk_max_contacts: 1000, api_keys: Infinity, companion: true, csv: true,  templates: true,  api_send: true,  price: 16 },
 };
 
 // ─── Session ──────────────────────────────────────────────────────────────────
@@ -2319,14 +2319,13 @@ if (process.env.TYL_DESKTOP) {
         await sendFn(message.phone, message.body);
         db.prepare("UPDATE messages SET status='sent', sent_at=datetime('now'), error=NULL WHERE id=?").run(message.id);
         const jobRow = db.prepare("SELECT is_test FROM jobs WHERE id = ?").get(message.job_id);
-        if (!jobRow || !jobRow.is_test) {
-          incrementSendCount(message.user_id, 1);
-          // Report send to web server so admin dashboard reflects desktop sends (fire-and-forget)
-          const userRow = db.prepare('SELECT web_user_id FROM users WHERE id = ?').get(message.user_id);
-          if (userRow && userRow.web_user_id) {
-            desktopWebPost('/api/desktop-report-sends', { web_user_id: userRow.web_user_id, count: 1 })
-              .catch(() => {}); // network failure is non-fatal
-          }
+        const isTest = jobRow && jobRow.is_test;
+        if (!isTest) { incrementSendCount(message.user_id, 1); }
+        // Report send to web server so admin dashboard reflects desktop sends (fire-and-forget)
+        const userRow = db.prepare('SELECT web_user_id FROM users WHERE id = ?').get(message.user_id);
+        if (userRow && userRow.web_user_id) {
+          desktopWebPost('/api/desktop-report-sends', { web_user_id: userRow.web_user_id, count: 1, is_test: !!isTest })
+            .catch(() => {}); // network failure is non-fatal
         }
         log(message.user_id, message.id, message.job_id, message.phone, 'sent');
         console.log(`[desktop-sender] sent → ${message.phone}`);
