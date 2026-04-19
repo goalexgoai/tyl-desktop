@@ -590,7 +590,7 @@ function showSendConfirmModal(previewContact, previewMessage, count, onConfirm, 
 
   modal.innerHTML = `
     <h2 style="font-size:17px;font-weight:700;margin-bottom:4px">Ready to send?</h2>
-    <div style="font-size:13.5px;color:var(--text-muted);margin-bottom:14px">Sending to <strong style="color:var(--text)">${count} contact${count===1?'':'s'}</strong>${freeTruncated ? ` <span style="color:var(--warning,#b45309)">(Free plan: first ${count} of ${freeTruncatedFrom})</span>` : ''}</div>
+    <div style="font-size:13.5px;color:var(--text-muted);margin-bottom:14px">Sending to <strong style="color:var(--text)">${freeTruncated ? 'up to ' : ''}${count} contact${count===1?'':'s'}</strong>${freeTruncated ? ` <span style="color:var(--warning,#b45309)">(Free plan: first ${count} of ${freeTruncatedFrom})</span>` : ''}</div>
     ${freeTruncated ? `<div class="alert alert-warn" style="margin-bottom:12px">Free plan sends are limited to <strong>${count} contacts</strong>. Only the first ${count} contacts in your list will receive this message. <button class="btn btn-primary btn-sm" onclick="document.getElementById('wizard-root').innerHTML='';navigate('billing')">Upgrade for the full list</button></div>` : ''}
     ${previewHtml ? `<div style="font-size:12px;color:var(--text-muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em">Message preview</div>${previewHtml}` : ''}
     ${showWarning ? `<div class="alert alert-warn" style="margin:12px 0 0">Sending to ${count} contacts. We recommend no more than 200/day to keep your number healthy.</div>` : ''}
@@ -629,7 +629,9 @@ function showSendConfirmModal(previewContact, previewMessage, count, onConfirm, 
           return;
         }
       } catch {
-        // IPC check failed — proceed anyway, the send loop will catch it
+        // IPC check failed — reset button state and proceed; send loop will handle it
+        sendBtn.disabled = false;
+        sendBtn.textContent = 'Send';
       }
     }
 
@@ -1183,7 +1185,8 @@ async function renderBulkSend(body) {
 
       // Guard against ghost job (all contacts skipped/invalid)
       if (result.queued === 0) {
-        alertEl.innerHTML = `<div class="alert alert-error">No contacts were queued — all ${result.skipped_invalid || 'N'} rows had unrecognizable phone numbers. Check that your phone column contains valid numbers.</div>`;
+        const skipDetail = skipParts.length ? `Skipped: ${skipParts.join(', ')}.` : 'No valid contacts found.';
+        alertEl.innerHTML = `<div class="alert alert-error">No contacts were queued — ${skipDetail} Check your phone column and re-upload.</div>`;
         document.getElementById('bs-preview-send').disabled = false;
         document.getElementById('bs-save-draft').disabled = false;
         return;

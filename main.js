@@ -306,24 +306,27 @@ ipcMain.handle('mark-setup-done', () => {
 
 ipcMain.handle('check-messages-running', () => {
   if (process.platform !== 'darwin') return true;
-  try {
-    const { execSync } = require('child_process');
-    const result = execSync('pgrep -x Messages', { encoding: 'utf8' }).trim();
-    return result.length > 0;
-  } catch {
-    return false;
-  }
+  return new Promise((resolve) => {
+    const { execFile } = require('child_process');
+    const proc = execFile('pgrep', ['-x', 'Messages'], { timeout: 1500 }, (err, stdout) => {
+      resolve(!err && stdout.trim().length > 0);
+    });
+    proc.on('error', () => resolve(false));
+  });
 });
 
 ipcMain.handle('check-phone-link-running', () => {
   if (process.platform !== 'win32') return true;
-  try {
-    const { execSync } = require('child_process');
-    execSync('powershell -Command "Get-Process -Name PhoneLink,YourPhone,YourPhoneServer -ErrorAction Stop | Select-Object -First 1"', { encoding: 'utf8', timeout: 3000 });
-    return true;
-  } catch {
-    return false;
-  }
+  return new Promise((resolve) => {
+    const { execFile } = require('child_process');
+    const proc = execFile('powershell', [
+      '-NoProfile', '-NonInteractive', '-Command',
+      'if (Get-Process -Name PhoneLink,YourPhone,YourPhoneServer -ErrorAction SilentlyContinue) { exit 0 } else { exit 1 }'
+    ], { timeout: 1500 }, (err) => {
+      resolve(!err);
+    });
+    proc.on('error', () => resolve(false));
+  });
 });
 
 ipcMain.handle('is-setup-done', () => {
