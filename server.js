@@ -1074,7 +1074,7 @@ app.post('/api/ack', requireApiKey, (req, res) => {
 
 // ─── Single Send ─────────────────────────────────────────────────────────────
 
-function queueSingleSend(userId, rawPhone, message, label, source, defaultPace) {
+function queueSingleSend(userId, rawPhone, message, label, source, defaultPace, isTest) {
   const phone = normalizePhone(rawPhone);
   if (!phone) return { error: 'Invalid phone number' };
   if (!message || !message.trim()) return { error: 'message is required' };
@@ -1100,8 +1100,8 @@ function queueSingleSend(userId, rawPhone, message, label, source, defaultPace) 
   }
 
   db.transaction(() => {
-    db.prepare('INSERT INTO jobs (id, user_id, name, template, status, pace_seconds, total, source) VALUES (?, ?, ?, ?, ?, ?, 1, ?)')
-      .run(jobId, userId, label || `Send: ${phone}`, body, status, pace, source || null);
+    db.prepare('INSERT INTO jobs (id, user_id, name, template, status, pace_seconds, total, source, is_test) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)')
+      .run(jobId, userId, label || `Send: ${phone}`, body, status, pace, source || null, isTest ? 1 : 0);
     db.prepare('INSERT INTO messages (id, job_id, phone, first_name, last_name, link, body) VALUES (?, ?, ?, ?, ?, ?, ?)')
       .run(msgId, jobId, phone, '', '', '', body);
   })();
@@ -1148,16 +1148,19 @@ app.post('/api/send-one', requireAuth, (req, res) => {
   const messageError = validateMaxLength(message, 1600, 'Single-send message body');
   if (messageError) return res.status(400).json({ error: messageError });
 
-  const limitCheck = checkSendLimit(req.user);
-  if (!limitCheck.allowed) {
-    return res.status(402).json({
-      error: `You've used all ${limitCheck.limit} sends for this month. Upgrade your plan to send more.`,
-      upgrade: true,
-      remaining: 0,
-    });
+  const isTest = req.body.test === true;
+  if (!isTest) {
+    const limitCheck = checkSendLimit(req.user);
+    if (!limitCheck.allowed) {
+      return res.status(402).json({
+        error: `You've used all ${limitCheck.limit} sends for this month. Upgrade your plan to send more.`,
+        upgrade: true,
+        remaining: 0,
+      });
+    }
   }
 
-  const result = queueSingleSend(req.user.id, phone, message, `Web: ${phone}`);
+  const result = queueSingleSend(req.user.id, phone, message, `Web: ${phone}`, null, null, isTest);
   if (result.error) return res.status(result.code === 'suppressed' ? 422 : 400).json(result);
   res.status(201).json(result);
 });
@@ -2315,7 +2318,8 @@ if (process.env.TYL_DESKTOP) {
       try {
         await sendFn(message.phone, message.body);
         db.prepare("UPDATE messages SET status='sent', sent_at=datetime('now'), error=NULL WHERE id=?").run(message.id);
-        incrementSendCount(message.user_id, 1);
+        const jobRow = db.prepare("SELECT is_test FROM jobs WHERE id = ?").get(message.job_id);
+        if (!jobRow || !jobRow.is_test) { incrementSendCount(message.user_id, 1); }
         log(message.user_id, message.id, message.job_id, message.phone, 'sent');
         console.log(`[desktop-sender] sent → ${message.phone}`);
       } catch (err) {

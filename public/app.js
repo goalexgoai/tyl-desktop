@@ -213,7 +213,7 @@ async function init() {
     updateSetupCheckmark();
 
     // Admin link — insert at top of sidebar-bottom (before Developer)
-    if (currentUser.is_admin) {
+    if (currentUser.is_admin && !window.electronAPI?.isDesktop) {
       const adminLink = document.createElement('button');
       adminLink.className = 'nav-item';
       adminLink.innerHTML = '<span class="icon">&#9632;</span> Admin';
@@ -413,7 +413,7 @@ function renderQuickSendPage(main) {
   const daysUntilReset = Math.max(0, 30 - Math.floor((new Date() - periodStart) / (1000*60*60*24)));
   main.innerHTML = `
     <div class="main-header">
-      <h2>Quick Send</h2>
+      <h2>Test Send</h2>
       <div style="font-size:12.5px;color:var(--text-muted)">${u.monthly_sends} / ${u.monthly_limit} sends &nbsp;&middot;&nbsp; resets in ${daysUntilReset} day${daysUntilReset===1?'':'s'}</div>
     </div>
     <div class="main-body"><div id="send-body"></div></div>`;
@@ -449,6 +449,8 @@ async function renderHistoryPage(main) {
     <div class="main-header"><h2>Send History</h2></div>
     <div class="main-body"><div id="send-body"></div></div>`;
   renderHistoryTab(document.getElementById('send-body'));
+  // Ensure fresh data after navigation (renderHistoryTab loads once; this catches in-flight jobs)
+  setTimeout(() => loadCampaignHistory(), 600);
 }
 
 async function checkCompanionBanner() {
@@ -471,7 +473,7 @@ async function checkCompanionBanner() {
   } catch (e) { /* ignore */ }
 }
 
-// ── Quick Send ────────────────────────────────────────────────────────────
+// ── Test Send ────────────────────────────────────────────────────────────
 
 function renderQuickSend(body) {
   const u = currentUser;
@@ -483,7 +485,7 @@ function renderQuickSend(body) {
     ${!isBlocked && remaining <= 0 ? upgradePrompt(`You've used all ${u.monthly_limit} sends this month.`) : ''}
 
     <div class="card" style="max-width:640px">
-      <div class="card-header"><h3>Quick Send</h3></div>
+      <div class="card-header"><h3>Test Send</h3></div>
       <div class="card-body">
         <div class="form-row">
           <label>Phone number</label>
@@ -528,7 +530,7 @@ function renderQuickSend(body) {
         btn.disabled = true;
         resultEl.innerHTML = 'Sending...';
         try {
-          await post('/api/send-one', { phone, message });
+          await post('/api/send-one', { phone, message, test: true });
           const successMsg = window.electronAPI?.isDesktop
             ? '&#10003; Queued — sending within the next few seconds.'
             : '&#10003; Queued — your companion app will send it shortly.';
@@ -584,8 +586,9 @@ function showSendConfirmModal(previewContact, previewMessage, count, onConfirm, 
     ${previewHtml ? `<div style="font-size:12px;color:var(--text-muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em">Message preview</div>${previewHtml}` : ''}
     ${showWarning ? `<div class="alert alert-warn" style="margin:12px 0 0">Sending to ${count} contacts. We recommend no more than 200/day to keep your number healthy.</div>` : ''}
     <div style="background:var(--bg-alt,#f7f7f7);border-radius:8px;padding:12px 14px;margin:14px 0 0;font-size:13px;color:var(--text-muted);line-height:1.7">
-      Make sure the <strong style="color:var(--text)">companion app is running</strong> (green icon in your system tray or menu bar), and that <strong style="color:var(--text)">Phone Link</strong> (Windows) or <strong style="color:var(--text)">Messages</strong> (Mac) is open. Windows users: keep your phone nearby.
-      <div style="margin-top:6px"><a href="/help/companion" target="_blank" style="color:var(--accent);font-size:12px">Setup help →</a></div>
+      ${window.electronAPI?.isDesktop
+        ? 'Make sure <strong style="color:var(--text)">Messages</strong> (Mac) or <strong style="color:var(--text)">Phone Link</strong> (Windows) is open before sending.'
+        : 'Make sure the <strong style="color:var(--text)">companion app is running</strong> (green icon in your system tray or menu bar), and that <strong style="color:var(--text)">Phone Link</strong> (Windows) or <strong style="color:var(--text)">Messages</strong> (Mac) is open. Windows users: keep your phone nearby.<div style="margin-top:6px"><a href="/help/companion" target="_blank" style="color:var(--accent);font-size:12px">Setup help →</a></div>'}
     </div>
     <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px">
       <button class="btn btn-ghost" id="confirm-cancel">Cancel</button>
@@ -602,7 +605,7 @@ function showSendConfirmModal(previewContact, previewMessage, count, onConfirm, 
   });
 }
 
-// ── Load template modal (shared by Quick Send and Bulk Send) ───────────────
+// ── Load template modal (shared by Test Send and Bulk Send) ───────────────
 
 async function loadTemplateIntoTextarea(textareaId) {
   if (!currentUser.templates) {
@@ -760,6 +763,7 @@ async function renderBulkSend(body) {
           <textarea id="bs-message" rows="4" placeholder="Hi {first_name}, just wanted to reach out..."></textarea>
           ${emojiBarHtml('bs-message')}
           <div class="char-count" id="bs-char">0 chars &middot; 1 segment</div>
+          <div id="bs-merge-warning" style="display:none;margin-top:6px;padding:8px 12px;background:#fef3c7;border:1px solid #fbbf24;border-radius:6px;font-size:13px;color:#92400e"></div>
           <div id="bs-identical-warn" class="alert alert-warn" style="display:none;margin-top:8px;margin-bottom:0">&#9888; This message is identical for every recipient. Add a merge field like {first_name} for better delivery rates and to avoid spam filters.</div>
           <div id="bs-personalization-nudge" style="display:none;margin-top:8px;background:#fef9c3;border:1px solid #fbbf24;border-radius:8px;padding:10px 14px;font-size:13px">
             &#128161; <strong>Tip:</strong> Adding a name like <code>{first_name}</code> makes each text feel personal and dramatically improves response rates.
@@ -909,6 +913,18 @@ async function renderBulkSend(body) {
     charEl.textContent = `${len} chars · ${segs} segment${segs>1?'s':''}`;
     charEl.className = 'char-count' + (len > 306 ? ' char-danger' : len > 160 ? ' char-warn' : '');
     refreshBsPreview();
+    // Merge field mismatch warning
+    const mergeWarnEl = document.getElementById('bs-merge-warning');
+    if (mergeWarnEl && bsState.columnMap) {
+      const tokens = [...msgEl.value.matchAll(/\{([^}]+)\}/g)].map(m => m[1]);
+      const missing = tokens.filter(t => !(t in bsState.columnMap));
+      if (missing.length) {
+        mergeWarnEl.style.display = 'block';
+        mergeWarnEl.textContent = `Warning: ${missing.map(t => '{'+t+'}').join(', ')} ${missing.length===1?'is':'are'} not in your contact list — will send as literal text.`;
+      } else {
+        mergeWarnEl.style.display = 'none';
+      }
+    }
   });
 
   // Pace + estimate
@@ -1109,6 +1125,9 @@ async function renderBulkSend(body) {
       }
       currentUser = await get('/api/auth/me');
       updateUserBadge();
+      if (result.skipped_suppressed > 0) {
+        showToast(`Queued — ${result.skipped_suppressed} contact${result.skipped_suppressed === 1 ? '' : 's'} skipped (on suppression list)`, 5000);
+      }
       navigate('history');
       setTimeout(() => openJobDetail(result.job_id), 300);
     } catch (err) {
@@ -1945,7 +1964,7 @@ async function renderHistoryTab(body) {
     const hasActive = jobs.some(j => j.status === 'queued');
     if (!hasActive) { clearInterval(monitorInterval); monitorInterval = null; return; }
     loadCampaignHistory();
-  }, 5000);
+  }, 3000);
 }
 
 function statusBadge(status) {
@@ -2098,9 +2117,8 @@ async function setJobStatus(jobId, status) {
 
 async function renderDeveloper(main) {
   const u = currentUser;
-  // All plans can create at least 1 API key (free/starter: 1, pro: unlimited)
-  const canCreateKey = true;
   const isProOrAdmin = u.is_admin || u.manual_account || u.plan === 'pro';
+  const canCreateKey = isProOrAdmin;
 
   main.innerHTML = `
     <div class="main-header"><h2>Developer</h2></div>
@@ -2110,7 +2128,7 @@ async function renderDeveloper(main) {
       <h3 style="font-size:16px;font-weight:700;margin-bottom:16px">API Keys</h3>
       <div class="alert alert-info" style="margin-bottom:16px">
         ${window.electronAPI?.isDesktop
-          ? 'API keys are used for webhook sends (Pro plan) — integrate with Make, Zapier, or your own systems. The desktop app handles all sending automatically.'
+          ? 'API keys are used for webhook sends (Pro plan) — integrate with Make, Zapier, or your own systems. The desktop app handles all sending automatically. API keys also work for AI agents (Claude, GPT, etc.) to send texts through your account.'
           : 'API keys connect your companion app to Text Your List. The companion picks up queued messages and sends them through your phone.'}
         ${window.electronAPI?.isDesktop ? '' : (u.plan === 'free' || u.plan === 'starter' ? ' Free and Starter plans include 1 companion key.' : ' Pro plan includes unlimited keys.')}
         ${isProOrAdmin ? ' Pro plan also enables the <code style="font-family:monospace">/api/make/send</code> webhook for Make, Zapier, etc.' : ''}
@@ -2118,13 +2136,20 @@ async function renderDeveloper(main) {
       <div class="card" style="margin-bottom:16px">
         <div class="card-header"><h3>Create New Key</h3></div>
         <div class="card-body">
-          <div class="form-row-inline">
-            <div class="form-row">
-              <label>Key Name</label>
-              <input type="text" id="key-name" placeholder="${window.electronAPI?.isDesktop ? 'Webhook integration, Make, Zapier, etc.' : 'Mac companion, Windows companion, etc.'}" ${!canCreateKey ? 'disabled' : ''} />
+          ${canCreateKey ? `
+            <div class="form-row-inline">
+              <div class="form-row">
+                <label>Key Name</label>
+                <input type="text" id="key-name" placeholder="${window.electronAPI?.isDesktop ? 'Webhook integration, Make, Zapier, etc.' : 'Mac companion, Windows companion, etc.'}" ${!canCreateKey ? 'disabled' : ''} />
+              </div>
+              <button class="btn btn-primary" id="key-create" style="margin-bottom:0" ${!canCreateKey ? 'disabled' : ''}>Create</button>
             </div>
-            <button class="btn btn-primary" id="key-create" style="margin-bottom:0" ${!canCreateKey ? 'disabled' : ''}>Create</button>
-          </div>
+          ` : `
+            <div class="alert alert-info">
+              API keys require Pro plan. Upgrade to create integrations with Make, Zapier, and AI agents.
+              <button class="btn btn-primary btn-sm" onclick="${window.electronAPI?.openBilling ? 'window.electronAPI.openBilling()' : `navigate('billing')`}" style="margin-left:8px">Upgrade</button>
+            </div>
+          `}
           <div id="key-result" style="margin-top:12px"></div>
         </div>
       </div>
@@ -2154,7 +2179,8 @@ async function renderDeveloper(main) {
   // Load keys
   loadKeys();
 
-  document.getElementById('key-create').addEventListener('click', async () => {
+  const keyCreateBtn = document.getElementById('key-create');
+  if (keyCreateBtn) keyCreateBtn.addEventListener('click', async () => {
     const name = document.getElementById('key-name').value.trim();
     if (!name) return;
     try {
@@ -2243,7 +2269,7 @@ function renderGettingStarted(main) {
         <div class="card" style="padding:24px;margin-bottom:16px">
           <h3 style="font-size:15px;font-weight:700;margin-bottom:12px">How to send</h3>
           <ul style="font-size:13.5px;color:var(--text-muted);line-height:2;margin:0 0 0 18px">
-            <li><strong style="color:var(--text)">Quick Send</strong> — send a single text to one number</li>
+            <li><strong style="color:var(--text)">Test Send</strong> — send a single text to one number</li>
             <li><strong style="color:var(--text)">Bulk Send</strong> — upload a CSV or pick a saved list to send to many contacts at once</li>
             <li><strong style="color:var(--text)">Contacts</strong> — manage and save your contact lists for reuse</li>
             <li><strong style="color:var(--text)">Templates</strong> — save message templates (Starter and Pro plans)</li>
@@ -2267,6 +2293,13 @@ function renderGettingStarted(main) {
             <li>Don't send more than 200 texts per day to avoid spam filters</li>
             <li>Suppression list lets you block numbers from receiving future sends</li>
           </ul>
+        </div>
+
+        <div class="card" style="padding:24px;margin-bottom:16px">
+          <h3 style="font-size:15px;font-weight:700;margin-bottom:10px">macOS Setup</h3>
+          <p style="font-size:13.5px;color:var(--text-muted);line-height:1.7">
+            First send on Mac: macOS will ask permission to control Messages. Click Allow — this is required to send messages. If you accidentally clicked Don't Allow: go to System Settings &gt; Privacy &amp; Security &gt; Automation &gt; find Text Your List &gt; enable Messages.
+          </p>
         </div>
 
         <div class="card" style="padding:20px">
@@ -3179,30 +3212,23 @@ function renderAccount(main) {
 
       ${(u.plan === 'pro' || u.is_admin || u.manual_account) ? `
       <div class="card" style="max-width:560px;margin-bottom:20px">
-        <div class="card-header"><h3>API Send Default <span style="font-size:11px;font-weight:500;background:var(--accent-light,#e8f0ff);color:var(--accent);padding:2px 7px;border-radius:10px;margin-left:6px">Pro</span></h3></div>
+        <div class="card-header"><h3>API Send Behavior <span style="font-size:11px;font-weight:500;background:var(--accent-light,#e8f0ff);color:var(--accent);padding:2px 7px;border-radius:10px;margin-left:6px">Pro</span></h3></div>
         <div class="card-body">
-          <p style="font-size:13px;color:var(--text-muted);margin-bottom:12px">When a message arrives via API (Make, Zapier, HTTP), how should it be handled?</p>
+          <p style="font-size:13px;color:var(--text-muted);margin-bottom:12px">When the app is closed, incoming API messages are held until you open it. When open, choose:</p>
           <div id="api-pace-alert"></div>
           <div style="display:flex;flex-direction:column;gap:10px">
             <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer">
-              <input type="radio" name="api_pace" value="null" style="margin-top:3px" ${u.api_default_pace == null ? 'checked' : ''}>
-              <span>
-                <strong style="font-size:13.5px">Hold for approval</strong>
-                <div style="font-size:12.5px;color:var(--text-muted)">Message waits in queue — you choose send now, drip, or cancel</div>
-              </span>
-            </label>
-            <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer">
               <input type="radio" name="api_pace" value="0" style="margin-top:3px" ${u.api_default_pace === 0 ? 'checked' : ''}>
               <span>
-                <strong style="font-size:13.5px">Send automatically — fast</strong>
-                <div style="font-size:12.5px;color:var(--text-muted)">Queued immediately when app is running</div>
+                <strong style="font-size:13.5px">Fast</strong>
+                <div style="font-size:12.5px;color:var(--text-muted)">Send immediately when the app opens</div>
               </span>
             </label>
             <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer">
-              <input type="radio" name="api_pace" value="20" style="margin-top:3px" ${(u.api_default_pace === 20 || u.api_default_pace === 15) ? 'checked' : ''}>
+              <input type="radio" name="api_pace" value="20" style="margin-top:3px" ${(u.api_default_pace === 20 || u.api_default_pace == null) ? 'checked' : ''}>
               <span>
-                <strong style="font-size:13.5px">Send automatically — Smart Throttle</strong>
-                <div style="font-size:12.5px;color:var(--text-muted)">Randomized 20–27s delay between sends to mimic natural timing</div>
+                <strong style="font-size:13.5px">Smart Throttle (recommended)</strong>
+                <div style="font-size:12.5px;color:var(--text-muted)">Randomized 20-27s delay between sends</div>
               </span>
             </label>
           </div>
@@ -3222,14 +3248,10 @@ function renderAccount(main) {
 
   const manageBillingBtn = document.getElementById('acct-manage-billing');
   if (manageBillingBtn) {
-    manageBillingBtn.addEventListener('click', async () => {
-      try {
-        const result = await post('/billing/portal', {});
-        if (result.url) {
-          if (window.electronAPI?.openExternal) window.electronAPI.openExternal(result.url);
-          else window.location.href = result.url;
-        }
-      } catch (err) { alert(err.message); }
+    manageBillingBtn.addEventListener('click', () => {
+      const url = 'https://app.textyourlist.com/app';
+      if (window.electronAPI?.openExternal) window.electronAPI.openExternal(url);
+      else window.location.href = url;
     });
   }
 
@@ -3269,7 +3291,7 @@ function renderAccount(main) {
       if (!selected) return;
       const alertEl = document.getElementById('api-pace-alert');
       alertEl.innerHTML = '';
-      const pace = selected.value === 'null' ? null : parseInt(selected.value, 10);
+      const pace = parseInt(selected.value, 10);
       try {
         await patch('/api/user/settings', { api_default_pace: pace });
         alertEl.innerHTML = '<div class="alert alert-success">Saved.</div>';
@@ -3303,7 +3325,14 @@ function renderHelp(main) {
           <div><strong>Daily send limit</strong><br>We recommend sending no more than 200 texts per day to protect your phone number from spam filters.</div>
           <div><strong>Merge fields</strong><br>Use <code>{first_name}</code>, <code>{last_name}</code>, or any CSV column in your message to personalize each text.</div>
           <div><strong>Suppression list</strong><br>Numbers on your suppression list are automatically skipped in all bulk sends.</div>
-          <div><strong>Quick Send</strong><br>Use Quick Send to send a one-off test message to a single number before doing a bulk send.</div>
+          <div><strong>Test Send</strong><br>Use Test Send to send a one-off test message to a single number before doing a bulk send.</div>
+        </div>
+      </div>
+      <div class="card" style="max-width:560px;margin-bottom:20px">
+        <div class="card-header"><h3>macOS Permissions</h3></div>
+        <div class="card-body" style="font-size:13.5px;line-height:1.6">
+          <p style="margin-bottom:10px">On your first send, macOS will ask: <em>"Text Your List wants access to control Messages."</em> Click <strong>Allow</strong> — this is required for the app to send messages.</p>
+          <p style="color:var(--text-muted)">If you clicked Don't Allow by mistake: go to <strong>System Settings &rarr; Privacy &amp; Security &rarr; Automation &rarr; Text Your List</strong> and enable Messages.</p>
         </div>
       </div>
       <div class="card" style="max-width:560px">
@@ -3319,7 +3348,7 @@ function renderHelp(main) {
     </div>`;
 
   document.getElementById('help-docs-btn').addEventListener('click', () => {
-    const url = 'https://textyourlist.com/help';
+    const url = 'https://textyourlist.com';
     if (window.electronAPI?.openExternal) window.electronAPI.openExternal(url);
     else window.open(url, '_blank');
   });

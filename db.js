@@ -273,4 +273,9 @@ try {
   db.exec(`ALTER TABLE users ADD COLUMN offline_hash TEXT`);
 } catch (_) {}
 
+// Test send flag — test sends don't count against monthly send limit
+try {
+  db.exec(`ALTER TABLE jobs ADD COLUMN is_test INTEGER NOT NULL DEFAULT 0`);
+} catch (_) {}
+
 module.exports = db;
