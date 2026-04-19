@@ -2346,6 +2346,9 @@ if (process.env.TYL_DESKTOP) {
     }
   }
 
+  // Recover any messages left in 'sending' state from a previous crash
+  db.prepare("UPDATE messages SET status='pending', picked_at=NULL WHERE status='sending'").run();
+
   // Poll every 5 seconds for pending messages
   setInterval(desktopSendLoop, 5000);
   console.log('[desktop-sender] embedded sender active');

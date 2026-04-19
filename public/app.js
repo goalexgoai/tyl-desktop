@@ -2118,7 +2118,7 @@ async function setJobStatus(jobId, status) {
 async function renderDeveloper(main) {
   const u = currentUser;
   const isProOrAdmin = u.is_admin || u.manual_account || u.plan === 'pro';
-  const canCreateKey = isProOrAdmin;
+  const canCreateKey = isProOrAdmin || u.plan === 'starter' || u.plan === 'free';
 
   main.innerHTML = `
     <div class="main-header"><h2>Developer</h2></div>
@@ -3257,15 +3257,11 @@ function renderAccount(main) {
 
   const cancelBtn = document.getElementById('acct-cancel-sub');
   if (cancelBtn) {
-    cancelBtn.addEventListener('click', async () => {
+    cancelBtn.addEventListener('click', () => {
       if (!confirm('Cancel your subscription? You\'ll keep access until the end of your billing period.')) return;
-      try {
-        await post('/billing/cancel', {});
-        currentUser = await get('/api/auth/me');
-        updateUserBadge();
-        renderAccount(document.getElementById('main'));
-        showToast('Subscription cancelled.');
-      } catch (err) { alert(err.message); }
+      post('/billing/portal', {}).then(r => {
+        if (r.url) window.location.href = r.url;
+      }).catch(err => { alert(err.message); });
     });
   }
 
