@@ -212,7 +212,18 @@ if (!gotLock) {
       await clearBrowserSession();
       const license = await checkLicense(port);
       console.log('[main] license status:', JSON.stringify(license));
+
+      // On Mac, show setup wizard on first launch (permissions request)
+      const setupDone = process.platform !== 'darwin' || (() => {
+        try { fs.accessSync(path.join(app.getPath('userData'), 'tyl-setup-done')); return true; } catch { return false; }
+      })();
+
       createWindow(port);
+
+      if (!setupDone && mainWindow) {
+        mainWindow.loadURL(`http://127.0.0.1:${port}/setup`);
+      }
+
       if (app.isPackaged) autoUpdater.checkForUpdatesAndNotify().catch(() => {});
     } catch (err) {
       console.error('Startup failed:', err);
@@ -255,4 +266,50 @@ ipcMain.handle('open-billing', async () => {
 
 ipcMain.on('set-tray-status', (_, status) => {
   setTrayStatus(status);
+});
+
+// ── Setup wizard IPC ──────────────────────────────────────────────────────────
+
+ipcMain.handle('check-chat-db-access', () => {
+  const os = require('os');
+  try {
+    fs.accessSync(path.join(os.homedir(), 'Library', 'Messages', 'chat.db'), fs.constants.R_OK);
+    return true;
+  } catch {
+    return false;
+  }
+});
+
+ipcMain.handle('trigger-messages-permission', async () => {
+  // Running any AppleScript against Messages triggers the macOS Automation permission prompt.
+  try {
+    const { execFileSync } = require('child_process');
+    execFileSync('osascript', ['-e', 'tell application "Messages" to get name'], { timeout: 5000 });
+    return true;
+  } catch {
+    return false;
+  }
+});
+
+ipcMain.on('open-fda-settings', () => {
+  shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles');
+});
+
+ipcMain.handle('mark-setup-done', () => {
+  try {
+    fs.writeFileSync(path.join(app.getPath('userData'), 'tyl-setup-done'), '1', 'utf8');
+    return true;
+  } catch {
+    return false;
+  }
+});
+
+ipcMain.handle('is-setup-done', () => {
+  if (process.platform !== 'darwin') return true; // Windows needs no setup
+  try {
+    fs.accessSync(path.join(app.getPath('userData'), 'tyl-setup-done'));
+    return true;
+  } catch {
+    return false;
+  }
 });

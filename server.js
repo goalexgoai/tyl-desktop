@@ -337,6 +337,11 @@ app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'landing.html'));
 });
 
+// Setup wizard — Mac-only first-launch permissions page (no auth required)
+app.get('/setup', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'setup.html'));
+});
+
 // App shell — requires auth
 app.get('/app', (req, res) => {
   if (!req.session.userId) return res.redirect('/login');

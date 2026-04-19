@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Text Your List — Setup</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #f9fafb;
+      color: #111827;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+
+    .card {
+      background: #fff;
+      border-radius: 16px;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.08);
+      padding: 48px 44px;
+      max-width: 520px;
+      width: 100%;
+    }
+
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 32px;
+    }
+    .logo svg { flex-shrink: 0; }
+    .logo-text { font-size: 17px; font-weight: 700; color: #8C2249; }
+
+    h1 { font-size: 22px; font-weight: 700; margin-bottom: 8px; }
+    .subtitle { font-size: 14px; color: #6b7280; line-height: 1.5; margin-bottom: 36px; }
+
+    .step {
+      border: 1.5px solid #e5e7eb;
+      border-radius: 12px;
+      padding: 20px;
+      margin-bottom: 16px;
+      transition: border-color 0.2s;
+    }
+    .step.done { border-color: #86efac; background: #f0fdf4; }
+
+    .step-header {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      margin-bottom: 10px;
+    }
+
+    .step-num {
+      width: 28px; height: 28px;
+      border-radius: 50%;
+      background: #8C2249;
+      color: #fff;
+      font-size: 13px;
+      font-weight: 700;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+    }
+    .step.done .step-num { background: #22c55e; }
+    .step.done .step-num::after { content: '✓'; }
+    .step.done .step-num span { display: none; }
+
+    .step-title { font-size: 15px; font-weight: 600; }
+    .step-desc { font-size: 13px; color: #6b7280; line-height: 1.55; margin-bottom: 14px; margin-left: 42px; }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 9px 18px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      font-family: inherit;
+      cursor: pointer;
+      border: none;
+      transition: opacity 0.15s;
+      margin-left: 42px;
+    }
+    .btn:hover { opacity: 0.85; }
+    .btn-primary { background: #8C2249; color: #fff; }
+    .btn-outline { background: #fff; color: #374151; border: 1.5px solid #d1d5db; }
+    .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    .step-note {
+      font-size: 12px;
+      color: #9ca3af;
+      margin-top: 8px;
+      margin-left: 42px;
+    }
+    .step-note a { color: #8C2249; cursor: pointer; }
+
+    .divider { height: 1px; background: #f3f4f6; margin: 28px 0; }
+
+    .footer-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .btn-continue {
+      background: #8C2249;
+      color: #fff;
+      padding: 11px 28px;
+      font-size: 14px;
+    }
+    .btn-continue:disabled { opacity: 0.4; cursor: not-allowed; }
+    .skip-link {
+      font-size: 13px;
+      color: #9ca3af;
+      cursor: pointer;
+      text-decoration: underline;
+      background: none;
+      border: none;
+      font-family: inherit;
+    }
+    .skip-link:hover { color: #6b7280; }
+
+    .status-msg {
+      font-size: 12px;
+      color: #6b7280;
+      margin-top: 6px;
+      margin-left: 42px;
+      min-height: 16px;
+    }
+    .status-msg.ok { color: #16a34a; }
+    .status-msg.err { color: #dc2626; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="logo">
+      <svg width="28" height="28" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <rect width="36" height="36" rx="8" fill="#8C2249"/>
+        <path d="M10 12h16M10 18h10M10 24h13" stroke="#fff" stroke-width="2.5" stroke-linecap="round"/>
+      </svg>
+      <span class="logo-text">Text Your List</span>
+    </div>
+
+    <h1>Let's get you set up</h1>
+    <p class="subtitle">Text Your List needs two permissions to route messages correctly — iPhone contacts go as iMessage, Android contacts go as SMS. Grant both now so you're never interrupted mid-send.</p>
+
+    <!-- Step 1: Messages access -->
+    <div class="step" id="step1">
+      <div class="step-header">
+        <div class="step-num"><span>1</span></div>
+        <div class="step-title">Allow access to Messages</div>
+      </div>
+      <p class="step-desc">macOS will ask if Text Your List can control Messages.app. Click <strong>OK</strong> on the system prompt.</p>
+      <button class="btn btn-primary" id="btn-messages" onclick="grantMessages()">Request access</button>
+      <div class="status-msg" id="msg-messages"></div>
+    </div>
+
+    <!-- Step 2: Full Disk Access -->
+    <div class="step" id="step2">
+      <div class="step-header">
+        <div class="step-num"><span>2</span></div>
+        <div class="step-title">Grant Full Disk Access</div>
+      </div>
+      <p class="step-desc">This allows Text Your List to read your Messages history to detect whether each contact is on iPhone or Android. Apple requires you to grant this manually in System Settings.</p>
+      <button class="btn btn-primary" id="btn-fda" onclick="openFDA()">Open System Settings</button>
+      <button class="btn btn-outline" id="btn-check-fda" onclick="checkFDA()" style="margin-left:8px">Check access</button>
+      <div class="status-msg" id="msg-fda">Click "Open System Settings," add Text Your List to the Full Disk Access list, then click "Check access."</div>
+    </div>
+
+    <div class="divider"></div>
+
+    <div class="footer-row">
+      <button class="skip-link" onclick="skip()">Skip for now (use SMS relay instead)</button>
+      <button class="btn btn-continue" id="btn-continue" onclick="finish()" disabled>Continue →</button>
+    </div>
+  </div>
+
+  <script>
+    const api = window.electronAPI;
+
+    let messagesGranted = false;
+    let fdaGranted = false;
+
+    function setStepDone(stepEl) {
+      stepEl.classList.add('done');
+    }
+
+    async function grantMessages() {
+      const btn = document.getElementById('btn-messages');
+      const msg = document.getElementById('msg-messages');
+      btn.disabled = true;
+      btn.textContent = 'Requesting...';
+      msg.textContent = '';
+      msg.className = 'status-msg';
+      try {
+        const ok = await api.triggerMessagesPermission();
+        if (ok) {
+          messagesGranted = true;
+          setStepDone(document.getElementById('step1'));
+          msg.textContent = 'Access granted.';
+          msg.className = 'status-msg ok';
+        } else {
+          btn.disabled = false;
+          btn.textContent = 'Request access';
+          msg.textContent = 'Access was not granted. Open System Settings > Privacy & Security > Automation and enable Text Your List.';
+          msg.className = 'status-msg err';
+        }
+      } catch {
+        btn.disabled = false;
+        btn.textContent = 'Request access';
+        msg.textContent = 'Something went wrong. Try again.';
+        msg.className = 'status-msg err';
+      }
+      updateContinue();
+    }
+
+    async function openFDA() {
+      api.openFdaSettings();
+      const msg = document.getElementById('msg-fda');
+      msg.textContent = 'System Settings opened. Find Text Your List in the list and toggle it on, then click "Check access" above.';
+      msg.className = 'status-msg';
+    }
+
+    async function checkFDA() {
+      const btn = document.getElementById('btn-check-fda');
+      const msg = document.getElementById('msg-fda');
+      btn.disabled = true;
+      btn.textContent = 'Checking...';
+      try {
+        const ok = await api.checkChatDbAccess();
+        if (ok) {
+          fdaGranted = true;
+          setStepDone(document.getElementById('step2'));
+          msg.textContent = 'Full Disk Access confirmed.';
+          msg.className = 'status-msg ok';
+        } else {
+          btn.disabled = false;
+          btn.textContent = 'Check access';
+          msg.textContent = 'Not granted yet. Make sure Text Your List is toggled on in System Settings > Full Disk Access, then try again.';
+          msg.className = 'status-msg err';
+        }
+      } catch {
+        btn.disabled = false;
+        btn.textContent = 'Check access';
+        msg.textContent = 'Could not check. Try again.';
+        msg.className = 'status-msg err';
+      }
+      updateContinue();
+    }
+
+    function updateContinue() {
+      document.getElementById('btn-continue').disabled = !(messagesGranted && fdaGranted);
+    }
+
+    async function finish() {
+      await api.markSetupDone();
+      window.location.href = '/app';
+    }
+
+    async function skip() {
+      await api.markSetupDone();
+      window.location.href = '/app';
+    }
+
+    // Auto-check FDA on load in case it was already granted
+    window.addEventListener('load', async () => {
+      if (api) {
+        const fda = await api.checkChatDbAccess();
+        if (fda) {
+          fdaGranted = true;
+          setStepDone(document.getElementById('step2'));
+          document.getElementById('msg-fda').textContent = 'Full Disk Access already granted.';
+          document.getElementById('msg-fda').className = 'status-msg ok';
+          updateContinue();
+        }
+      }
+    });
+  </script>
+</body>
+</html>
