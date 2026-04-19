@@ -2319,7 +2319,15 @@ if (process.env.TYL_DESKTOP) {
         await sendFn(message.phone, message.body);
         db.prepare("UPDATE messages SET status='sent', sent_at=datetime('now'), error=NULL WHERE id=?").run(message.id);
         const jobRow = db.prepare("SELECT is_test FROM jobs WHERE id = ?").get(message.job_id);
-        if (!jobRow || !jobRow.is_test) { incrementSendCount(message.user_id, 1); }
+        if (!jobRow || !jobRow.is_test) {
+          incrementSendCount(message.user_id, 1);
+          // Report send to web server so admin dashboard reflects desktop sends (fire-and-forget)
+          const userRow = db.prepare('SELECT web_user_id FROM users WHERE id = ?').get(message.user_id);
+          if (userRow && userRow.web_user_id) {
+            desktopWebPost('/api/desktop-report-sends', { web_user_id: userRow.web_user_id, count: 1 })
+              .catch(() => {}); // network failure is non-fatal
+          }
+        }
         log(message.user_id, message.id, message.job_id, message.phone, 'sent');
         console.log(`[desktop-sender] sent → ${message.phone}`);
       } catch (err) {
