@@ -304,6 +304,28 @@ ipcMain.handle('mark-setup-done', () => {
   }
 });
 
+ipcMain.handle('check-messages-running', () => {
+  if (process.platform !== 'darwin') return true;
+  try {
+    const { execSync } = require('child_process');
+    const result = execSync('pgrep -x Messages', { encoding: 'utf8' }).trim();
+    return result.length > 0;
+  } catch {
+    return false;
+  }
+});
+
+ipcMain.handle('check-phone-link-running', () => {
+  if (process.platform !== 'win32') return true;
+  try {
+    const { execSync } = require('child_process');
+    execSync('powershell -Command "Get-Process -Name PhoneLink,YourPhone,YourPhoneServer -ErrorAction Stop | Select-Object -First 1"', { encoding: 'utf8', timeout: 3000 });
+    return true;
+  } catch {
+    return false;
+  }
+});
+
 ipcMain.handle('is-setup-done', () => {
   if (process.platform !== 'darwin') return true; // Windows needs no setup
   try {

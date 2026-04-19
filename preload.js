@@ -6,6 +6,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   platform: process.platform,
   isDesktop: true,
 
+  // Messaging app state checks
+  checkMessagesRunning: () => ipcRenderer.invoke('check-messages-running'),
+  checkPhoneLinkRunning: () => ipcRenderer.invoke('check-phone-link-running'),
+
   // Setup wizard
   checkChatDbAccess: () => ipcRenderer.invoke('check-chat-db-access'),
   triggerMessagesPermission: () => ipcRenderer.invoke('trigger-messages-permission'),

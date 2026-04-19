@@ -766,8 +766,37 @@ app.post('/api/upload', requireAuth, upload.single('file'), (req, res) => {
     const rowError = validateCsvRows(rows);
     if (rowError) return res.status(400).json({ error: rowError });
     const columns = Object.keys(rows[0]);
-    res.json({ columns, rows: rows.slice(0, 5), total: rows.length, raw: text });
+
+    // Warn if no recognizable phone column
+    const phoneCol = columns.find(c => /phone|mobile|cell|number/i.test(c));
+    const noPhoneColumn = !phoneCol;
+
+    // Count duplicates
+    const phones = rows.map(r => phoneCol ? (r[phoneCol] || '').trim() : '').filter(Boolean);
+    const seen = new Set();
+    let duplicateCount = 0;
+    for (const p of phones) {
+      if (seen.has(p)) duplicateCount++;
+      else seen.add(p);
+    }
+
+    // Count empty phone values in detected column (all-empty warning)
+    const emptyPhoneCount = phoneCol ? rows.filter(r => !(r[phoneCol] || '').trim()).length : 0;
+
+    res.json({
+      columns,
+      rows: rows.slice(0, 10),
+      total: rows.length,
+      raw: text,
+      no_phone_column: noPhoneColumn,
+      duplicate_count: duplicateCount,
+      empty_phone_count: emptyPhoneCount,
+    });
   } catch (err) {
+    // Non-UTF-8 encoding often causes parse errors
+    if (/invalid byte|unexpected|encoding/i.test(err.message)) {
+      return res.status(400).json({ error: 'Could not read your CSV — it may use a non-UTF-8 encoding. In Excel: File → Save As → CSV UTF-8, then re-upload.' });
+    }
     res.status(400).json({ error: 'Could not parse CSV: ' + err.message });
   }
 });
@@ -845,16 +874,15 @@ app.post('/api/jobs', requireAuth, (req, res) => {
     return res.status(400).json({ error: 'Failed to parse rows: ' + err.message });
   }
 
-  // Check bulk contact limit (free plan capped at 10 per send)
+  // Check bulk contact limit (free plan capped at 10 per send — truncate, don't block)
   const isPrivilegedUser = req.user.is_admin || req.user.manual_account;
+  let truncatedCount = 0;
   if (!isPrivilegedUser) {
     const plan = PLANS[req.user.plan] || PLANS.free;
     const bulkMax = plan.bulk_max_contacts || Infinity;
     if (isFinite(bulkMax) && parsedRows.length > bulkMax) {
-      return res.status(403).json({
-        error: `Free plan bulk sends are limited to ${bulkMax} contacts. Upgrade to Starter or Pro for unlimited.`,
-        upgrade: true,
-      });
+      truncatedCount = parsedRows.length - bulkMax;
+      parsedRows = parsedRows.slice(0, bulkMax);
     }
   }
 
@@ -878,7 +906,7 @@ app.post('/api/jobs', requireAuth, (req, res) => {
     'INSERT INTO messages (id, job_id, phone, first_name, last_name, link, body, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
   );
 
-  let queued = 0, skippedSuppress = 0, skippedInvalid = 0;
+  let queued = 0, skippedSuppress = 0, skippedInvalid = 0, skippedDuplicate = 0;
 
   const doInserts = db.transaction(() => {
     // Atomic re-check inside write lock to prevent races near plan limit
@@ -894,10 +922,13 @@ app.post('/api/jobs', requireAuth, (req, res) => {
       }
     }
     insertJob.run(jobId, req.user.id, name, template, Number(paceSeconds));
+    const seenPhones = new Set();
     for (const row of parsedRows) {
       const rawPhone = row[columnMap.phone];
       const phone = normalizePhone(rawPhone);
       if (!phone) { skippedInvalid++; continue; }
+      if (seenPhones.has(phone)) { skippedDuplicate++; continue; }
+      seenPhones.add(phone);
       if (suppressedSet.has(phone)) { skippedSuppress++; continue; }
 
       const mapped = {
@@ -928,7 +959,14 @@ app.post('/api/jobs', requireAuth, (req, res) => {
   }
   // Send count incremented at ack time (only confirmed sends count)
 
-  res.status(201).json({ job_id: jobId, queued, skipped_suppressed: skippedSuppress, skipped_invalid: skippedInvalid });
+  res.status(201).json({
+    job_id: jobId,
+    queued,
+    skipped_suppressed: skippedSuppress,
+    skipped_invalid: skippedInvalid,
+    skipped_duplicate: skippedDuplicate,
+    truncated_count: truncatedCount,
+  });
 });
 
 app.patch('/api/jobs/:id/status', requireAuth, (req, res) => {
@@ -2335,11 +2373,25 @@ if (process.env.TYL_DESKTOP) {
         log(message.user_id, message.id, message.job_id, message.phone, 'sent');
         console.log(`[desktop-sender] sent → ${message.phone}`);
       } catch (err) {
-        const attempts = message.attempts + 1;
-        const newStatus = attempts >= 3 ? 'dead' : 'failed';
-        db.prepare("UPDATE messages SET status=?, error=?, last_attempt_at=datetime('now') WHERE id=?").run(newStatus, err.message, message.id);
-        log(message.user_id, message.id, message.job_id, message.phone, newStatus, err.message);
-        console.error(`[desktop-sender] failed → ${message.phone}: ${err.message}`);
+        // Detect messaging-app-closed errors — pause the job so the user must manually resume.
+        // Never auto-resume: unexpected sends mid-session would be alarming.
+        const msgLower = (err.message || '').toLowerCase();
+        const isAppClosed = /connection is invalid|application isn't running|not authorized to send apple events|phone link not found|phonelink.*not found|execution error.*messages/i.test(err.message);
+        if (isAppClosed) {
+          const appName = process.platform === 'darwin' ? 'Messages' : 'Phone Link';
+          const pauseReason = `${appName} closed — sending paused. Reopen ${appName} then click "Resume" to continue.`;
+          // Reset this message to pending (it was never sent) and pause the job
+          db.prepare("UPDATE messages SET status='pending', picked_at=NULL, error=?, last_attempt_at=datetime('now') WHERE id=?").run(pauseReason, message.id);
+          db.prepare("UPDATE jobs SET status='paused', updated_at=datetime('now') WHERE id=?").run(message.job_id);
+          log(message.user_id, message.id, message.job_id, message.phone, 'paused', pauseReason);
+          console.warn(`[desktop-sender] messaging app closed — job ${message.job_id} paused`);
+        } else {
+          const attempts = message.attempts + 1;
+          const newStatus = attempts >= 3 ? 'dead' : 'failed';
+          db.prepare("UPDATE messages SET status=?, error=?, last_attempt_at=datetime('now') WHERE id=?").run(newStatus, err.message, message.id);
+          log(message.user_id, message.id, message.job_id, message.phone, newStatus, err.message);
+          console.error(`[desktop-sender] failed → ${message.phone}: ${err.message}`);
+        }
       }
 
       recountJob(message.job_id);

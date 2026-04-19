@@ -501,8 +501,8 @@ function renderQuickSend(body) {
           <div class="char-count" id="qs-char">0 chars &middot; 1 segment</div>
         </div>
         <div style="display:flex;align-items:center;gap:12px">
-          <button class="btn btn-primary" id="qs-send" ${remaining<=0||isBlocked?'disabled':''}>Send</button>
-          <div id="qs-result" style="font-size:13px"></div>
+          <button class="btn btn-primary" id="qs-send" ${isBlocked?'disabled':''}>Send</button>
+          <div id="qs-result" style="font-size:13px">${remaining<=0&&!isBlocked?'<span style="color:var(--text-muted);font-size:12px">Test sends don\'t count against your monthly limit.</span>':''}</div>
         </div>
       </div>
     </div>`;
@@ -547,7 +547,7 @@ function renderQuickSend(body) {
           } else {
             resultEl.innerHTML = `<span style="color:var(--danger)">${escHtml(err.message)}</span>`;
           }
-          btn.disabled = remaining <= 0;
+          btn.disabled = isBlocked;
         }
       }
     );
@@ -556,8 +556,8 @@ function renderQuickSend(body) {
 
 // ── Send confirmation modal — Change 9 ────────────────────────────────────
 
-// showSendConfirmModal — Change 6: previewRows is array of {phone, mergedBody} objects, or a string for quick send
-function showSendConfirmModal(previewContact, previewMessage, count, onConfirm, previewRows) {
+// showSendConfirmModal — previewRows is array of {phone, mergedBody, hasEmptyMerge} objects, or null for quick send
+function showSendConfirmModal(previewContact, previewMessage, count, onConfirm, previewRows, opts = {}) {
   const root = document.getElementById('wizard-root');
   const overlay = document.createElement('div');
   overlay.className = 'wizard-overlay';
@@ -567,28 +567,36 @@ function showSendConfirmModal(previewContact, previewMessage, count, onConfirm, 
   modal.className = 'confirm-modal';
 
   const showWarning = count > 200;
+  const { freeTruncated, freeTruncatedFrom } = opts;
 
-  // Build preview rows HTML
+  // Build preview rows HTML — show up to 10, scrollable, highlight empty merge fields
   let previewHtml = '';
   if (previewRows && previewRows.length) {
-    previewHtml = previewRows.map((r, i) => `
-      <div style="margin-bottom:${i < previewRows.length - 1 ? '10px' : '0'}">
-        ${r.phone ? `<div style="font-size:11.5px;color:var(--text-muted);margin-bottom:3px">To: ${escHtml(r.phone)}</div>` : ''}
-        <div class="confirm-preview" style="margin-bottom:0">${escHtml(r.body || r)}</div>
-      </div>`).join('');
+    const rows = previewRows.slice(0, 10);
+    const moreCount = count - rows.length;
+    previewHtml = `<div style="max-height:220px;overflow-y:auto;padding-right:4px">` +
+      rows.map((r, i) => {
+        const bodyHtml = escHtml(r.body || r).replace(/\[EMPTY_MERGE\]/g, '<mark style="background:#fef08a;border-radius:2px;padding:0 2px">(empty)</mark>');
+        return `<div style="margin-bottom:${i < rows.length - 1 ? '10px' : '0'}">
+          ${r.phone ? `<div style="font-size:11.5px;color:var(--text-muted);margin-bottom:3px">To: ${escHtml(r.phone)}</div>` : ''}
+          <div class="confirm-preview" style="margin-bottom:0">${bodyHtml}</div>
+        </div>`;
+      }).join('') +
+      `</div>` +
+      (moreCount > 0 ? `<div style="font-size:12px;color:var(--text-muted);margin-top:6px">…and ${moreCount} more contact${moreCount===1?'':'s'}</div>` : '');
   } else {
     previewHtml = `<div class="confirm-preview">${escHtml(typeof previewMessage === 'string' ? previewMessage : '')}</div>`;
   }
 
   modal.innerHTML = `
     <h2 style="font-size:17px;font-weight:700;margin-bottom:4px">Ready to send?</h2>
-    <div style="font-size:13.5px;color:var(--text-muted);margin-bottom:14px">Sending to <strong style="color:var(--text)">${count} contact${count===1?'':'s'}</strong></div>
+    <div style="font-size:13.5px;color:var(--text-muted);margin-bottom:14px">Sending to <strong style="color:var(--text)">${count} contact${count===1?'':'s'}</strong>${freeTruncated ? ` <span style="color:var(--warning,#b45309)">(Free plan: first ${count} of ${freeTruncatedFrom})</span>` : ''}</div>
+    ${freeTruncated ? `<div class="alert alert-warn" style="margin-bottom:12px">Free plan sends are limited to <strong>${count} contacts</strong>. Only the first ${count} contacts in your list will receive this message. <button class="btn btn-primary btn-sm" onclick="document.getElementById('wizard-root').innerHTML='';navigate('billing')">Upgrade for the full list</button></div>` : ''}
     ${previewHtml ? `<div style="font-size:12px;color:var(--text-muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em">Message preview</div>${previewHtml}` : ''}
     ${showWarning ? `<div class="alert alert-warn" style="margin:12px 0 0">Sending to ${count} contacts. We recommend no more than 200/day to keep your number healthy.</div>` : ''}
+    <div id="confirm-app-warn" style="display:none" class="alert alert-error" style="margin:10px 0 0"></div>
     <div style="background:var(--bg-alt,#f7f7f7);border-radius:8px;padding:12px 14px;margin:14px 0 0;font-size:13px;color:var(--text-muted);line-height:1.7">
-      ${window.electronAPI?.isDesktop
-        ? 'Make sure <strong style="color:var(--text)">Messages</strong> (Mac) or <strong style="color:var(--text)">Phone Link</strong> (Windows) is open before sending.'
-        : 'Make sure the <strong style="color:var(--text)">companion app is running</strong> (green icon in your system tray or menu bar), and that <strong style="color:var(--text)">Phone Link</strong> (Windows) or <strong style="color:var(--text)">Messages</strong> (Mac) is open. Windows users: keep your phone nearby.<div style="margin-top:6px"><a href="/help/companion" target="_blank" style="color:var(--accent);font-size:12px">Setup help →</a></div>'}
+      Be sure <strong style="color:var(--text)">Messages</strong> (Mac) or <strong style="color:var(--text)">Phone Link</strong> (Windows) is open and your phone is nearby before sending.
     </div>
     <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px">
       <button class="btn btn-ghost" id="confirm-cancel">Cancel</button>
@@ -599,7 +607,32 @@ function showSendConfirmModal(previewContact, previewMessage, count, onConfirm, 
   root.appendChild(overlay);
 
   document.getElementById('confirm-cancel').addEventListener('click', () => root.innerHTML = '');
-  document.getElementById('confirm-send').addEventListener('click', () => {
+  document.getElementById('confirm-send').addEventListener('click', async () => {
+    const sendBtn = document.getElementById('confirm-send');
+    const warnEl = document.getElementById('confirm-app-warn');
+    sendBtn.disabled = true;
+    sendBtn.textContent = 'Checking…';
+
+    // Pre-check messaging app is running (desktop only)
+    if (window.electronAPI?.isDesktop) {
+      try {
+        const isMac = window.electronAPI.platform === 'darwin';
+        const isRunning = isMac
+          ? await window.electronAPI.checkMessagesRunning()
+          : await window.electronAPI.checkPhoneLinkRunning();
+        if (!isRunning) {
+          const appName = isMac ? 'Messages' : 'Phone Link';
+          warnEl.textContent = `${appName} is not open. Open it now, then click Send.`;
+          warnEl.style.display = 'block';
+          sendBtn.disabled = false;
+          sendBtn.textContent = 'Send';
+          return;
+        }
+      } catch {
+        // IPC check failed — proceed anyway, the send loop will catch it
+      }
+    }
+
     root.innerHTML = '';
     onConfirm();
   });
@@ -974,7 +1007,20 @@ async function renderBulkSend(body) {
       bsState.isNewList = true;
       bsState.totalCount = data.total || data.rows.length;
       autoDetectColumns(bsState);
-      document.getElementById('bs-upload-result').innerHTML = `<div class="alert alert-success" style="margin:0;display:flex;justify-content:space-between;align-items:center">&#10003; ${data.total} contacts loaded <button id="bs-clear-btn" class="btn btn-ghost btn-sm" style="padding:2px 8px;font-size:12px">Change list</button></div>`;
+
+      // Build upload status messages
+      const warnings = [];
+      if (data.no_phone_column) {
+        warnings.push(`<div class="alert alert-error" style="margin:6px 0 0">No phone column found. Name your phone column <strong>phone</strong>, <strong>mobile</strong>, <strong>cell</strong>, or <strong>number</strong> and re-upload.</div>`);
+      }
+      if (data.duplicate_count > 0) {
+        warnings.push(`<div class="alert alert-warn" style="margin:6px 0 0">&#9888; This list contains <strong>${data.duplicate_count} duplicate phone number${data.duplicate_count===1?'':'s'}</strong>. Duplicates will be skipped automatically at send time.</div>`);
+      }
+      if (isFree && data.total > bulkMax) {
+        warnings.push(`<div class="alert alert-warn" style="margin:6px 0 0">Free plan sends up to <strong>${bulkMax} contacts</strong>. Your list has ${data.total} — only the first ${bulkMax} will be sent. <button class="btn btn-primary btn-sm" onclick="navigate('billing')">Upgrade</button></div>`);
+      }
+
+      document.getElementById('bs-upload-result').innerHTML = `<div class="alert alert-success" style="margin:0;display:flex;justify-content:space-between;align-items:center">&#10003; ${data.total} contacts loaded <button id="bs-clear-btn" class="btn btn-ghost btn-sm" style="padding:2px 8px;font-size:12px">Change list</button></div>${warnings.join('')}`;
       document.getElementById('bs-clear-btn').addEventListener('click', () => {
         document.getElementById('bs-upload-result').innerHTML = '';
         document.getElementById('bs-csv-status').innerHTML = '';
@@ -1072,29 +1118,30 @@ async function renderBulkSend(body) {
     if (queueNow) {
       // Count rows
       const lines = bsState.csvRaw.trim().split('\n');
-      const total = lines.slice(1).filter(l => l.trim()).length;
+      const totalInList = lines.slice(1).filter(l => l.trim()).length;
 
-      // Client-side limit checks with upgrade prompts
-      if (isFree && total > bulkMax) {
-        alertEl.innerHTML = `<div class="alert alert-warn">Your list has <strong>${total} contacts</strong> but the Free plan allows up to <strong>${bulkMax}</strong> per send. <button class="btn btn-primary btn-sm" onclick="navigate('billing')">Upgrade to Starter</button> or trim your CSV to ${bulkMax} rows.</div>`;
-        return;
-      }
+      // Monthly limit check (hard block)
       const remaining = currentUser.remaining_sends ?? (currentUser.monthly_limit - currentUser.monthly_sends);
-      if (typeof remaining === 'number' && total > remaining) {
-        alertEl.innerHTML = `<div class="alert alert-warn">You have <strong>${remaining} sends</strong> left this month, but your list has <strong>${total} contacts</strong>. <button class="btn btn-primary btn-sm" onclick="navigate('billing')">Upgrade for more sends</button> or reduce your list to ${remaining} contacts.</div>`;
+      if (typeof remaining === 'number' && totalInList > remaining) {
+        alertEl.innerHTML = `<div class="alert alert-warn">You have <strong>${remaining} sends</strong> left this month, but your list has <strong>${totalInList} contacts</strong>. <button class="btn btn-primary btn-sm" onclick="navigate('billing')">Upgrade for more sends</button> or reduce your list to ${remaining} contacts.</div>`;
         return;
       }
 
-      // Build real merged preview for up to 3 contacts
-      const previewRows = (bsState.csvRows || []).slice(0, 3).map(row => {
+      // Free plan: truncate to bulkMax, show in preview modal (not a hard block)
+      const effectiveTotal = (isFree && totalInList > bulkMax) ? bulkMax : totalInList;
+      const freeTruncated = isFree && totalInList > bulkMax;
+
+      // Build merged preview for up to 10 contacts — flag empty merge substitutions
+      const templateTokens = [...new Set((template.match(/\{(\w+)\}/g) || []).map(t => t.slice(1,-1)))];
+      const previewRows = (bsState.csvRows || []).slice(0, 10).map(row => {
         try {
           let msg = template;
           const cm = bsState.columnMap;
-          // Replace {token} using token→column mapping, then fall back to direct column name match
           msg = msg.replace(/\{(\w+)\}/g, (m, token) => {
-            if (cm[token] && row[cm[token]] !== undefined) return row[cm[token]];
-            if (row[token] !== undefined) return row[token];
-            return m;
+            const colName = cm[token];
+            const val = colName && row[colName] !== undefined ? row[colName] : (row[token] !== undefined ? row[token] : '');
+            // Mark empty substitutions so we can highlight them
+            return val || (templateTokens.includes(token) ? '[EMPTY_MERGE]' : m);
           });
           const phone = cm.phone ? (row[cm.phone] || '') : '';
           return { phone, body: msg };
@@ -1102,7 +1149,7 @@ async function renderBulkSend(body) {
       });
       if (!previewRows.length) previewRows.push({ phone: '', body: template });
 
-      showSendConfirmModal(null, template, total, () => doSubmitBulk(true, name, template, pace), previewRows);
+      showSendConfirmModal(null, template, effectiveTotal, () => doSubmitBulk(true, name, template, pace), previewRows, { freeTruncated, freeTruncatedFrom: totalInList });
     } else {
       doSubmitBulk(false, name, template, pace);
     }
@@ -1125,9 +1172,23 @@ async function renderBulkSend(body) {
       }
       currentUser = await get('/api/auth/me');
       updateUserBadge();
-      if (result.skipped_suppressed > 0) {
-        showToast(`Queued — ${result.skipped_suppressed} contact${result.skipped_suppressed === 1 ? '' : 's'} skipped (on suppression list)`, 5000);
+
+      // Surface all skip reasons
+      const skipParts = [];
+      if (result.skipped_suppressed > 0) skipParts.push(`${result.skipped_suppressed} suppressed`);
+      if (result.skipped_invalid > 0)    skipParts.push(`${result.skipped_invalid} invalid number${result.skipped_invalid===1?'':'s'}`);
+      if (result.skipped_duplicate > 0)  skipParts.push(`${result.skipped_duplicate} duplicate${result.skipped_duplicate===1?'':'s'}`);
+      if (result.truncated_count > 0)    skipParts.push(`${result.truncated_count} over free plan limit`);
+      if (skipParts.length) showToast(`Queued — skipped: ${skipParts.join(', ')}`, 6000);
+
+      // Guard against ghost job (all contacts skipped/invalid)
+      if (result.queued === 0) {
+        alertEl.innerHTML = `<div class="alert alert-error">No contacts were queued — all ${result.skipped_invalid || 'N'} rows had unrecognizable phone numbers. Check that your phone column contains valid numbers.</div>`;
+        document.getElementById('bs-preview-send').disabled = false;
+        document.getElementById('bs-save-draft').disabled = false;
+        return;
       }
+
       navigate('history');
       setTimeout(() => openJobDetail(result.job_id), 300);
     } catch (err) {
@@ -1496,6 +1557,11 @@ function openCreateList() {
       }
       const finalRows = nonEmpty.filter(r => r[phoneCol].trim());
       if (!finalRows.length) { alert('No rows with a phone number to save.'); return; }
+
+      // Warn free users that the list exceeds bulk send cap
+      if (isFree && finalRows.length > maxRows) {
+        if (!confirm(`Your Free plan allows bulk sends up to ${maxRows} contacts. This list has ${finalRows.length} rows — you can save it, but only the first ${maxRows} will be sent unless you upgrade.\n\nSave anyway?`)) return;
+      }
 
       const saveBtn = box.querySelector('#cl-save');
       saveBtn.disabled = true;
@@ -2056,16 +2122,29 @@ async function refreshJobDetail(jobId) {
     const canPause  = job.status === 'queued';
     const canCancel = ['draft','queued','paused'].includes(job.status);
 
+    // Check if job was paused due to messaging app closing
+    const pausedByApp = job.status === 'paused' && messages.some(m =>
+      m.error && /closed — sending paused/i.test(m.error)
+    );
+    const appName = window.electronAPI?.platform === 'darwin' ? 'Messages' : 'Phone Link';
+
     container.innerHTML = `
+      ${pausedByApp ? `<div class="alert alert-warn" style="margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;gap:12px">
+        <span>&#9888; <strong>${appName} closed</strong> — sending paused. Reopen ${appName}, then resume.</span>
+        <div style="display:flex;gap:8px;flex-shrink:0">
+          <button class="btn btn-primary btn-sm" onclick="setJobStatus('${jobId}','queued')">Resume</button>
+          <button class="btn btn-ghost btn-sm" onclick="setJobStatus('${jobId}','cancelled')" style="color:var(--danger)">Cancel</button>
+        </div>
+      </div>` : ''}
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;gap:12px">
         <div>
           <h2 style="font-size:20px;font-weight:700;letter-spacing:-0.4px">${escHtml(job.name)}</h2>
           <div style="margin-top:4px">${pill(job.status)}</div>
         </div>
         <div style="display:flex;gap:8px">
-          ${canQueue  ? `<button class="btn btn-primary btn-sm" onclick="setJobStatus('${jobId}','queued')">Queue Sends</button>` : ''}
+          ${canQueue && !pausedByApp ? `<button class="btn btn-primary btn-sm" onclick="setJobStatus('${jobId}','queued')">Resume</button>` : ''}
           ${canPause  ? `<button class="btn btn-ghost btn-sm" onclick="setJobStatus('${jobId}','paused')">Pause</button>` : ''}
-          ${canCancel ? `<button class="btn btn-ghost btn-sm" onclick="setJobStatus('${jobId}','cancelled')" style="color:var(--danger)">Cancel</button>` : ''}
+          ${canCancel && !pausedByApp ? `<button class="btn btn-ghost btn-sm" onclick="setJobStatus('${jobId}','cancelled')" style="color:var(--danger)">Cancel</button>` : ''}
         </div>
       </div>
       <div class="monitor-stats">
