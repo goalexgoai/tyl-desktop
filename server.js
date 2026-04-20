@@ -730,7 +730,14 @@ app.get('/api/auth/me', requireAuth, async (req, res) => {
     billing_interval: fresh.billing_interval || null,
     pending_api_count: db.prepare("SELECT COUNT(*) as c FROM jobs WHERE user_id = ? AND status = 'api_pending'").get(fresh.id).c,
     api_default_pace: fresh.api_default_pace != null ? fresh.api_default_pace : null,
-    daily_sends: db.prepare("SELECT COUNT(*) as c FROM send_logs WHERE user_id = ? AND status = 'sent' AND date(created_at) = date('now')").get(fresh.id).c || 0,
+    daily_sends: db.prepare(`
+      SELECT COUNT(*) as c FROM send_logs sl
+      JOIN messages m ON m.id = sl.message_id
+      JOIN jobs j ON j.id = m.job_id
+      WHERE sl.user_id = ? AND sl.status = 'sent'
+        AND date(sl.created_at) = date('now')
+        AND j.is_test = 0
+    `).get(fresh.id).c || 0,
   });
 });
 
