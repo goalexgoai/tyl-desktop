@@ -3401,7 +3401,7 @@ function renderHelp(main) {
       <div class="card" style="max-width:560px;margin-bottom:20px">
         <div class="card-header"><h3>Quick Tips</h3></div>
         <div class="card-body" style="font-size:13.5px;line-height:1.6;display:flex;flex-direction:column;gap:12px">
-          <div><strong>Daily send limit</strong><br>We recommend sending no more than 200 texts per day to protect your phone number from spam filters.</div>
+          <div><strong>Daily send limit</strong><br>We recommend no more than 200 bulk sends per day to protect your number from spam filters. Test sends don't count toward this limit.</div>
           <div><strong>Merge fields</strong><br>Use <code>{first_name}</code>, <code>{last_name}</code>, or any CSV column in your message to personalize each text.</div>
           <div><strong>Suppression list</strong><br>Numbers on your suppression list are automatically skipped in all bulk sends.</div>
           <div><strong>Test Send</strong><br>Use Test Send to send a one-off test message to a single number before doing a bulk send.</div>
@@ -3416,6 +3416,14 @@ function renderHelp(main) {
           <button class="btn btn-primary btn-sm" id="btn-manage-permissions">Manage Permissions</button>
         </div>
       </div>` : ''}
+      <div class="card" style="max-width:560px;margin-bottom:20px">
+        <div class="card-header"><h3>Your data</h3></div>
+        <div class="card-body" style="font-size:13.5px;line-height:1.6;color:var(--text-muted)">
+          <p style="margin-bottom:8px">Contact lists, templates, and send history are stored locally on your computer — nothing is sent to our servers.</p>
+          <p>Your data lives at: <code style="font-size:12px;background:var(--bg);padding:2px 6px;border-radius:4px">${window.electronAPI?.platform === 'darwin' ? '~/Library/Application Support/Text Your List/' : '%APPDATA%\\Text Your List\\'}</code></p>
+          <p style="margin-top:8px">If you reinstall the app, this folder is preserved automatically. To keep a backup, copy this folder to a safe location.</p>
+        </div>
+      </div>
       <div class="card" style="max-width:560px">
         <div class="card-header"><h3>About</h3></div>
         <div class="card-body" style="font-size:13.5px;color:var(--text-muted)">
