@@ -44,7 +44,7 @@
       border-radius: 12px;
       padding: 20px;
       margin-bottom: 16px;
-      transition: border-color 0.2s;
+      transition: border-color 0.2s, background 0.2s;
     }
     .step.done { border-color: #86efac; background: #f0fdf4; }
 
@@ -86,7 +86,7 @@
       transition: opacity 0.15s;
       margin-left: 42px;
     }
-    .btn:hover { opacity: 0.85; }
+    .btn:hover:not(:disabled) { opacity: 0.85; }
     .btn-primary { background: #8C2249; color: #fff; }
     .btn-outline { background: #fff; color: #374151; border: 1.5px solid #d1d5db; }
     .btn:disabled { opacity: 0.4; cursor: not-allowed; }
@@ -94,10 +94,25 @@
     .step-note {
       font-size: 12px;
       color: #9ca3af;
-      margin-top: 8px;
+      margin-top: 10px;
       margin-left: 42px;
+      line-height: 1.5;
     }
-    .step-note a { color: #8C2249; cursor: pointer; }
+
+    .skip-step {
+      display: inline;
+      font-size: 12px;
+      color: #9ca3af;
+      cursor: pointer;
+      text-decoration: underline;
+      background: none;
+      border: none;
+      font-family: inherit;
+      padding: 0;
+      margin-left: 42px;
+      margin-top: 10px;
+    }
+    .skip-step:hover { color: #6b7280; }
 
     .divider { height: 1px; background: #f3f4f6; margin: 28px 0; }
 
@@ -105,31 +120,30 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
+      gap: 12px;
     }
     .btn-continue {
       background: #8C2249;
       color: #fff;
       padding: 11px 28px;
       font-size: 14px;
+      margin-left: 0;
+      flex-shrink: 0;
     }
     .btn-continue:disabled { opacity: 0.4; cursor: not-allowed; }
-    .skip-link {
-      font-size: 13px;
+    .footer-note {
+      font-size: 12px;
       color: #9ca3af;
-      cursor: pointer;
-      text-decoration: underline;
-      background: none;
-      border: none;
-      font-family: inherit;
+      line-height: 1.4;
     }
-    .skip-link:hover { color: #6b7280; }
 
     .status-msg {
       font-size: 12px;
       color: #6b7280;
-      margin-top: 6px;
+      margin-top: 8px;
       margin-left: 42px;
       min-height: 16px;
+      line-height: 1.5;
     }
     .status-msg.ok { color: #16a34a; }
     .status-msg.err { color: #dc2626; }
@@ -146,7 +160,7 @@
     </div>
 
     <h1>Let's get you set up</h1>
-    <p class="subtitle">Text Your List needs two permissions to route messages correctly — iPhone contacts go as iMessage, Android contacts go as SMS. Grant both now so you're never interrupted mid-send.</p>
+    <p class="subtitle">Grant system access to Text Your List.</p>
 
     <!-- Step 1: Messages access -->
     <div class="step" id="step1">
@@ -154,8 +168,8 @@
         <div class="step-num"><span>1</span></div>
         <div class="step-title">Allow access to Messages</div>
       </div>
-      <p class="step-desc">macOS will ask if Text Your List can control Messages.app. Click <strong>OK</strong> on the system prompt.</p>
-      <button class="btn btn-primary" id="btn-messages" onclick="grantMessages()">Request access</button>
+      <p class="step-desc">macOS will ask if Text Your List can control Messages.app. Click <strong>OK</strong> on the prompt that appears.</p>
+      <button class="btn btn-primary" id="btn-messages" onclick="grantMessages()">Authorize access</button>
       <div class="status-msg" id="msg-messages"></div>
     </div>
 
@@ -165,16 +179,20 @@
         <div class="step-num"><span>2</span></div>
         <div class="step-title">Grant Full Disk Access</div>
       </div>
-      <p class="step-desc">This allows Text Your List to read your Messages history to detect whether each contact is on iPhone or Android. Apple requires you to grant this manually in System Settings.</p>
-      <button class="btn btn-primary" id="btn-fda" onclick="openFDA()">Open System Settings</button>
-      <button class="btn btn-outline" id="btn-check-fda" onclick="checkFDA()" style="margin-left:8px">Check access</button>
-      <div class="status-msg" id="msg-fda">Click "Open System Settings," add Text Your List to the Full Disk Access list, then click "Check access."</div>
+      <p class="step-desc">Allow Text Your List to discern between iPhone and Android users. Apple requires you to grant this permission manually in System Settings.</p>
+      <button class="btn btn-primary" id="btn-fda" onclick="openFDAAndPoll()">Open System Settings</button>
+      <div class="status-msg" id="msg-fda">Click "Open System Settings," find <strong>Text Your List</strong> (or <strong>Electron</strong>) in the Full Disk Access list and toggle it on.</div>
+      <div class="step-note" id="fda-hint" style="display:none">
+        Don't see it? Click the <strong>+</strong> button in System Settings and add Text Your List from your Applications folder.
+      </div>
+      <br>
+      <button class="skip-step" onclick="skipFDA()">Skip — send as SMS instead</button>
     </div>
 
     <div class="divider"></div>
 
     <div class="footer-row">
-      <button class="skip-link" onclick="skip()">Skip for now (use SMS relay instead)</button>
+      <div class="footer-note" id="footer-note"></div>
       <button class="btn btn-continue" id="btn-continue" onclick="finish()" disabled>Continue →</button>
     </div>
   </div>
@@ -184,91 +202,107 @@
 
     let messagesGranted = false;
     let fdaGranted = false;
+    let fdaSkipped = false;
+    let pollTimer = null;
 
     function setStepDone(stepEl) {
       stepEl.classList.add('done');
+    }
+
+    function updateContinue() {
+      const ready = messagesGranted && (fdaGranted || fdaSkipped);
+      document.getElementById('btn-continue').disabled = !ready;
+      const note = document.getElementById('footer-note');
+      if (messagesGranted && fdaSkipped) {
+        note.textContent = 'Smart routing disabled — messages will send as SMS.';
+      } else if (messagesGranted && fdaGranted) {
+        note.textContent = 'All set — smart routing enabled.';
+      } else {
+        note.textContent = '';
+      }
     }
 
     async function grantMessages() {
       const btn = document.getElementById('btn-messages');
       const msg = document.getElementById('msg-messages');
       btn.disabled = true;
-      btn.textContent = 'Requesting...';
+      btn.textContent = 'Authorizing…';
       msg.textContent = '';
       msg.className = 'status-msg';
       try {
         const ok = await api.triggerMessagesPermission();
         if (ok) {
           messagesGranted = true;
+          btn.textContent = 'Authorized ✓';
           setStepDone(document.getElementById('step1'));
           msg.textContent = 'Access granted.';
           msg.className = 'status-msg ok';
         } else {
           btn.disabled = false;
-          btn.textContent = 'Request access';
-          msg.textContent = 'Access was not granted. Open System Settings > Privacy & Security > Automation and enable Text Your List.';
+          btn.textContent = 'Authorize access';
+          msg.innerHTML = 'Access was not granted. Go to <strong>System Settings → Privacy &amp; Security → Automation → Text Your List</strong> and enable Messages, then try again.';
           msg.className = 'status-msg err';
         }
       } catch {
         btn.disabled = false;
-        btn.textContent = 'Request access';
+        btn.textContent = 'Authorize access';
         msg.textContent = 'Something went wrong. Try again.';
         msg.className = 'status-msg err';
       }
       updateContinue();
     }
 
-    async function openFDA() {
+    async function openFDAAndPoll() {
       api.openFdaSettings();
       const msg = document.getElementById('msg-fda');
-      msg.textContent = 'System Settings opened. Find Text Your List in the list and toggle it on, then click "Check access" above.';
+      const hint = document.getElementById('fda-hint');
+      msg.textContent = 'System Settings opened — toggle on Text Your List (or Electron) in the Full Disk Access list.';
       msg.className = 'status-msg';
+
+      // Show the + hint after 5 seconds so they have time to look first
+      setTimeout(() => { hint.style.display = ''; }, 5000);
+
+      // Auto-poll every 2 seconds so they don't have to click "Check"
+      if (pollTimer) clearInterval(pollTimer);
+      pollTimer = setInterval(async () => {
+        try {
+          const ok = await api.checkChatDbAccess();
+          if (ok) {
+            clearInterval(pollTimer);
+            pollTimer = null;
+            fdaGranted = true;
+            fdaSkipped = false;
+            setStepDone(document.getElementById('step2'));
+            msg.textContent = 'Full Disk Access confirmed — smart routing enabled.';
+            msg.className = 'status-msg ok';
+            hint.style.display = 'none';
+            updateContinue();
+          }
+        } catch { /* keep polling */ }
+      }, 2000);
     }
 
-    async function checkFDA() {
-      const btn = document.getElementById('btn-check-fda');
+    function skipFDA() {
+      if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+      fdaGranted = false;
+      fdaSkipped = true;
       const msg = document.getElementById('msg-fda');
-      btn.disabled = true;
-      btn.textContent = 'Checking...';
-      try {
-        const ok = await api.checkChatDbAccess();
-        if (ok) {
-          fdaGranted = true;
-          setStepDone(document.getElementById('step2'));
-          msg.textContent = 'Full Disk Access confirmed.';
-          msg.className = 'status-msg ok';
-        } else {
-          btn.disabled = false;
-          btn.textContent = 'Check access';
-          msg.textContent = 'Not granted yet. Make sure Text Your List is toggled on in System Settings > Full Disk Access, then try again.';
-          msg.className = 'status-msg err';
-        }
-      } catch {
-        btn.disabled = false;
-        btn.textContent = 'Check access';
-        msg.textContent = 'Could not check. Try again.';
-        msg.className = 'status-msg err';
-      }
+      msg.textContent = 'Skipped — messages will send as SMS. You can enable smart routing later from Help → Manage Permissions.';
+      msg.className = 'status-msg';
+      document.getElementById('fda-hint').style.display = 'none';
       updateContinue();
     }
 
-    function updateContinue() {
-      document.getElementById('btn-continue').disabled = !(messagesGranted && fdaGranted);
-    }
-
     async function finish() {
-      await api.markSetupDone();
-      window.location.href = '/app';
-    }
-
-    async function skip() {
+      if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
       await api.markSetupDone();
       window.location.href = '/app';
     }
 
     // Auto-check FDA on load in case it was already granted
     window.addEventListener('load', async () => {
-      if (api) {
+      if (!api) return;
+      try {
         const fda = await api.checkChatDbAccess();
         if (fda) {
           fdaGranted = true;
@@ -277,7 +311,7 @@
           document.getElementById('msg-fda').className = 'status-msg ok';
           updateContinue();
         }
-      }
+      } catch { /* not granted, leave as-is */ }
     });
   </script>
 </body>

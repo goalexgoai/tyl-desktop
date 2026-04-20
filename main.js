@@ -272,8 +272,12 @@ ipcMain.on('set-tray-status', (_, status) => {
 
 ipcMain.handle('check-chat-db-access', () => {
   const os = require('os');
+  const dbPath = path.join(os.homedir(), 'Library', 'Messages', 'chat.db');
   try {
-    fs.accessSync(path.join(os.homedir(), 'Library', 'Messages', 'chat.db'), fs.constants.R_OK);
+    // Use openSync + closeSync rather than accessSync — this actually exercises
+    // the TCC read gate and gives a reliable answer in the packaged Electron context.
+    const fd = fs.openSync(dbPath, 'r');
+    fs.closeSync(fd);
     return true;
   } catch {
     return false;

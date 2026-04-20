@@ -3406,13 +3406,15 @@ function renderHelp(main) {
           <div><strong>Test Send</strong><br>Use Test Send to send a one-off test message to a single number before doing a bulk send.</div>
         </div>
       </div>
+      ${window.electronAPI?.platform === 'darwin' ? `
       <div class="card" style="max-width:560px;margin-bottom:20px">
         <div class="card-header"><h3>macOS Permissions</h3></div>
         <div class="card-body" style="font-size:13.5px;line-height:1.6">
-          <p style="margin-bottom:10px">On your first send, macOS will ask: <em>"Text Your List wants access to control Messages."</em> Click <strong>Allow</strong> — this is required for the app to send messages.</p>
-          <p style="color:var(--text-muted)">If you clicked Don't Allow by mistake: go to <strong>System Settings &rarr; Privacy &amp; Security &rarr; Automation &rarr; Text Your List</strong> and enable Messages.</p>
+          <p style="margin-bottom:10px">Text Your List needs two permissions to work on Mac: <strong>Automation</strong> (to send via Messages) and <strong>Full Disk Access</strong> (to detect iPhone vs Android and route to iMessage or SMS).</p>
+          <p style="margin-bottom:14px;color:var(--text-muted)">If you skipped Full Disk Access on install, or if smart routing isn't working, use the button below to re-run the setup.</p>
+          <button class="btn btn-primary btn-sm" id="btn-manage-permissions">Manage Permissions</button>
         </div>
-      </div>
+      </div>` : ''}
       <div class="card" style="max-width:560px">
         <div class="card-header"><h3>About</h3></div>
         <div class="card-body" style="font-size:13.5px;color:var(--text-muted)">
@@ -3424,6 +3426,13 @@ function renderHelp(main) {
         </div>
       </div>
     </div>`;
+
+  const managePermBtn = document.getElementById('btn-manage-permissions');
+  if (managePermBtn) {
+    managePermBtn.addEventListener('click', () => {
+      window.location.href = '/setup';
+    });
+  }
 
   document.getElementById('help-docs-btn').addEventListener('click', () => {
     const url = 'https://textyourlist.com';
