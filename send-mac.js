@@ -123,6 +123,34 @@ end tell
 `;
 }
 
+// Look up a number's known route from chat.db handle table.
+// Returns 'imessage' | 'sms' | 'unknown'.
+// This is a persistent cache across restarts — unlike routingCache which resets per session.
+function lookupKnownRoute(phone) {
+  let db;
+  try {
+    const Database = require('better-sqlite3');
+    db = new Database(chatDbPath(), { readonly: true, fileMustExist: true });
+    const digits = phone.replace(/\D/g, '');
+    const variants = new Set([phone, digits]);
+    if (digits.length === 10) {
+      variants.add('+1' + digits); // US 10-digit → E.164
+    } else if (digits.length === 11 && digits.startsWith('1')) {
+      variants.add('+' + digits);  // 1XXXXXXXXXX → +1XXXXXXXXXX
+    }
+    const varArr = [...variants];
+    const placeholders = varArr.map(() => '?').join(',');
+    const rows = db.prepare(`SELECT service FROM handle WHERE id IN (${placeholders})`).all(...varArr);
+    if (rows.some(r => r.service === 'iMessage')) return 'imessage';
+    if (rows.some(r => r.service === 'SMS')) return 'sms';
+    return 'unknown';
+  } catch {
+    return 'unknown';
+  } finally {
+    try { if (db) db.close(); } catch {}
+  }
+}
+
 module.exports = async function sendViaMac(number, message) {
   const tmp = path.join(os.tmpdir(), `tyl_${Date.now()}.txt`);
   fs.writeFileSync(tmp, message, 'utf8');
@@ -130,7 +158,7 @@ module.exports = async function sendViaMac(number, message) {
   try {
     await ensureMessagesRunning();
 
-    // ── Cached routing decision ──────────────────────────────────────────────
+    // ── Session cache (in-memory, resets on restart) ─────────────────────────
     const cached = routingCache.get(number);
     if (cached === 'imessage') {
       execFileSync('osascript', ['-e', buildScript('iMessage', number, tmp)], { timeout: 30000 });
@@ -141,8 +169,26 @@ module.exports = async function sendViaMac(number, message) {
       return true;
     }
 
-    // ── Smart routing: iMessage-first with chat.db delivery check ────────────
+    // ── Persistent chat.db handle lookup (survives restarts) ─────────────────
+    // If we've previously messaged this number, the handle table tells us which
+    // service was used. This avoids the iMessage→fail→retry dance for known Android
+    // numbers on repeat sends (e.g. after app restart).
     if (canReadChatDb()) {
+      const knownRoute = lookupKnownRoute(number);
+      if (knownRoute === 'imessage') {
+        routingCache.set(number, 'imessage');
+        execFileSync('osascript', ['-e', buildScript('iMessage', number, tmp)], { timeout: 30000 });
+        return true;
+      }
+      if (knownRoute === 'sms') {
+        routingCache.set(number, 'sms');
+        execFileSync('osascript', ['-e', buildScript('SMS', number, tmp)], { timeout: 30000 });
+        return true;
+      }
+
+      // ── Unknown number: iMessage-first with delivery poll ────────────────────
+      // First-ever send to this number — try iMessage and watch chat.db to see
+      // if it was delivered (iPhone) or errored (Android). Cache the result.
       const beforeRowId = getMaxMessageRowId();
 
       execFileSync('osascript', ['-e', buildScript('iMessage', number, tmp)], { timeout: 30000 });
@@ -162,7 +208,7 @@ module.exports = async function sendViaMac(number, message) {
       }
 
       // Timeout — message reached Apple servers but delivery unconfirmed.
-      // Don't double-send via SMS. Don't cache (try smart routing again next send).
+      // Don't double-send via SMS. Don't cache.
       return true;
     }
 
