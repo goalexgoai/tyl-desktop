@@ -395,7 +395,7 @@ function renderSend(main) {
       <span>&#128274; <strong>${u.pending_api_count} message${u.pending_api_count===1?'':'s'} waiting</strong> from Make / Zapier / API — held for your approval.</span>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         <button class="btn btn-primary btn-sm" onclick="releaseApiMessages(0)">Send now (fast)</button>
-        <button class="btn btn-ghost btn-sm" onclick="releaseApiMessages(20)">Send with Smart Throttle</button>
+        <button class="btn btn-ghost btn-sm" onclick="releaseApiMessages(7)">Send with Smart Throttle</button>
         <button class="btn btn-ghost btn-sm" style="color:var(--danger)" onclick="cancelApiMessages()">Cancel all</button>
       </div>
     </div>` : ''}
@@ -835,9 +835,9 @@ async function renderBulkSend(body) {
               </div>
             </label>
             <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;text-transform:none;letter-spacing:0;font-weight:400;margin:0;color:var(--text)">
-              <input type="radio" name="bs-pace" id="bs-pace-drip" value="20" style="margin-top:3px;flex-shrink:0" />
+              <input type="radio" name="bs-pace" id="bs-pace-drip" value="7" style="margin-top:3px;flex-shrink:0" />
               <div>
-                <div style="font-weight:600;font-size:13.5px">Smart Throttle <span style="font-weight:400;color:var(--text-muted)">— randomized 20–27s delay between sends</span></div>
+                <div style="font-weight:600;font-size:13.5px">Smart Throttle <span style="font-weight:400;color:var(--text-muted)">— randomized 7–14s delay between sends</span></div>
                 <div style="font-size:12px;color:var(--text-muted);font-weight:400">Mimics natural human timing to protect your number. Recommended for larger or newer lists.</div>
               </div>
             </label>
@@ -2089,7 +2089,7 @@ async function loadCampaignHistory() {
           <div style="font-size:12px;color:var(--text-muted);margin-top:8px">
             Started ${fmt(j.created_at)}
             ${j.updated_at && j.updated_at !== j.created_at ? ` · Updated ${fmt(j.updated_at)}` : ''}
-            ${j.pace_seconds > 0 ? ` · Smart Throttle (~${j.pace_seconds}s)` : ''}
+            ${j.pace_seconds > 0 ? ` · Smart Throttle (~${j.pace_seconds}-${j.pace_seconds + 7}s)` : ''}
           </div>
         </div>`;
     }).join('');
@@ -2332,7 +2332,9 @@ function renderGettingStarted(main) {
         <div class="card" style="padding:24px;margin-bottom:16px">
           <h3 style="font-size:15px;font-weight:700;margin-bottom:10px">You're all set</h3>
           <p style="font-size:13.5px;color:var(--text-muted);line-height:1.7">
-            Text Your List is running. Messages send automatically through your Mac's Messages app (connected to your iPhone). No companion app needed — it's all built in.
+            ${window.electronAPI?.platform === 'darwin'
+              ? "Text Your List is running. Messages send automatically through your Mac's Messages app (connected to your iPhone)."
+              : "Text Your List is running. Messages send through Microsoft Phone Link (connected to your Android or iPhone). Keep Phone Link open while sending."}
           </p>
         </div>
 
@@ -2359,18 +2361,27 @@ function renderGettingStarted(main) {
         <div class="card" style="padding:24px;margin-bottom:16px">
           <h3 style="font-size:15px;font-weight:700;margin-bottom:10px">Tips</h3>
           <ul style="font-size:13.5px;color:var(--text-muted);line-height:2;margin:0 0 0 18px">
-            <li>Keep Messages open on your Mac for fastest delivery</li>
+            ${window.electronAPI?.platform === 'darwin'
+              ? '<li>Keep Messages open on your Mac for fastest delivery</li>'
+              : '<li>Keep Phone Link open and your phone nearby while sending</li>'}
             <li>Don't send more than 200 texts per day to avoid spam filters</li>
             <li>Suppression list lets you block numbers from receiving future sends</li>
           </ul>
         </div>
 
+        ${window.electronAPI?.platform === 'darwin' ? `
         <div class="card" style="padding:24px;margin-bottom:16px">
-          <h3 style="font-size:15px;font-weight:700;margin-bottom:10px">macOS Setup</h3>
+          <h3 style="font-size:15px;font-weight:700;margin-bottom:10px">macOS Permissions</h3>
           <p style="font-size:13.5px;color:var(--text-muted);line-height:1.7">
-            First send on Mac: macOS will ask permission to control Messages. Click Allow — this is required to send messages. If you accidentally clicked Don't Allow: go to System Settings &gt; Privacy &amp; Security &gt; Automation &gt; find Text Your List &gt; enable Messages.
+            macOS requires two permissions: Automation (to send via Messages) and Full Disk Access (for smart iMessage vs SMS routing). If you skipped Full Disk Access, go to <strong>Help → Manage Permissions</strong> to enable it.
           </p>
-        </div>
+        </div>` : `
+        <div class="card" style="padding:24px;margin-bottom:16px">
+          <h3 style="font-size:15px;font-weight:700;margin-bottom:10px">Phone Link setup</h3>
+          <p style="font-size:13.5px;color:var(--text-muted);line-height:1.7">
+            Text Your List sends through Microsoft Phone Link. Open Phone Link, sign in with your Microsoft account, and pair your phone. Keep Phone Link running in the background while sending.
+          </p>
+        </div>`}
 
         <div class="card" style="padding:20px">
           <h3 style="font-size:14px;font-weight:700;margin-bottom:8px">Need help?</h3>
@@ -3295,10 +3306,10 @@ function renderAccount(main) {
               </span>
             </label>
             <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer">
-              <input type="radio" name="api_pace" value="20" style="margin-top:3px" ${(u.api_default_pace === 20 || u.api_default_pace == null) ? 'checked' : ''}>
+              <input type="radio" name="api_pace" value="7" style="margin-top:3px" ${(u.api_default_pace === 7 || u.api_default_pace === 20 || u.api_default_pace == null) ? 'checked' : ''}>
               <span>
                 <strong style="font-size:13.5px">Smart Throttle (recommended)</strong>
-                <div style="font-size:12.5px;color:var(--text-muted)">Randomized 20-27s delay between sends</div>
+                <div style="font-size:12.5px;color:var(--text-muted)">Randomized 7-14s delay between sends</div>
               </span>
             </label>
           </div>
@@ -3376,16 +3387,6 @@ function renderHelp(main) {
     <div class="main-header"><h2>Help</h2></div>
     <div class="main-body">
       <div class="card" style="max-width:560px;margin-bottom:20px">
-        <div class="card-header"><h3>Support</h3></div>
-        <div class="card-body">
-          <p style="font-size:14px;margin-bottom:16px">Have a question or issue? Our support team is here to help.</p>
-          <div style="display:flex;gap:10px;flex-wrap:wrap">
-            <a href="mailto:support@textyourlist.com" class="btn btn-primary">Email Support</a>
-            <button class="btn btn-ghost" id="help-docs-btn">View Documentation</button>
-          </div>
-        </div>
-      </div>
-      <div class="card" style="max-width:560px;margin-bottom:20px">
         <div class="card-header"><h3>Quick Tips</h3></div>
         <div class="card-body" style="font-size:13.5px;line-height:1.6;display:flex;flex-direction:column;gap:12px">
           <div><strong>Daily send limit</strong><br>We recommend no more than 200 bulk sends per day to protect your number from spam filters. Test sends don't count toward this limit.</div>
@@ -3411,13 +3412,23 @@ function renderHelp(main) {
           <p style="margin-top:8px">If you reinstall the app, this folder is preserved automatically. To keep a backup, copy this folder to a safe location.</p>
         </div>
       </div>
-      <div class="card" style="max-width:560px">
+      <div class="card" style="max-width:560px;margin-bottom:20px">
         <div class="card-header"><h3>About</h3></div>
         <div class="card-body" style="font-size:13.5px;color:var(--text-muted)">
           Text Your List schedules messages sent from your own device. You are responsible for compliance with applicable messaging laws.
           <div style="margin-top:12px;display:flex;gap:12px">
             <button class="btn btn-ghost btn-sm js-help-ext" data-url="https://textyourlist.com/terms">Terms of Use</button>
             <button class="btn btn-ghost btn-sm js-help-ext" data-url="https://textyourlist.com/privacy">Privacy Policy</button>
+          </div>
+        </div>
+      </div>
+      <div class="card" style="max-width:560px">
+        <div class="card-header"><h3>Support</h3></div>
+        <div class="card-body">
+          <p style="font-size:14px;margin-bottom:16px">Have a question or issue? Our support team is here to help.</p>
+          <div style="display:flex;gap:10px;flex-wrap:wrap">
+            <a href="mailto:support@textyourlist.com" class="btn btn-primary">Email Support</a>
+            <button class="btn btn-ghost" id="help-docs-btn">View Documentation</button>
           </div>
         </div>
       </div>
