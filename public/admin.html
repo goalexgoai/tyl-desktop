@@ -81,6 +81,16 @@
     <div id="pb-mrr-note" style="font-size:12px;color:#888;margin-top:8px"></div>
   </div>
 
+  <!-- Subscription Status -->
+  <div style="background:#fff;border:1px solid #e5e5e4;border-radius:10px;padding:16px 24px;margin-bottom:20px">
+    <div style="font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:#666;margin-bottom:12px">Stripe Subscription Status</div>
+    <div style="display:flex;flex-wrap:wrap;gap:16px">
+      <div><span style="font-size:11px;color:#888;text-transform:uppercase;letter-spacing:0.4px">Active</span><br/><span style="font-size:20px;font-weight:700;color:#16a34a" id="ss-active">—</span></div>
+      <div><span style="font-size:11px;color:#888;text-transform:uppercase;letter-spacing:0.4px">Cancelled</span><br/><span style="font-size:20px;font-weight:700;color:#dc2626" id="ss-cancelled">—</span></div>
+      <div><span style="font-size:11px;color:#888;text-transform:uppercase;letter-spacing:0.4px">Past Due</span><br/><span style="font-size:20px;font-weight:700;color:#d97706" id="ss-pastdue">—</span></div>
+    </div>
+  </div>
+
   <!-- Add User -->
   <div class="add-user-form">
     <h3>Add User Manually</h3>
@@ -173,7 +183,9 @@
       window.location.href = '/app';
       throw new Error('Access denied');
     }
-    return res.json();
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+    return data;
   }
 
   async function loadMetrics() {
@@ -199,6 +211,11 @@
       if (m.mrrNote) {
         const noteEl = document.getElementById('pb-mrr-note');
         if (noteEl) noteEl.textContent = m.mrrNote;
+      }
+      if (m.subStatus) {
+        document.getElementById('ss-active').textContent = m.subStatus.active;
+        document.getElementById('ss-cancelled').textContent = m.subStatus.cancelled;
+        document.getElementById('ss-pastdue').textContent = m.subStatus.pastDue;
       }
     } catch (_) {}
   }

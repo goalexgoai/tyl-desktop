@@ -2164,7 +2164,13 @@ app.get('/api/admin/metrics', requireAdmin, (req, res) => {
     admins: db.prepare("SELECT COUNT(*) as c FROM users WHERE is_admin = 1").get().c,
   };
 
-  res.json({ totalUsers, paidUsers, totalSendsMonth, newSignups7d, churn30d, mrr, arr, planBreakdown, mrrNote: 'Excludes admins and manual accounts' });
+  const subStatus = {
+    active: db.prepare("SELECT COUNT(*) as c FROM users WHERE subscription_status = 'active' AND manual_account = 0 AND is_admin = 0").get().c,
+    cancelled: db.prepare("SELECT COUNT(*) as c FROM users WHERE subscription_status IN ('cancelled','canceled') AND is_admin = 0").get().c,
+    pastDue: db.prepare("SELECT COUNT(*) as c FROM users WHERE subscription_status = 'past_due' AND is_admin = 0").get().c,
+  };
+
+  res.json({ totalUsers, paidUsers, totalSendsMonth, newSignups7d, churn30d, mrr, arr, planBreakdown, subStatus, mrrNote: 'Excludes admins and manual accounts' });
 });
 
 app.get('/api/admin/users', requireAdmin, (req, res) => {
