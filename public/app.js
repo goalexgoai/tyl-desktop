@@ -737,6 +737,7 @@ async function renderBulkSend(body) {
   // Health monitor data
   const dailySends = u.daily_sends || 0;
   const healthColor = dailySends <= 100 ? '#16a34a' : dailySends <= 150 ? '#d97706' : '#dc2626';
+  const healthLabel = dailySends <= 100 ? '' : dailySends <= 150 ? 'Caution' : 'Warning';
   const healthPct = Math.min(100, Math.round(dailySends / 200 * 100));
 
   body.innerHTML = `
@@ -745,7 +746,7 @@ async function renderBulkSend(body) {
       <div style="background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:12px 16px;margin-bottom:16px;display:flex;align-items:center;gap:14px">
         <div style="width:12px;height:12px;border-radius:50%;background:${healthColor};flex-shrink:0;box-shadow:0 0 6px ${healthColor}55"></div>
         <div style="flex:1">
-          <div style="font-size:12.5px;font-weight:600;color:var(--text)">Today: ${dailySends} / 200 bulk messages
+          <div style="font-size:12.5px;font-weight:600;color:var(--text)">Today: ${dailySends} / 200 bulk messages${healthLabel ? ` <span style="font-weight:400;color:${healthColor}">${healthLabel}</span>` : ''}
             <span class="daily-info-icon" title="We recommend no more than 200 bulk sends per day to protect your number from spam filters. Personalizing messages with merge fields (e.g. {first_name}) also helps. Test sends don't count toward this limit." style="display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;border-radius:50%;background:#e5e7eb;color:#6b7280;font-size:10px;font-weight:700;cursor:default;margin-left:5px;vertical-align:middle">i</span>
           </div>
           <div style="background:#f3f4f6;border-radius:4px;height:5px;margin-top:5px;overflow:hidden">
@@ -2296,31 +2297,17 @@ async function loadKeys() {
     el.innerHTML = `<div class="empty-state"><p>No API keys. Create one above.</p></div>`;
     return;
   }
-  function companionStatus(lastUsedAt) {
-    if (!lastUsedAt) return '<span style="font-size:12px;color:#999">&#9679; Never connected</span>';
-    const secsAgo = (Date.now() - new Date(lastUsedAt + 'Z').getTime()) / 1000;
-    if (secsAgo < 90) return '<span style="font-size:12px;color:var(--success)">&#9679; Connected</span>';
-    if (secsAgo < 300) return `<span style="font-size:12px;color:#f59e0b">&#9679; Last seen ${Math.round(secsAgo/60)}m ago</span>`;
-    return `<span style="font-size:12px;color:#999">&#9679; Offline (${fmt(lastUsedAt)})</span>`;
-  }
-
   el.innerHTML = `
     <div class="card-header"><h3>Your Keys</h3></div>
     <table>
-    <thead><tr><th>Name</th><th>Companion</th><th>Last Used</th><th>Created</th><th></th></tr></thead>
+    <thead><tr><th>Name</th><th>Last Used</th><th>Created</th><th></th></tr></thead>
     <tbody>
       ${keys.map(k => `<tr>
         <td><strong>${escHtml(k.name)}</strong></td>
-        <td>${companionStatus(k.last_used_at)}</td>
         <td style="color:var(--text-muted)">${fmt(k.last_used_at)}</td>
         <td style="color:var(--text-muted)">${fmt(k.created_at)}</td>
-        <td style="text-align:right;display:flex;gap:6px;justify-content:flex-end;flex-wrap:wrap">
-          ${k.active ? `
-            ${window.electronAPI?.isDesktop ? '' : `
-              <a href="/api/keys/${k.id}/companion" download class="btn btn-primary btn-sm">&#8595; Mac</a>
-              <a href="/api/keys/${k.id}/companion?platform=windows" download class="btn btn-ghost btn-sm">&#8595; Windows</a>
-            `}
-            <button class="btn btn-ghost btn-sm" style="color:var(--danger)" onclick="revokeKey(${k.id})">Revoke</button>` : ''}
+        <td style="text-align:right">
+          ${k.active ? `<button class="btn btn-ghost btn-sm" style="color:var(--danger)" onclick="revokeKey(${k.id})">Revoke</button>` : ''}
         </td>
       </tr>`).join('')}
     </tbody>

@@ -260,8 +260,12 @@ ipcMain.on('open-external', (_, url) => {
   shell.openExternal(url);
 });
 
-ipcMain.handle('open-billing', async () => {
-  shell.openExternal('https://textyourlist.com/billing/checkout?plan=starter');
+ipcMain.handle('open-billing', async (_, plan) => {
+  // Load billing in the Electron window so the local session cookie is used.
+  // The local server's /billing/checkout creates a Stripe checkout session and redirects.
+  if (mainWindow && serverPort) {
+    mainWindow.loadURL(`http://127.0.0.1:${serverPort}/billing/checkout?plan=${plan || 'starter'}`);
+  }
 });
 
 ipcMain.on('set-tray-status', (_, status) => {
