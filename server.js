@@ -622,7 +622,9 @@ app.post('/api/auth/forgot-password', resetLimiter, async (req, res) => {
   const token = crypto.randomBytes(32).toString('hex');
   const expires = new Date(Date.now() + 60 * 60 * 1000).toISOString(); // 1 hour
   db.prepare('UPDATE users SET reset_token = ?, reset_token_expires = ? WHERE id = ?').run(token, expires, user.id);
-  const appUrl = process.env.APP_URL || 'https://app.textyourlist.com';
+  const appUrl = process.env.TYL_DESKTOP === '1'
+    ? `http://127.0.0.1:${process.env.TYL_PORT}`
+    : (process.env.APP_URL || 'https://app.textyourlist.com');
   const resetLink = `${appUrl}/reset-password?token=${token}`;
 
   if (transporter) {
@@ -2238,7 +2240,9 @@ app.post('/api/admin/users/:id/reset-token', requireAdmin, (req, res) => {
   const token = crypto.randomBytes(32).toString('hex');
   const expires = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(); // 24 hours
   db.prepare('UPDATE users SET reset_token = ?, reset_token_expires = ? WHERE id = ?').run(token, expires, user.id);
-  const appUrl = process.env.APP_URL || 'https://app.textyourlist.com';
+  const appUrl = process.env.TYL_DESKTOP === '1'
+    ? `http://127.0.0.1:${process.env.TYL_PORT}`
+    : (process.env.APP_URL || 'https://app.textyourlist.com');
   const resetLink = `${appUrl}/reset-password?token=${token}`;
   res.json({ ok: true, resetLink, email: user.email });
 });

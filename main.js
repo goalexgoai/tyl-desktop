@@ -327,10 +327,12 @@ ipcMain.handle('check-phone-link-running', () => {
   if (process.platform !== 'win32') return true;
   return new Promise((resolve) => {
     const { execFile } = require('child_process');
+    // Check for PhoneLink.exe (Windows 11 Phone Link) or YourPhone.exe (legacy).
+    // Avoid YourPhoneServer which is a background service that runs even when Phone Link is not open.
     const proc = execFile('powershell', [
       '-NoProfile', '-NonInteractive', '-Command',
-      'if (Get-Process -Name PhoneLink,YourPhone,YourPhoneServer -ErrorAction SilentlyContinue) { exit 0 } else { exit 1 }'
-    ], { timeout: 1500 }, (err) => {
+      'if (Get-Process -Name PhoneLink,YourPhone -ErrorAction SilentlyContinue) { exit 0 } else { exit 1 }'
+    ], { timeout: 3000 }, (err) => {
       resolve(!err);
     });
     proc.on('error', () => resolve(false));

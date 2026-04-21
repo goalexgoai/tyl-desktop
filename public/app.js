@@ -1517,17 +1517,33 @@ function openCreateList() {
       if (last) { const inp = last.querySelector('input'); if (inp) inp.focus(); }
     });
 
-    // Add column
+    // Add column — use inline modal (Electron blocks native prompt())
     box.querySelector('#cl-add-col').addEventListener('click', () => {
-      const name = prompt('Column name (letters, numbers, underscores):');
-      if (!name) return;
-      const col = name.trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
-      if (!col) return;
-      if (columns.includes(col)) { alert(`Column "${col}" already exists.`); return; }
-      syncFromDom();
-      columns.push(col);
-      rows.forEach(r => { r[col] = ''; });
-      renderTable();
+      // Build a small inline dialog inside the wizard footer
+      const footer = box.querySelector('.wizard-footer');
+      if (box.querySelector('#cl-col-input')) return; // already open
+      const snippet = document.createElement('div');
+      snippet.style.cssText = 'display:flex;align-items:center;gap:8px;width:100%;margin-top:10px';
+      snippet.innerHTML = `
+        <input id="cl-col-input" type="text" placeholder="Column name (e.g. city)" style="flex:1;font-size:13px" />
+        <button class="btn btn-primary btn-sm" id="cl-col-ok">Add</button>
+        <button class="btn btn-ghost btn-sm" id="cl-col-cancel">Cancel</button>`;
+      footer.appendChild(snippet);
+      const inp = snippet.querySelector('#cl-col-input');
+      inp.focus();
+
+      const doAdd = () => {
+        const col = inp.value.trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
+        if (!col) { inp.focus(); return; }
+        if (columns.includes(col)) { showToast(`Column "${col}" already exists.`); inp.focus(); return; }
+        syncFromDom();
+        columns.push(col);
+        rows.forEach(r => { r[col] = ''; });
+        renderTable();
+      };
+      snippet.querySelector('#cl-col-ok').addEventListener('click', doAdd);
+      snippet.querySelector('#cl-col-cancel').addEventListener('click', () => snippet.remove());
+      inp.addEventListener('keydown', e => { if (e.key === 'Enter') doAdd(); if (e.key === 'Escape') snippet.remove(); });
     });
 
     // Delete row
