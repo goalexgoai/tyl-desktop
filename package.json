@@ -1,6 +1,6 @@
 {
   "name": "textyourlist",
-  "version": "1.0.25",
+  "version": "1.0.29",
   "description": "Text Your List \u2014 Send personal texts to your list",
   "main": "main.js",
   "scripts": {
@@ -60,7 +60,7 @@
           "target": "dmg"
         }
       ],
-      "icon": "assets/icon.icns",
+      "icon": "assets/icon.png",
       "category": "public.app-category.utilities",
       "hardenedRuntime": false,
       "gatekeeperAssess": false

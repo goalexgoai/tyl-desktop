@@ -2218,7 +2218,7 @@ app.patch('/api/admin/users/:id', requireAdmin, (req, res) => {
   const user = db.prepare('SELECT id FROM users WHERE id = ?').get(req.params.id);
   if (!user) return res.status(404).json({ error: 'User not found' });
   if (plan !== undefined && !PLANS[plan]) return res.status(400).json({ error: 'Invalid plan' });
-  const validStatuses = ['free', 'active', 'past_due', 'canceled', 'manual'];
+  const validStatuses = ['free', 'active', 'past_due', 'canceled', 'cancelled', 'manual'];
   if (subscription_status !== undefined && !validStatuses.includes(subscription_status))
     return res.status(400).json({ error: 'Invalid subscription_status' });
   if (monthly_sends !== undefined && (typeof monthly_sends !== 'number' || monthly_sends < 0 || !Number.isInteger(monthly_sends)))
@@ -2390,11 +2390,17 @@ if (process.env.TYL_DESKTOP) {
         log(message.user_id, message.id, message.job_id, message.phone, 'sent');
         console.log(`[desktop-sender] sent → ${message.phone}`);
       } catch (err) {
-        // Detect messaging-app-closed errors — pause the job so the user must manually resume.
-        // Never auto-resume: unexpected sends mid-session would be alarming.
-        const msgLower = (err.message || '').toLowerCase();
-        const isAppClosed = /connection is invalid|application isn't running|not authorized to send apple events|phone link not found|phonelink.*not found|execution error.*messages/i.test(err.message);
-        if (isAppClosed) {
+        // Detect messaging-app errors that should pause the job vs. hard failures.
+        const isAuthError = /not authorized to send apple events/i.test(err.message);
+        const isAppClosed = !isAuthError && /connection is invalid|application isn't running|phone link not found|phonelink.*not found|execution error.*messages/i.test(err.message);
+        if (isAuthError) {
+          // macOS Automation permission not granted — pause with actionable message.
+          const pauseReason = 'macOS permission needed. Go to Help → Manage Permissions to grant access, then click Resume.';
+          db.prepare("UPDATE messages SET status='pending', picked_at=NULL, error=?, last_attempt_at=datetime('now') WHERE id=?").run(pauseReason, message.id);
+          db.prepare("UPDATE jobs SET status='paused', updated_at=datetime('now') WHERE id=?").run(message.job_id);
+          log(message.user_id, message.id, message.job_id, message.phone, 'paused', pauseReason);
+          console.warn(`[desktop-sender] macOS Automation permission denied — job ${message.job_id} paused`);
+        } else if (isAppClosed) {
           const appName = process.platform === 'darwin' ? 'Messages' : 'Phone Link';
           const pauseReason = `${appName} closed — sending paused. Reopen ${appName} then click "Resume" to continue.`;
           // Reset this message to pending (it was never sent) and pause the job
