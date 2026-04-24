@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   build-mac-arm64:
-    runs-on: macos-latest   # arm64 runner (Apple Silicon)
+    runs-on: macos-latest   # macos-14 / Apple Silicon
     steps:
       - uses: actions/checkout@v4
 
@@ -28,7 +28,6 @@ jobs:
 
       - name: Verify better-sqlite3 binary is arm64
         run: |
-          NODE=$(node -e "const path=require('path');const b=require.resolve('better-sqlite3/build/Release/better_sqlite3.node');console.log(b)" 2>/dev/null || true)
           BSNODE="node_modules/better-sqlite3/build/Release/better_sqlite3.node"
           if [ -f "$BSNODE" ]; then
             ARCH=$(file "$BSNODE")
@@ -47,6 +46,44 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: mac-build-arm64
+          path: dist/*.dmg
+
+  build-mac-x64:
+    runs-on: macos-13   # Intel runner
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Rebuild native modules for Electron (x64)
+        run: npx electron-builder install-app-deps
+
+      - name: Verify better-sqlite3 binary is x86_64
+        run: |
+          BSNODE="node_modules/better-sqlite3/build/Release/better_sqlite3.node"
+          if [ -f "$BSNODE" ]; then
+            ARCH=$(file "$BSNODE")
+            echo "Binary: $ARCH"
+            echo "$ARCH" | grep -q "x86_64" || (echo "ERROR: expected x86_64, got wrong arch" && exit 1)
+          else
+            echo "WARNING: better_sqlite3.node not found at expected path"
+          fi
+
+      - name: Build Mac x64
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+        run: npx electron-builder --mac --x64 --publish never
+
+      - name: Upload Mac x64 artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mac-build-x64
           path: dist/*.dmg
 
   build-win:
@@ -75,7 +112,7 @@ jobs:
           path: dist/*.exe
 
   release:
-    needs: [build-mac-arm64, build-win]
+    needs: [build-mac-arm64, build-mac-x64, build-win]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/')
     permissions:
@@ -85,6 +122,12 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: mac-build-arm64
+          path: dist/
+
+      - name: Download Mac x64 build
+        uses: actions/download-artifact@v4
+        with:
+          name: mac-build-x64
           path: dist/
 
       - name: Download Windows build
