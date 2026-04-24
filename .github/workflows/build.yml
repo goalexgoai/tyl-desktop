@@ -62,7 +62,7 @@ jobs:
         run: npm ci
 
       - name: Rebuild native modules for Electron (x64 via cross-compile)
-        run: npm_config_arch=x64 npx electron-builder install-app-deps
+        run: npx electron-builder install-app-deps --arch x64
 
       - name: Verify better-sqlite3 binary is x86_64
         run: |
