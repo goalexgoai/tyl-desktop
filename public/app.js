@@ -479,6 +479,9 @@ function renderQuickSend(body) {
   const u = currentUser;
   const remaining = Math.max(0, u.monthly_limit - u.monthly_sends);
   const isBlocked = u.subscription_status === 'cancelled' || u.subscription_status === 'past_due';
+  const isMac = window.electronAPI?.platform === 'darwin';
+  const isPro = u.is_admin || u.manual_account || u.plan === 'pro';
+  const showImageAttach = isMac && isPro;
 
   body.innerHTML = `
     ${isBlocked ? `<div class="alert alert-error" style="margin-bottom:16px">Your subscription has expired. <button class="btn btn-primary btn-sm" onclick="navigate('billing')">Upgrade now</button></div>` : ''}
@@ -493,13 +496,31 @@ function renderQuickSend(body) {
         </div>
         <div class="form-row">
           <label style="display:flex;justify-content:space-between;align-items:center">
-            <span>Message</span>
+            <span>Message <span style="font-weight:400;color:var(--text-muted)">${showImageAttach ? '(optional if attaching image)' : ''}</span></span>
             ${currentUser.templates ? `<a href="#" style="font-size:12px;color:var(--accent);text-decoration:underline;font-weight:500" onclick="loadTemplateIntoTextarea('qs-message');return false">Load template</a>` : ''}
           </label>
           <textarea id="qs-message" rows="4" placeholder="Type your message here..."></textarea>
           ${emojiBarHtml('qs-message')}
           <div class="char-count" id="qs-char">0 chars &middot; 1 segment</div>
         </div>
+        ${showImageAttach ? `
+        <div class="form-row">
+          <label style="display:flex;align-items:center;gap:8px">
+            Attach image
+            <span style="font-size:11px;background:#8C2249;color:#fff;padding:2px 7px;border-radius:10px;font-weight:600;letter-spacing:.03em">PRO</span>
+            <span style="font-size:12px;color:var(--text-muted)">JPG, PNG, GIF, WEBP · max 2 MB · Mac only</span>
+          </label>
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+            <label class="btn btn-ghost btn-sm" style="cursor:pointer;margin:0">
+              Choose image
+              <input type="file" id="qs-image-file" accept="image/jpeg,image/png,image/gif,image/webp" style="display:none" />
+            </label>
+            <span id="qs-image-name" style="font-size:13px;color:var(--text-muted)">No image selected</span>
+            <button id="qs-image-clear" style="display:none;background:none;border:none;color:var(--danger);cursor:pointer;font-size:13px;padding:0">Remove</button>
+          </div>
+          <div id="qs-image-preview" style="margin-top:8px"></div>
+          <div id="qs-image-error" style="color:var(--danger);font-size:12.5px;margin-top:4px"></div>
+        </div>` : ''}
         <div style="display:flex;align-items:center;gap:12px">
           <button class="btn btn-primary" id="qs-send" ${isBlocked?'disabled':''}>Send</button>
           <div id="qs-result" style="font-size:13px">${remaining<=0&&!isBlocked?'<span style="color:var(--text-muted);font-size:12px">Test sends don\'t count against your monthly limit.</span>':''}</div>
@@ -516,21 +537,68 @@ function renderQuickSend(body) {
     charEl.className = 'char-count' + (len > 306 ? ' char-danger' : len > 160 ? ' char-warn' : '');
   });
 
+  let qsImageFile = null;
+  let qsImageName = null;
+
+  if (showImageAttach) {
+    const fileInput = document.getElementById('qs-image-file');
+    const nameEl = document.getElementById('qs-image-name');
+    const clearBtn = document.getElementById('qs-image-clear');
+    const previewEl = document.getElementById('qs-image-preview');
+    const errEl = document.getElementById('qs-image-error');
+
+    fileInput.addEventListener('change', () => {
+      const file = fileInput.files[0];
+      errEl.textContent = '';
+      if (!file) return;
+      if (file.size > 2 * 1024 * 1024) {
+        errEl.textContent = 'Image must be 2 MB or smaller.';
+        fileInput.value = '';
+        return;
+      }
+      qsImageFile = file;
+      nameEl.textContent = file.name;
+      clearBtn.style.display = 'inline';
+      const reader = new FileReader();
+      reader.onload = e => { previewEl.innerHTML = `<img src="${e.target.result}" style="max-height:120px;max-width:280px;border-radius:6px;border:1px solid #e5e7eb">` };
+      reader.readAsDataURL(file);
+    });
+
+    clearBtn.addEventListener('click', () => {
+      qsImageFile = null;
+      qsImageName = null;
+      fileInput.value = '';
+      nameEl.textContent = 'No image selected';
+      clearBtn.style.display = 'none';
+      previewEl.innerHTML = '';
+      errEl.textContent = '';
+    });
+  }
+
   document.getElementById('qs-send').addEventListener('click', async () => {
     const phone = document.getElementById('qs-phone').value.trim();
     const message = msgEl.value.trim();
     const resultEl = document.getElementById('qs-result');
     const btn = document.getElementById('qs-send');
-    if (!phone || !message) { resultEl.innerHTML = '<span style="color:var(--danger)">Phone and message are required.</span>'; return; }
+    if (!phone) { resultEl.innerHTML = '<span style="color:var(--danger)">Phone number is required.</span>'; return; }
+    if (!message && !qsImageFile) { resultEl.innerHTML = '<span style="color:var(--danger)">Message or image is required.</span>'; return; }
 
-    // Change 9: Confirmation modal
     showSendConfirmModal(
-      phone, message, 1,
+      phone, message || '(image only)', 1,
       async () => {
         btn.disabled = true;
         resultEl.innerHTML = 'Sending...';
         try {
-          await post('/api/send-one', { phone, message, test: true });
+          let imageName = null;
+          if (qsImageFile) {
+            const fd = new FormData();
+            fd.append('image', qsImageFile);
+            const upResp = await fetch('/api/upload-image', { method: 'POST', body: fd });
+            const upJson = await upResp.json();
+            if (!upResp.ok) throw new Error(upJson.error || 'Image upload failed');
+            imageName = upJson.imageName;
+          }
+          await post('/api/send-one', { phone, message: message || '', imageName, test: true });
           const successMsg = window.electronAPI?.isDesktop
             ? '&#10003; Queued — sending within the next few seconds.'
             : '&#10003; Queued — your companion app will send it shortly.';
@@ -539,6 +607,13 @@ function renderQuickSend(body) {
           msgEl.value = '';
           charEl.textContent = '0 chars · 1 segment';
           charEl.className = 'char-count';
+          if (showImageAttach) {
+            qsImageFile = null; qsImageName = null;
+            document.getElementById('qs-image-file').value = '';
+            document.getElementById('qs-image-name').textContent = 'No image selected';
+            document.getElementById('qs-image-clear').style.display = 'none';
+            document.getElementById('qs-image-preview').innerHTML = '';
+          }
           currentUser = await get('/api/auth/me');
           updateUserBadge();
         } catch (err) {
@@ -596,7 +671,9 @@ function showSendConfirmModal(previewContact, previewMessage, count, onConfirm, 
     ${showWarning ? `<div class="alert alert-warn" style="margin:12px 0 0">Sending to ${count} contacts. We recommend no more than 200/day to keep your number healthy.</div>` : ''}
     <div id="confirm-app-warn" style="display:none" class="alert alert-error" style="margin:10px 0 0"></div>
     <div style="background:var(--bg-alt,#f7f7f7);border-radius:8px;padding:12px 14px;margin:14px 0 0;font-size:13px;color:var(--text-muted);line-height:1.7">
-      Be sure <strong style="color:var(--text)">Messages</strong> (Mac) or <strong style="color:var(--text)">Phone Link</strong> (Windows) is open and your phone is nearby before sending.
+      ${window.electronAPI?.platform === 'darwin'
+        ? 'Be sure <strong style="color:var(--text)">Messages</strong> is open on your Mac before sending.'
+        : 'Be sure <strong style="color:var(--text)">Phone Link</strong> is open and your phone is nearby before sending.'}
     </div>
     <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px">
       <button class="btn btn-ghost" id="confirm-cancel">Cancel</button>
@@ -730,6 +807,9 @@ async function renderBulkSend(body) {
   // All plans can use bulk send; free plan limited to 10 contacts per send
   const isFree = u.plan === 'free' && !u.is_admin && !u.manual_account;
   const bulkMax = u.bulk_max_contacts || (isFree ? 10 : Infinity);
+  const isMac = window.electronAPI?.platform === 'darwin';
+  const isPro = u.is_admin || u.manual_account || u.plan === 'pro';
+  const showImageAttach = isMac && isPro;
 
   let savedLists = [];
   try { savedLists = await get('/api/lists'); } catch (_) {}
@@ -815,6 +895,24 @@ async function renderBulkSend(body) {
             <span id="bs-save-template-check" style="display:none;color:#16a34a;font-size:12.5px;margin-left:8px">&#10003; Saved to your templates</span>
           </div>
         </div>
+        ${showImageAttach ? `
+        <div class="form-row" style="margin-top:16px">
+          <label style="display:flex;align-items:center;gap:8px">
+            Attach image
+            <span style="font-size:11px;background:#8C2249;color:#fff;padding:2px 7px;border-radius:10px;font-weight:600;letter-spacing:.03em">PRO</span>
+            <span style="font-size:12px;color:var(--text-muted)">JPG, PNG, GIF, WEBP · max 2 MB · Mac only</span>
+          </label>
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+            <label class="btn btn-ghost btn-sm" style="cursor:pointer;margin:0">
+              Choose image
+              <input type="file" id="bs-image-file" accept="image/jpeg,image/png,image/gif,image/webp" style="display:none" />
+            </label>
+            <span id="bs-image-name" style="font-size:13px;color:var(--text-muted)">No image selected</span>
+            <button id="bs-image-clear" style="display:none;background:none;border:none;color:var(--danger);cursor:pointer;font-size:13px;padding:0">Remove</button>
+          </div>
+          <div id="bs-image-preview" style="margin-top:8px"></div>
+          <div id="bs-image-error" style="color:var(--danger);font-size:12.5px;margin-top:4px"></div>
+        </div>` : ''}
       </div>
 
       <!-- Section 3: Send settings -->
@@ -858,9 +956,45 @@ async function renderBulkSend(body) {
     </div>`;
 
   // State
-  const bsState = { csvRaw: null, csvRows: [], csvColumns: [], columnMap: { phone: '', first_name: '', last_name: '', special: '' }, isNewList: false, totalCount: 0 };
+  const bsState = { csvRaw: null, csvRows: [], csvColumns: [], columnMap: { phone: '', first_name: '', last_name: '', special: '' }, isNewList: false, totalCount: 0, imageFile: null, imageName: null };
 
   bindMergeChips();
+
+  if (showImageAttach) {
+    const bsFileInput = document.getElementById('bs-image-file');
+    const bsNameEl   = document.getElementById('bs-image-name');
+    const bsClearBtn = document.getElementById('bs-image-clear');
+    const bsPreview  = document.getElementById('bs-image-preview');
+    const bsErrEl    = document.getElementById('bs-image-error');
+
+    bsFileInput.addEventListener('change', () => {
+      const file = bsFileInput.files[0];
+      bsErrEl.textContent = '';
+      if (!file) return;
+      if (file.size > 2 * 1024 * 1024) {
+        bsErrEl.textContent = 'Image must be 2 MB or smaller.';
+        bsFileInput.value = '';
+        return;
+      }
+      bsState.imageFile = file;
+      bsState.imageName = null;
+      bsNameEl.textContent = file.name;
+      bsClearBtn.style.display = 'inline';
+      const reader = new FileReader();
+      reader.onload = e => { bsPreview.innerHTML = `<img src="${e.target.result}" style="max-height:120px;max-width:280px;border-radius:6px;border:1px solid #e5e7eb">`; };
+      reader.readAsDataURL(file);
+    });
+
+    bsClearBtn.addEventListener('click', () => {
+      bsState.imageFile = null;
+      bsState.imageName = null;
+      bsFileInput.value = '';
+      bsNameEl.textContent = 'No image selected';
+      bsClearBtn.style.display = 'none';
+      bsPreview.innerHTML = '';
+      bsErrEl.textContent = '';
+    });
+  }
 
   // If navigated here via "Send" from Contacts page, auto-load that list
   if (window.pendingBulkListId) {
@@ -1164,12 +1298,25 @@ async function renderBulkSend(body) {
     try {
       document.getElementById('bs-preview-send').disabled = true;
       document.getElementById('bs-save-draft').disabled = true;
+
+      // Upload image if one is attached
+      let imageName = null;
+      if (bsState.imageFile) {
+        const fd = new FormData();
+        fd.append('image', bsState.imageFile);
+        const upResp = await fetch('/api/upload-image', { method: 'POST', body: fd });
+        const upJson = await upResp.json();
+        if (!upResp.ok) throw new Error(upJson.error || 'Image upload failed');
+        imageName = upJson.imageName;
+      }
+
       const result = await post('/api/jobs', {
         name,
         template,
         rows: bsState.csvRaw,
         columnMap: bsState.columnMap,
         paceSeconds: pace,
+        imageName,
       });
       if (queueNow) {
         await patch(`/api/jobs/${result.job_id}/status`, { status: 'queued' });
@@ -1355,17 +1502,31 @@ async function viewList(listId, total) {
         renderEditMode();
       });
       footer.querySelector('#list-edit-add-col').addEventListener('click', () => {
-        const name = prompt('Column name (letters, numbers, underscores only):');
-        if (!name) return;
-        const col = name.trim().replace(/[^a-zA-Z0-9_]/g, '_');
-        if (!col) return;
-        if (columns.includes(col)) { alert(`Column "${col}" already exists.`); return; }
-        // Capture current input values before re-rendering
-        const current = gatherRowsFromDom();
-        current.forEach((row, i) => { editableRows[i] = row; });
-        columns.push(col);
-        editableRows.forEach(row => { row[col] = ''; });
-        renderEditMode();
+        // Use inline dialog — native prompt() is disabled in Electron
+        const footerDiv = footer.querySelector('div');
+        if (footer.querySelector('#edit-col-input')) return; // already open
+        const snippet = document.createElement('div');
+        snippet.style.cssText = 'display:flex;align-items:center;gap:8px;width:100%;margin-top:10px';
+        snippet.innerHTML = `
+          <input id="edit-col-input" type="text" placeholder="Column name (e.g. city)" style="flex:1;font-size:13px" />
+          <button class="btn btn-primary btn-sm" id="edit-col-ok">Add</button>
+          <button class="btn btn-ghost btn-sm" id="edit-col-cancel">Cancel</button>`;
+        footerDiv.appendChild(snippet);
+        const inp = snippet.querySelector('#edit-col-input');
+        inp.focus();
+        const doAdd = () => {
+          const col = inp.value.trim().replace(/[^a-zA-Z0-9_]/g, '_');
+          if (!col) { inp.focus(); return; }
+          if (columns.includes(col)) { showToast(`Column "${col}" already exists.`); inp.focus(); return; }
+          const current = gatherRowsFromDom();
+          current.forEach((row, i) => { editableRows[i] = row; });
+          columns.push(col);
+          editableRows.forEach(row => { row[col] = ''; });
+          renderEditMode();
+        };
+        snippet.querySelector('#edit-col-ok').addEventListener('click', doAdd);
+        snippet.querySelector('#edit-col-cancel').addEventListener('click', () => snippet.remove());
+        inp.addEventListener('keydown', e => { if (e.key === 'Enter') doAdd(); if (e.key === 'Escape') snippet.remove(); });
       });
       footer.querySelector('#list-edit-cancel').addEventListener('click', renderPreviewMode);
       footer.querySelector('#list-edit-save').addEventListener('click', saveEditedList);
@@ -1429,6 +1590,7 @@ async function viewList(listId, total) {
 function openCreateList() {
   const u = currentUser;
   const maxRows = u.bulk_max_contacts || 10;
+  const isFree = u.plan === 'free' && !u.is_admin && !u.manual_account;
 
   const root = document.getElementById('wizard-root');
   root.innerHTML = '';
@@ -2198,6 +2360,40 @@ async function refreshJobDetail(jobId) {
         </table>
         ${total > 50 ? `<div style="padding:12px 16px;font-size:12.5px;color:var(--text-muted)">Showing first 50 of ${total}</div>` : ''}
       </div>`;
+
+    // Dead-phones suppression banner — shown once on completion, dismissed after suppressing or manually
+    if (job.status === 'completed' && job.failed > 0) {
+      const suppressedKey = `suppress_done_${jobId}`;
+      if (!localStorage.getItem(suppressedKey)) {
+        try {
+          const deadPhones = await get(`/api/jobs/${jobId}/dead-phones`);
+          if (deadPhones.length > 0 && container) {
+            const banner = document.createElement('div');
+            banner.id = 'dead-suppress-banner';
+            banner.style.cssText = 'background:#fef3c7;border:1px solid #fbbf24;border-radius:8px;padding:10px 16px;margin-bottom:16px;font-size:13.5px;display:flex;align-items:center;justify-content:space-between;gap:12px';
+            banner.innerHTML = `
+              <span>&#9888; <strong>${deadPhones.length} number${deadPhones.length === 1 ? '' : 's'} failed permanently.</strong> Add to suppression list to skip them on future sends?</span>
+              <div style="display:flex;gap:8px;flex-shrink:0">
+                <button class="btn btn-primary btn-sm" id="btn-suppress-dead">Add to suppression list</button>
+                <button class="btn btn-ghost btn-sm" id="btn-suppress-dismiss">Dismiss</button>
+              </div>`;
+            container.insertBefore(banner, container.firstChild);
+            document.getElementById('btn-suppress-dead').addEventListener('click', async () => {
+              try {
+                await post(`/api/jobs/${jobId}/suppress-dead`, {});
+                localStorage.setItem(suppressedKey, '1');
+                banner.remove();
+                showToast(`${deadPhones.length} number${deadPhones.length === 1 ? '' : 's'} added to suppression list.`);
+              } catch (e) { showToast('Error: ' + e.message); }
+            });
+            document.getElementById('btn-suppress-dismiss').addEventListener('click', () => {
+              localStorage.setItem(suppressedKey, '1');
+              banner.remove();
+            });
+          }
+        } catch (_) {}
+      }
+    }
   } catch (err) {
     const container = document.getElementById('job-detail');
     if (container) container.innerHTML = `<div class="alert alert-error">${escHtml(err.message)}</div>`;
@@ -2620,7 +2816,7 @@ function renderPhoneInstructions(phone, os) {
       ['Choose iPhone and follow the pairing steps', 'You\'ll need to turn on Bluetooth on both devices.'],
       ['Once paired, click "Get my companion app" below', 'A .zip file will download (~100MB).'],
       ['Extract the zip — you\'ll see a "TextYourList" folder. Open it and double-click TextYourList.exe', 'If Windows shows a Smart App Control warning: go to Settings → Windows Security → App &amp; Browser Control → Smart App Control → turn it Off. Then double-click TextYourList.exe again.'],
-      ['The companion icon appears in your system tray (Windows) or menu bar (Mac) — that\'s the companion running', 'It connects automatically and shows green when ready.'],
+      ['The companion icon appears in your system tray — that\'s the companion running', 'It connects automatically and shows green when ready.'],
       ['Leave it running while you\'re sending texts', 'Phone Link will briefly come to the front when a message sends — that\'s normal.'],
     ];
   } else if (phone === 'android' && os === 'mac') {

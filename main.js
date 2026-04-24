@@ -331,7 +331,7 @@ ipcMain.handle('check-phone-link-running', () => {
     // Avoid YourPhoneServer which is a background service that runs even when Phone Link is not open.
     const proc = execFile('powershell', [
       '-NoProfile', '-NonInteractive', '-Command',
-      'if (Get-Process -Name PhoneLink,YourPhone -ErrorAction SilentlyContinue) { exit 0 } else { exit 1 }'
+      'if (Get-Process -Name PhoneLink,PhoneExperienceHost,PhoneLinkHost,YourPhone -ErrorAction SilentlyContinue) { exit 0 } else { exit 1 }'
     ], { timeout: 3000 }, (err) => {
       resolve(!err);
     });

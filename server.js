@@ -45,6 +45,22 @@ const app = express();
 if (!process.env.TYL_DESKTOP) app.set('trust proxy', 1); // app is behind nginx on web — not needed for desktop local server
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
+// Image upload — Pro plan only, Mac only in UI, stored in userData/job-images/
+const imagesDir = process.env.TYL_DATA_DIR
+  ? path.join(process.env.TYL_DATA_DIR, 'job-images')
+  : path.join(__dirname, 'data', 'job-images');
+fs.mkdirSync(imagesDir, { recursive: true });
+const imageUpload = multer({
+  storage: multer.diskStorage({
+    destination: imagesDir,
+    filename: (_req, _file, cb) => cb(null, `${uuidv4()}${path.extname(_file.originalname).toLowerCase()}`),
+  }),
+  limits: { fileSize: 2 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    cb(null, ['image/jpeg', 'image/png', 'image/gif', 'image/webp'].includes(file.mimetype));
+  },
+});
+
 // ─── Plan config ─────────────────────────────────────────────────────────────
 
 // Updated plan definitions (Build 5)
@@ -810,6 +826,24 @@ app.post('/api/upload', requireAuth, upload.single('file'), (req, res) => {
   }
 });
 
+// ─── Image Upload (Pro only) ─────────────────────────────────────────────────
+
+app.post('/api/upload-image', requireAuth, imageUpload.single('image'), (req, res) => {
+  const u = req.user;
+  const isPro = u.is_admin || u.manual_account || u.plan === 'pro';
+  if (!isPro) {
+    if (req.file) try { fs.unlinkSync(req.file.path); } catch (_) {}
+    return res.status(403).json({ error: 'Image sending requires a Pro plan.' });
+  }
+  if (!req.file) return res.status(400).json({ error: 'No image uploaded or unsupported file type (jpg, png, gif, webp only).' });
+  res.json({ imageName: req.file.filename });
+});
+
+app.get('/job-image/:filename', requireAuth, (req, res) => {
+  const filePath = path.join(imagesDir, path.basename(req.params.filename));
+  res.sendFile(filePath, err => { if (err) res.status(404).end(); });
+});
+
 // ─── Jobs ────────────────────────────────────────────────────────────────────
 
 app.get('/api/jobs', requireAuth, (req, res) => {
@@ -862,15 +896,37 @@ app.get('/api/jobs/:id/messages', requireAuth, (req, res) => {
   res.json({ messages, total: count.c });
 });
 
+app.get('/api/jobs/:id/dead-phones', requireAuth, (req, res) => {
+  const job = db.prepare('SELECT id FROM jobs WHERE id = ? AND user_id = ?').get(req.params.id, req.user.id);
+  if (!job) return res.status(404).json({ error: 'Job not found' });
+  const rows = db.prepare("SELECT phone FROM messages WHERE job_id = ? AND status = 'dead'").all(req.params.id);
+  res.json(rows.map(r => r.phone));
+});
+
+app.post('/api/jobs/:id/suppress-dead', requireAuth, (req, res) => {
+  const job = db.prepare('SELECT id FROM jobs WHERE id = ? AND user_id = ?').get(req.params.id, req.user.id);
+  if (!job) return res.status(404).json({ error: 'Job not found' });
+  const phones = db.prepare("SELECT phone FROM messages WHERE job_id = ? AND status = 'dead'").all(req.params.id).map(r => r.phone);
+  const insert = db.prepare('INSERT OR IGNORE INTO suppression_list (user_id, phone, reason) VALUES (?, ?, ?)');
+  const doInsert = db.transaction(() => { phones.forEach(p => insert.run(req.user.id, p, 'auto: failed after 3 attempts')); });
+  doInsert();
+  res.json({ suppressed: phones.length });
+});
+
 app.post('/api/jobs', requireAuth, (req, res) => {
-  const { name, template, rows, columnMap, paceSeconds = 0 } = req.body;
-  if (!name || !template || !rows || !columnMap?.phone) {
-    return res.status(400).json({ error: 'name, template, rows, and columnMap.phone are required' });
+  const { name, template, rows, columnMap, paceSeconds = 0, imageName } = req.body;
+  if (!name || !rows || !columnMap?.phone) {
+    return res.status(400).json({ error: 'name, rows, and columnMap.phone are required' });
+  }
+  if (!template && !imageName) {
+    return res.status(400).json({ error: 'message or image is required' });
   }
   const nameError = validateMaxLength(name, 100, 'Campaign name');
   if (nameError) return res.status(400).json({ error: nameError });
-  const templateError = validateMaxLength(template, 1600, 'Bulk-send message body');
-  if (templateError) return res.status(400).json({ error: templateError });
+  if (template) {
+    const templateError = validateMaxLength(template, 1600, 'Bulk-send message body');
+    if (templateError) return res.status(400).json({ error: templateError });
+  }
 
   let parsedRows;
   try {
@@ -909,8 +965,13 @@ app.post('/api/jobs', requireAuth, (req, res) => {
   const suppressed = db.prepare('SELECT phone FROM suppression_list WHERE user_id = ? OR user_id IS NULL').all(req.user.id).map(r => r.phone);
   const suppressedSet = new Set(suppressed);
 
+  const resolvedImagePath = imageName ? path.join(imagesDir, path.basename(imageName)) : null;
+  if (resolvedImagePath && !fs.existsSync(resolvedImagePath)) {
+    return res.status(400).json({ error: 'Image not found — upload it before creating the job.' });
+  }
+
   const jobId = uuidv4();
-  const insertJob = db.prepare('INSERT INTO jobs (id, user_id, name, template, pace_seconds) VALUES (?, ?, ?, ?, ?)');
+  const insertJob = db.prepare('INSERT INTO jobs (id, user_id, name, template, pace_seconds, image_path) VALUES (?, ?, ?, ?, ?, ?)');
   const insertMsg = db.prepare(
     'INSERT INTO messages (id, job_id, phone, first_name, last_name, link, body, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
   );
@@ -930,7 +991,7 @@ app.post('/api/jobs', requireAuth, (req, res) => {
         throw err;
       }
     }
-    insertJob.run(jobId, req.user.id, name, template, Number(paceSeconds));
+    insertJob.run(jobId, req.user.id, name, template || '', Number(paceSeconds), resolvedImagePath);
     const seenPhones = new Set();
     for (const row of parsedRows) {
       const rawPhone = row[columnMap.phone];
@@ -1126,10 +1187,10 @@ app.post('/api/ack', requireApiKey, (req, res) => {
 
 // ─── Single Send ─────────────────────────────────────────────────────────────
 
-function queueSingleSend(userId, rawPhone, message, label, source, defaultPace, isTest) {
+function queueSingleSend(userId, rawPhone, message, label, source, defaultPace, isTest, imagePath) {
   const phone = normalizePhone(rawPhone);
   if (!phone) return { error: 'Invalid phone number' };
-  if (!message || !message.trim()) return { error: 'message is required' };
+  if ((!message || !message.trim()) && !imagePath) return { error: 'message or image is required' };
 
   const suppressed = db.prepare('SELECT id FROM suppression_list WHERE phone = ? AND (user_id = ? OR user_id IS NULL)').get(phone, userId);
   if (suppressed) return { error: 'Phone is on the suppression list', code: 'suppressed' };
@@ -1151,9 +1212,11 @@ function queueSingleSend(userId, rawPhone, message, label, source, defaultPace, 
     }
   }
 
+  const resolvedImagePath = imagePath ? path.join(imagesDir, path.basename(imagePath)) : null;
+
   db.transaction(() => {
-    db.prepare('INSERT INTO jobs (id, user_id, name, template, status, pace_seconds, total, source, is_test) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)')
-      .run(jobId, userId, label || `Send: ${phone}`, body, status, pace, source || null, isTest ? 1 : 0);
+    db.prepare('INSERT INTO jobs (id, user_id, name, template, status, pace_seconds, total, source, is_test, image_path) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?)')
+      .run(jobId, userId, label || `Send: ${phone}`, body, status, pace, source || null, isTest ? 1 : 0, resolvedImagePath);
     db.prepare('INSERT INTO messages (id, job_id, phone, first_name, last_name, link, body) VALUES (?, ?, ?, ?, ?, ?, ?)')
       .run(msgId, jobId, phone, '', '', '', body);
   })();
@@ -1195,10 +1258,13 @@ app.post('/api/make/send', apiSendLimiter, requireApiKey, (req, res) => {
 
 // Web UI route — requires session auth
 app.post('/api/send-one', requireAuth, (req, res) => {
-  const { phone, message } = req.body;
-  if (!phone || !message) return res.status(400).json({ error: 'phone and message are required' });
-  const messageError = validateMaxLength(message, 1600, 'Single-send message body');
-  if (messageError) return res.status(400).json({ error: messageError });
+  const { phone, message, imageName } = req.body;
+  if (!phone) return res.status(400).json({ error: 'phone is required' });
+  if (!message && !imageName) return res.status(400).json({ error: 'message or image is required' });
+  if (message) {
+    const messageError = validateMaxLength(message, 1600, 'Single-send message body');
+    if (messageError) return res.status(400).json({ error: messageError });
+  }
 
   const isTest = req.body.test === true;
   if (!isTest) {
@@ -1212,7 +1278,7 @@ app.post('/api/send-one', requireAuth, (req, res) => {
     }
   }
 
-  const result = queueSingleSend(req.user.id, phone, message, `Web: ${phone}`, null, null, isTest);
+  const result = queueSingleSend(req.user.id, phone, message || '', `Web: ${phone}`, null, null, isTest, imageName || null);
   if (result.error) return res.status(result.code === 'suppressed' ? 422 : 400).json(result);
   res.status(201).json(result);
 });
@@ -2335,7 +2401,7 @@ if (process.env.TYL_DESKTOP) {
     try {
       // Find the next pending message across all users — skip jobs whose owner has an expired/cancelled subscription
       const message = db.prepare(`
-        SELECT m.*, j.pace_seconds, j.user_id
+        SELECT m.*, j.pace_seconds, j.user_id, j.image_path
         FROM messages m
         JOIN jobs j ON j.id = m.job_id
         JOIN users u ON u.id = j.user_id
@@ -2376,7 +2442,7 @@ if (process.env.TYL_DESKTOP) {
       if (process.env.TYL_DESKTOP) process.stdout.write('__TRAY:green__\n');
 
       try {
-        await sendFn(message.phone, message.body);
+        await sendFn(message.phone, message.body, message.image_path || null);
         db.prepare("UPDATE messages SET status='sent', sent_at=datetime('now'), error=NULL WHERE id=?").run(message.id);
         const jobRow = db.prepare("SELECT is_test FROM jobs WHERE id = ?").get(message.job_id);
         const isTest = jobRow && jobRow.is_test;

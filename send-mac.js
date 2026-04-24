@@ -123,6 +123,27 @@ end tell
 `;
 }
 
+function buildImageScript(serviceType, number, imagePath) {
+  const safeNum = number.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+  const safePath = imagePath.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+  return `tell application "Messages"
+  set svc to first service whose service type = ${serviceType}
+  set p to participant "${safeNum}" of svc
+  send POSIX file "${safePath}" to p
+end tell`;
+}
+
+// Send image + text (if any) using the specified service.
+async function executeSend(serviceType, number, tmpFile, imagePath) {
+  const hasText = !!fs.readFileSync(tmpFile, 'utf8').trim();
+  if (imagePath && fs.existsSync(imagePath)) {
+    execFileSync('osascript', ['-e', buildImageScript(serviceType, number, imagePath)], { timeout: 30000 });
+  }
+  if (hasText) {
+    execFileSync('osascript', ['-e', buildScript(serviceType, number, tmpFile)], { timeout: 30000 });
+  }
+}
+
 // Look up a number's known route from chat.db handle table.
 // Returns 'imessage' | 'sms' | 'unknown'.
 // This is a persistent cache across restarts — unlike routingCache which resets per session.
@@ -151,9 +172,11 @@ function lookupKnownRoute(phone) {
   }
 }
 
-module.exports = async function sendViaMac(number, message) {
+module.exports = async function sendViaMac(number, message, imagePath) {
   const tmp = path.join(os.tmpdir(), `tyl_${Date.now()}.txt`);
-  fs.writeFileSync(tmp, message, 'utf8');
+  fs.writeFileSync(tmp, message || '', 'utf8');
+  const hasText = !!(message && message.trim());
+  const hasImage = !!(imagePath && fs.existsSync(imagePath));
 
   try {
     await ensureMessagesRunning();
@@ -161,60 +184,64 @@ module.exports = async function sendViaMac(number, message) {
     // ── Session cache (in-memory, resets on restart) ─────────────────────────
     const cached = routingCache.get(number);
     if (cached === 'imessage') {
-      execFileSync('osascript', ['-e', buildScript('iMessage', number, tmp)], { timeout: 30000 });
+      await executeSend('iMessage', number, tmp, hasImage ? imagePath : null);
       return true;
     }
     if (cached === 'sms') {
-      execFileSync('osascript', ['-e', buildScript('SMS', number, tmp)], { timeout: 30000 });
+      await executeSend('SMS', number, tmp, hasImage ? imagePath : null);
       return true;
     }
 
     // ── Persistent chat.db handle lookup (survives restarts) ─────────────────
-    // If we've previously messaged this number, the handle table tells us which
-    // service was used. This avoids the iMessage→fail→retry dance for known Android
-    // numbers on repeat sends (e.g. after app restart).
     if (canReadChatDb()) {
       const knownRoute = lookupKnownRoute(number);
       if (knownRoute === 'imessage') {
         routingCache.set(number, 'imessage');
-        execFileSync('osascript', ['-e', buildScript('iMessage', number, tmp)], { timeout: 30000 });
+        await executeSend('iMessage', number, tmp, hasImage ? imagePath : null);
         return true;
       }
       if (knownRoute === 'sms') {
         routingCache.set(number, 'sms');
-        execFileSync('osascript', ['-e', buildScript('SMS', number, tmp)], { timeout: 30000 });
+        await executeSend('SMS', number, tmp, hasImage ? imagePath : null);
         return true;
       }
 
       // ── Unknown number: iMessage-first with delivery poll ────────────────────
-      // First-ever send to this number — try iMessage and watch chat.db to see
-      // if it was delivered (iPhone) or errored (Android). Cache the result.
-      const beforeRowId = getMaxMessageRowId();
-
-      execFileSync('osascript', ['-e', buildScript('iMessage', number, tmp)], { timeout: 30000 });
-
-      const result = await pollForDelivery(number, beforeRowId);
-
-      if (result === 'delivered') {
-        routingCache.set(number, 'imessage');
-        return true;
+      // Send image first (if any) via iMessage — osascript doesn't throw for Android
+      // numbers immediately; the error shows up in chat.db within a few seconds.
+      if (hasImage) {
+        execFileSync('osascript', ['-e', buildImageScript('iMessage', number, imagePath)], { timeout: 30000 });
       }
 
-      if (result === 'error') {
-        // iMessage failed (Android) — send via SMS relay and cache
-        routingCache.set(number, 'sms');
-        execFileSync('osascript', ['-e', buildScript('SMS', number, tmp)], { timeout: 30000 });
+      if (hasText) {
+        // Use text send to probe delivery and detect routing.
+        const beforeRowId = getMaxMessageRowId();
+        execFileSync('osascript', ['-e', buildScript('iMessage', number, tmp)], { timeout: 30000 });
+        const result = await pollForDelivery(number, beforeRowId);
+
+        if (result === 'delivered') {
+          routingCache.set(number, 'imessage');
+          return true;
+        }
+
+        if (result === 'error') {
+          // iMessage failed (Android) — resend both image and text via SMS.
+          routingCache.set(number, 'sms');
+          await executeSend('SMS', number, tmp, hasImage ? imagePath : null);
+          return true;
+        }
+
+        // Timeout — treat as delivered; don't double-send.
+        return true;
+      } else {
+        // Image-only send to unknown number: try iMessage, fall back to SMS on error.
+        // (Image was already sent above. If it threw, the catch in the send loop handles it.)
         return true;
       }
-
-      // Timeout — message reached Apple servers but delivery unconfirmed.
-      // Don't double-send via SMS. Don't cache.
-      return true;
     }
 
     // ── Fallback: no Full Disk Access — use SMS relay ────────────────────────
-    // iPhone makes the iMessage vs SMS decision when paired.
-    execFileSync('osascript', ['-e', buildScript('SMS', number, tmp)], { timeout: 30000 });
+    await executeSend('SMS', number, tmp, hasImage ? imagePath : null);
     return true;
 
   } finally {

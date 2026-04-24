@@ -278,4 +278,9 @@ try {
   db.exec(`ALTER TABLE jobs ADD COLUMN is_test INTEGER NOT NULL DEFAULT 0`);
 } catch (_) {}
 
+// Image attachment — Mac only, Pro plan, one image per job
+try {
+  db.exec(`ALTER TABLE jobs ADD COLUMN image_path TEXT`);
+} catch (_) {}
+
 module.exports = db;
