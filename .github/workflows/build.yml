@@ -49,7 +49,7 @@ jobs:
           path: dist/*.dmg
 
   build-mac-x64:
-    runs-on: macos-13   # Intel runner
+    runs-on: macos-latest   # cross-compile x64 on Apple Silicon runner (avoids macos-13 queue)
     steps:
       - uses: actions/checkout@v4
 
@@ -61,8 +61,8 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Rebuild native modules for Electron (x64)
-        run: npx electron-builder install-app-deps
+      - name: Rebuild native modules for Electron (x64 via cross-compile)
+        run: npm_config_arch=x64 npx electron-builder install-app-deps
 
       - name: Verify better-sqlite3 binary is x86_64
         run: |
