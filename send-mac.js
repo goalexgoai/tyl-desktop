@@ -165,8 +165,10 @@ function lookupKnownRoute(phone) {
     const varArr = [...variants];
     const placeholders = varArr.map(() => '?').join(',');
     const rows = db.prepare(`SELECT service FROM handle WHERE id IN (${placeholders})`).all(...varArr);
-    if (rows.some(r => r.service === 'iMessage')) return 'imessage';
+    // SMS takes priority: a confirmed SMS delivery is ground truth; iMessage handles can
+    // exist from failed attempts to Android numbers and must not be trusted blindly.
     if (rows.some(r => r.service === 'SMS')) return 'sms';
+    if (rows.some(r => r.service === 'iMessage')) return 'imessage';
     return 'unknown';
   } catch {
     return 'unknown';
@@ -209,18 +211,16 @@ module.exports = async function sendViaMac(number, message, imagePath) {
     // ── Persistent chat.db handle lookup (survives restarts) ─────────────────
     if (canReadChatDb()) {
       const knownRoute = lookupKnownRoute(number);
-      if (knownRoute === 'imessage') {
-        routingCache.set(number, 'imessage');
-        await executeSend('iMessage', number, tmp, stagedImg);
-        return true;
-      }
       if (knownRoute === 'sms') {
         routingCache.set(number, 'sms');
         await executeSend('SMS', number, tmp, stagedImg);
         return true;
       }
+      // 'imessage' from the handle table is NOT trusted without a delivery probe —
+      // failed iMessage attempts to Android numbers leave iMessage handles in chat.db.
+      // Fall through to the probe path for both 'imessage' and 'unknown'.
 
-      // ── Unknown number: iMessage-first with delivery poll ────────────────────
+      // ── Unknown/unconfirmed number: iMessage-first with delivery poll ────────
       // Send image first (if any) via iMessage — osascript doesn't throw for Android
       // numbers immediately; the error shows up in chat.db within a few seconds.
       if (stagedImg) {
