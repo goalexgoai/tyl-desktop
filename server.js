@@ -2520,10 +2520,11 @@ if (process.env.TYL_DESKTOP) {
 
 const PORT = process.env.TYL_PORT ? parseInt(process.env.TYL_PORT, 10) : (process.env.PORT || 3000);
 
-// Export for testing — only listen when run directly
 module.exports = { app, db };
 
-if (require.main === module) {
+// Start listening when run directly OR when required in-process by the Electron main process.
+// The test suite imports this module with neither condition true, so no server starts during tests.
+if (require.main === module || process.env.TYL_DESKTOP === '1') {
   app.listen(PORT, '127.0.0.1', () => {
     console.log(`TYL server listening on port ${PORT}`);
   });
