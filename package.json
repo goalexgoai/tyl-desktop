@@ -1,6 +1,6 @@
 {
   "name": "textyourlist",
-  "version": "1.0.31",
+  "version": "1.0.32",
   "description": "Text Your List — Send personal texts to your list",
   "main": "main.js",
   "scripts": {
@@ -14,6 +14,7 @@
   },
   "dependencies": {
     "adm-zip": "^0.5.10",
+    "bcryptjs": "^3.0.3",
     "better-sqlite3": "^11.10.0",
     "cookie-parser": "^1.4.6",
     "csv-parse": "^5.5.3",
@@ -30,7 +31,6 @@
     "uuid": "^9.0.1"
   },
   "devDependencies": {
-    "bcryptjs": "^3.0.3",
     "electron": "^35.7.5",
     "electron-builder": "^25.1.8",
     "jest": "^30.3.0",
