@@ -9,9 +9,9 @@
   --border-hover: #ccc9c4;
   --text: #1A1A1A;
   --text-muted: #6b6b68;
-  --accent: #8C2249;
-  --accent-hover: #B03060;
-  --accent-tint: #FDF0F5;
+  --accent: #C44A76;
+  --accent-hover: #A33860;
+  --accent-tint: #FDF2F6;
   --success: #0F6E56;
   --warn: #ca8a04;
   --danger: #dc2626;
@@ -61,6 +61,13 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); font
 .sidebar-logo h1 .w-your { color: var(--accent); }
 #user-plan-label { font-size: 11px; color: #777; display: block; padding: 0; line-height: 1.4; }
 
+.nav-icon {
+  width: 16px; height: 16px;
+  display: flex; align-items: center; justify-content: center;
+  opacity: 0.7; flex-shrink: 0;
+}
+.nav-item.active .nav-icon { opacity: 1; }
+
 .nav-item {
   display: flex;
   align-items: center;
@@ -77,7 +84,7 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); font
   text-align: left;
 }
 .nav-item:hover { background: #2a2a2a; color: #fff; }
-.nav-item.active { background: rgba(140,34,73,0.18); color: #F4C0D1; font-weight: 600; border-left: 2px solid var(--accent); padding-left: 16px; }
+.nav-item.active { background: rgba(196,74,118,0.18); color: #F4C0D1; font-weight: 600; border-left: 2px solid var(--accent); padding-left: 16px; }
 .nav-item .icon { font-size: 14px; width: 18px; text-align: center; }
 
 .sidebar-divider { border: none; border-top: 1px solid #2a2a2a; margin: 6px 0; }
@@ -147,7 +154,7 @@ input[type="text"], input[type="number"], select, textarea {
   background: var(--surface); outline: none;
   transition: border-color 0.15s;
 }
-input:focus, select:focus, textarea:focus { border-color: var(--accent); outline: none; box-shadow: 0 0 0 3px rgba(140,34,73,0.1); }
+input:focus, select:focus, textarea:focus { border-color: var(--accent); outline: none; box-shadow: 0 0 0 3px rgba(196,74,118,0.1); }
 textarea { resize: vertical; min-height: 100px; font-family: var(--mono); line-height: 1.6; }
 label { display: block; font-size: 12.5px; font-weight: 600; color: var(--text-muted); margin-bottom: 5px; text-transform: uppercase; letter-spacing: 0.4px; }
 

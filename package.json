@@ -1,17 +1,19 @@
 {
   "name": "textyourlist",
   "version": "1.0.31",
-  "description": "Text Your List \u2014 Send personal texts to your list",
+  "description": "Text Your List — Send personal texts to your list",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
     "postinstall": "electron-builder install-app-deps",
     "build:mac": "electron-builder --mac",
-    "build:win": "electron-builder --win"
+    "build:win": "electron-builder --win",
+    "test": "jest",
+    "test:unit": "jest tests/unit.test.js",
+    "test:api": "jest tests/api.test.js"
   },
   "dependencies": {
     "adm-zip": "^0.5.10",
-    "bcryptjs": "^2.4.3",
     "better-sqlite3": "^11.10.0",
     "cookie-parser": "^1.4.6",
     "csv-parse": "^5.5.3",
@@ -28,8 +30,11 @@
     "uuid": "^9.0.1"
   },
   "devDependencies": {
+    "bcryptjs": "^3.0.3",
     "electron": "^35.7.5",
-    "electron-builder": "^25.1.8"
+    "electron-builder": "^25.1.8",
+    "jest": "^30.3.0",
+    "supertest": "^7.2.2"
   },
   "build": {
     "appId": "com.textyourlist.app",

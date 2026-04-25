@@ -706,6 +706,22 @@ app.post('/api/auth/change-password', requireAuth, async (req, res) => {
   }
 });
 
+// Returns a one-time auto-login URL for the web account page.
+// Token is generated server-side by the web, tied to the user's web_user_id.
+app.get('/api/billing-link', requireAuth, async (req, res) => {
+  const webUrl = process.env.TYL_WEB_URL || 'https://app.textyourlist.com';
+  try {
+    const payload = req.user.web_user_id
+      ? { user_id: req.user.web_user_id }
+      : { email: req.user.email };
+    const result = await desktopWebPost('/api/auth/billing-token', payload);
+    if (result.status === 200 && result.body && result.body.token) {
+      return res.json({ url: `${webUrl}/account?token=${result.body.token}` });
+    }
+  } catch (_) { /* fall through */ }
+  res.json({ url: `${webUrl}/account` });
+});
+
 app.get('/api/auth/me', requireAuth, async (req, res) => {
   let user = req.user;
   // Re-sync plan from web on each /me call so plan changes reflect immediately.
@@ -2503,6 +2519,12 @@ if (process.env.TYL_DESKTOP) {
 // ─── Start ───────────────────────────────────────────────────────────────────
 
 const PORT = process.env.TYL_PORT ? parseInt(process.env.TYL_PORT, 10) : (process.env.PORT || 3000);
-app.listen(PORT, '127.0.0.1', () => {
-  console.log(`TYL server listening on port ${PORT}`);
-});
+
+// Export for testing — only listen when run directly
+module.exports = { app, db };
+
+if (require.main === module) {
+  app.listen(PORT, '127.0.0.1', () => {
+    console.log(`TYL server listening on port ${PORT}`);
+  });
+}

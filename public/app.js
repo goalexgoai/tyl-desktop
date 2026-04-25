@@ -152,10 +152,19 @@ function showToast(msg, duration = 2500) {
   setTimeout(() => { t.style.display = 'none'; }, duration);
 }
 
+async function openBillingPage() {
+  try {
+    const r = await get('/api/billing-link');
+    window.location.href = r.url;
+  } catch (_) {
+    window.location.href = 'https://textyourlist.com/account';
+  }
+}
+
 function upgradePrompt(msg) {
   return `<div class="alert alert-info" style="margin-bottom:16px">
     ${msg} &nbsp;
-    <button class="btn btn-primary btn-sm" onclick="navigate('billing')">Upgrade now</button>
+    <button class="btn btn-primary btn-sm" onclick="openBillingPage()">Upgrade now</button>
   </div>`;
 }
 
@@ -507,7 +516,7 @@ function renderQuickSend(body) {
         <div class="form-row">
           <label style="display:flex;align-items:center;gap:8px">
             Attach image
-            <span style="font-size:11px;background:#8C2249;color:#fff;padding:2px 7px;border-radius:10px;font-weight:600;letter-spacing:.03em">PRO</span>
+            <span style="font-size:11px;background:#C44A76;color:#fff;padding:2px 7px;border-radius:10px;font-weight:600;letter-spacing:.03em">PRO</span>
             <span style="font-size:12px;color:var(--text-muted)">JPG, PNG, GIF, WEBP · max 2 MB · Mac only</span>
           </label>
           <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
@@ -899,7 +908,7 @@ async function renderBulkSend(body) {
         <div class="form-row" style="margin-top:16px">
           <label style="display:flex;align-items:center;gap:8px">
             Attach image
-            <span style="font-size:11px;background:#8C2249;color:#fff;padding:2px 7px;border-radius:10px;font-weight:600;letter-spacing:.03em">PRO</span>
+            <span style="font-size:11px;background:#C44A76;color:#fff;padding:2px 7px;border-radius:10px;font-weight:600;letter-spacing:.03em">PRO</span>
             <span style="font-size:12px;color:var(--text-muted)">JPG, PNG, GIF, WEBP · max 2 MB · Mac only</span>
           </label>
           <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
@@ -3013,51 +3022,15 @@ function renderBilling(main) {
     renderBilling(main);
   });
 
-  async function upgrade(plan) {
-    const cycle = localStorage.getItem('billing_cycle') || 'monthly';
-    try {
-      const result = await post('/billing/checkout', { plan, cycle });
-      if (result.url) {
-        window.location.href = result.url;
-      } else {
-        msg.innerHTML = `<div class="alert alert-error">${escHtml(result.error || 'Billing not configured yet. Contact support.')}</div>`;
-      }
-    } catch (err) {
-      msg.innerHTML = `<div class="alert alert-error">${escHtml(err.message)}</div>`;
-    }
-  }
-
   const starterBtn = document.getElementById('upgrade-starter');
   const proBtn = document.getElementById('upgrade-pro');
   const manageBtn = document.getElementById('manage-subscription-btn');
   const cancelBtn = document.getElementById('cancel-sub-btn');
 
-  if (starterBtn) starterBtn.addEventListener('click', () => upgrade('starter'));
-  if (proBtn) proBtn.addEventListener('click', () => upgrade('pro'));
-  if (manageBtn) {
-    manageBtn.addEventListener('click', async () => {
-      try {
-        const result = await post('/billing/portal', {});
-        if (result.url) window.location.href = result.url; // will-navigate opens in browser on desktop
-      } catch (err) {
-        msg.innerHTML = `<div class="alert alert-error">${escHtml(err.message)}</div>`;
-      }
-    });
-  }
-  if (cancelBtn) {
-    cancelBtn.addEventListener('click', () => {
-      const endDate = u.billing_period_end ? fmtDate(u.billing_period_end) : 'the end of your billing period';
-      const confirmed = confirm(`You can cancel any time. You'll keep full access to Text Your List until ${endDate}. No charges after that.\n\nConfirm cancellation?`);
-      if (confirmed) {
-        // Open billing portal to handle cancellation
-        post('/billing/portal', {}).then(r => {
-          if (r.url) window.location.href = r.url;
-        }).catch(err => {
-          msg.innerHTML = `<div class="alert alert-error">${escHtml(err.message)}</div>`;
-        });
-      }
-    });
-  }
+  if (starterBtn) starterBtn.addEventListener('click', openBillingPage);
+  if (proBtn) proBtn.addEventListener('click', openBillingPage);
+  if (manageBtn) manageBtn.addEventListener('click', openBillingPage);
+  if (cancelBtn) cancelBtn.addEventListener('click', openBillingPage);
 }
 
 // ── Wizard ────────────────────────────────────────────────────────────────
@@ -3532,31 +3505,13 @@ function renderAccount(main) {
     </div>`;
 
   const upgBtn = document.getElementById('acct-upgrade-btn');
-  if (upgBtn) {
-    upgBtn.addEventListener('click', () => {
-      if (window.electronAPI?.openBilling) window.electronAPI.openBilling();
-      else navigate('billing');
-    });
-  }
+  if (upgBtn) upgBtn.addEventListener('click', openBillingPage);
 
   const manageBillingBtn = document.getElementById('acct-manage-billing');
-  if (manageBillingBtn) {
-    manageBillingBtn.addEventListener('click', () => {
-      const url = 'https://app.textyourlist.com/app';
-      if (window.electronAPI?.openExternal) window.electronAPI.openExternal(url);
-      else window.location.href = url;
-    });
-  }
+  if (manageBillingBtn) manageBillingBtn.addEventListener('click', openBillingPage);
 
   const cancelBtn = document.getElementById('acct-cancel-sub');
-  if (cancelBtn) {
-    cancelBtn.addEventListener('click', () => {
-      if (!confirm('Cancel your subscription? You\'ll keep access until the end of your billing period.')) return;
-      post('/billing/portal', {}).then(r => {
-        if (r.url) window.location.href = r.url;
-      }).catch(err => { alert(err.message); });
-    });
-  }
+  if (cancelBtn) cancelBtn.addEventListener('click', openBillingPage);
 
   document.getElementById('chpw-save').addEventListener('click', async () => {
     const currentPassword = document.getElementById('chpw-current').value;

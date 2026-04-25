@@ -32,22 +32,22 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,700;0,9..40,800;1,9..40,400;1,9..40,500&display=swap" rel="stylesheet" />
   <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
-  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg width='48' height='48' viewBox='0 0 48 48' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Crect width='48' height='48' rx='24' fill='%238C2249'/%3E%3Crect x='9' y='13' width='30' height='5' rx='2.5' fill='white'/%3E%3Crect x='9' y='22' width='22' height='5' rx='2.5' fill='white' opacity='0.7'/%3E%3Crect x='9' y='31' width='26' height='5' rx='2.5' fill='white' opacity='0.45'/%3E%3Ccircle cx='37' cy='35' r='7' fill='%230F6E56'/%3E%3Cpath d='M33.5 35L35.8 37.5L40.5 32.5' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E" />
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg width='48' height='48' viewBox='0 0 48 48' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Crect width='48' height='48' rx='24' fill='%23C44A76'/%3E%3Crect x='9' y='13' width='30' height='5' rx='2.5' fill='white'/%3E%3Crect x='9' y='22' width='22' height='5' rx='2.5' fill='white' opacity='0.7'/%3E%3Crect x='9' y='31' width='26' height='5' rx='2.5' fill='white' opacity='0.45'/%3E%3Ccircle cx='37' cy='35' r='7' fill='%23007AFF'/%3E%3Cpath d='M33.5 35L35.8 37.5L40.5 32.5' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E" />
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     :root {
-      --color-primary: #8C2249;
-      --color-primary-hover: #B03060;
-      --color-primary-tint: #FDF0F5;
-      --color-primary-light: #D8D8D8;
-      --color-accent: #2563eb;
-      --color-accent-tint: #dbeafe;
-      --color-dark: #1A1A1A;
-      --color-body: #4A4A4A;
-      --color-surface: #F5F5F5;
-      --color-border: #E8E6E2;
-      --color-white: #FFFFFF;
+      --color-primary:       #C44A76;
+      --color-primary-hover: #A33860;
+      --color-primary-tint:  #FDF2F6;
+      --color-primary-pale:  #F9E1EC;
+      --color-accent:        #2563eb;
+      --color-accent-tint:   #dbeafe;
+      --color-dark:          #1A1A1A;
+      --color-body:          #4A4A4A;
+      --color-surface:       #F5F4F1;
+      --color-border:        #E8E6E2;
+      --color-white:         #FFFFFF;
     }
 
     html { scroll-behavior: smooth; }
@@ -58,13 +58,14 @@
       line-height: 1.6;
       -webkit-font-smoothing: antialiased;
     }
+    a { text-decoration: none; color: inherit; }
+    img { display: block; max-width: 100%; }
 
-    /* ── Focus states ── */
     :focus-visible { outline: 2px solid var(--color-primary); outline-offset: 3px; }
 
     /* ── Buttons ── */
     .btn {
-      display: inline-flex; align-items: center; justify-content: center;
+      display: inline-flex; align-items: center; justify-content: center; gap: 7px;
       padding: 14px 32px; border-radius: 100px;
       font-family: 'DM Sans', sans-serif; font-size: 16px; font-weight: 600;
       cursor: pointer; text-decoration: none; border: none;
@@ -74,7 +75,12 @@
     .btn-primary:hover { background: var(--color-primary-hover); transform: scale(1.02); }
     .btn-outline { background: transparent; color: var(--color-primary); border: 2px solid var(--color-primary); }
     .btn-outline:hover { background: var(--color-primary-tint); }
+    .btn-white { background: #fff; color: var(--color-dark); }
+    .btn-white:hover { background: #f0f0f0; }
+    .btn-outline-white { background: transparent; color: #fff; border: 2px solid rgba(255,255,255,0.5); }
+    .btn-outline-white:hover { background: rgba(255,255,255,0.1); }
     .btn-sm { padding: 10px 22px; font-size: 14px; }
+    .btn-lg { padding: 16px 36px; font-size: 17px; }
 
     /* ── Eyebrow ── */
     .eyebrow {
@@ -86,36 +92,41 @@
     /* ── Navigation ── */
     nav {
       position: sticky; top: 0; z-index: 100;
-      background: var(--color-white);
+      background: rgba(255,255,255,0.95);
+      backdrop-filter: blur(12px);
       border-bottom: 1px solid transparent;
       transition: border-color 200ms ease;
       padding: 0 40px;
     }
     nav.scrolled { border-bottom-color: var(--color-border); }
     .nav-inner {
-      max-width: 1080px; margin: 0 auto;
+      max-width: 960px; margin: 0 auto;
       display: flex; align-items: center; justify-content: space-between;
       height: 64px;
     }
-    .nav-logo {
-      display: flex; align-items: center; gap: 8px;
-      text-decoration: none; flex-shrink: 0;
+    .nav-logo { display: flex; align-items: center; gap: 9px; text-decoration: none; flex-shrink: 0; }
+    .logo-tile {
+      width: 32px; height: 32px; background: var(--color-primary); border-radius: 9px;
+      display: flex; flex-direction: column; justify-content: center;
+      padding: 7px; gap: 3.5px; flex-shrink: 0; position: relative;
     }
-    .nav-logo-text {
-      font-size: 17px; font-weight: 800; letter-spacing: -0.3px; line-height: 1;
+    .logo-line { height: 3px; border-radius: 2px; background: white; }
+    .logo-line:nth-child(2) { opacity: .7; width: 72%; }
+    .logo-line:nth-child(3) { opacity: .5; width: 85%; }
+    .logo-check {
+      position: absolute; bottom: -3px; right: -3px;
+      width: 13px; height: 13px; background: #007AFF;
+      border-radius: 50%; border: 2px solid white;
+      display: flex; align-items: center; justify-content: center;
     }
-    .nav-logo-text .w-text { color: var(--color-dark); }
-    .nav-logo-text .w-your { color: var(--color-primary); }
-    .nav-links {
-      display: flex; align-items: center; gap: 32px;
-    }
-    .nav-links a {
-      font-size: 14px; font-weight: 500; color: var(--color-body);
-      text-decoration: none; transition: color 150ms;
-    }
+    .logo-check svg { width: 7px; height: 7px; }
+    .logo-text { font-size: 16px; font-weight: 800; letter-spacing: -0.3px; color: var(--color-dark); }
+    .logo-text span { color: var(--color-primary); }
+    .nav-links { display: flex; align-items: center; gap: 28px; }
+    .nav-links a { font-size: 14px; font-weight: 500; color: var(--color-body); transition: color 150ms; }
     .nav-links a:hover { color: var(--color-dark); }
-    .nav-right { display: flex; align-items: center; gap: 12px; }
-    .nav-login { font-size: 14px; font-weight: 500; color: var(--color-body); text-decoration: none; }
+    .nav-right { display: flex; align-items: center; gap: 10px; }
+    .nav-login { font-size: 14px; font-weight: 500; color: var(--color-body); }
     .nav-login:hover { color: var(--color-dark); }
 
     /* Hamburger */
@@ -123,7 +134,7 @@
       display: none; flex-direction: column; gap: 5px; cursor: pointer;
       background: none; border: none; padding: 4px;
     }
-    .nav-hamburger span { display: block; width: 22px; height: 2px; background: var(--color-dark); border-radius: 2px; transition: 200ms; }
+    .nav-hamburger span { display: block; width: 22px; height: 2px; background: var(--color-dark); border-radius: 2px; }
     .mobile-menu {
       display: none; flex-direction: column;
       background: var(--color-white); border-top: 1px solid var(--color-border);
@@ -137,45 +148,42 @@
     .mobile-menu a:last-child { border-bottom: none; }
     .mobile-menu .btn { margin-top: 16px; width: 100%; }
 
+    /* ── Layout helpers ── */
+    .container { max-width: 960px; margin: 0 auto; }
+    .container-sm { max-width: 680px; margin: 0 auto; }
+    .section { padding: 80px 24px; }
+    .section-white { background: var(--color-white); }
+    .section-surface { background: var(--color-surface); }
+    .section-dark { background: var(--color-dark); }
+    .section-header { text-align: center; margin-bottom: 48px; }
+    .section-header h2 {
+      font-size: clamp(26px, 4vw, 36px); font-weight: 700; letter-spacing: -0.8px;
+      color: var(--color-dark); line-height: 1.2; margin-bottom: 12px;
+    }
+    .section-header h2 em { font-style: italic; color: var(--color-primary); }
+    .section-header p {
+      font-size: 17px; color: var(--color-body); line-height: 1.7;
+      max-width: 560px; margin: 0 auto;
+    }
+
+    /* Scroll animation */
+    .fade-up { opacity: 0; transform: translateY(20px); transition: opacity 300ms ease, transform 300ms ease; }
+    .fade-up.visible { opacity: 1; transform: translateY(0); }
+
     /* ── Hero ── */
-    .hero {
-      background: var(--color-white);
-      padding: 80px 40px;
-      position: relative;
-      overflow: hidden;
-    }
-    .hero-photo-bg {
-      position: absolute;
-      right: 0; top: 0; bottom: 0;
-      width: 48%;
-      background-image: url('https://images.unsplash.com/photo-1529156069898-49953e39b3ac?auto=format&fit=crop&w=1200&q=80');
-      background-size: cover;
-      background-position: center top;
-    }
-    .hero-photo-bg::before {
-      content: '';
-      position: absolute;
-      inset: 0;
-      background: linear-gradient(to right, #fff 0%, rgba(255,255,255,0.55) 40%, rgba(255,255,255,0.1) 100%);
-    }
+    .hero { background: var(--color-white); padding: 80px 40px 0; overflow: hidden; }
     .hero-inner {
-      max-width: 1080px; margin: 0 auto;
-      display: flex; align-items: center; gap: 48px;
-      position: relative; z-index: 1;
+      max-width: 960px; margin: 0 auto;
+      display: grid; grid-template-columns: 1fr 1fr; gap: 48px; align-items: center;
     }
-    .hero-text { flex: 0 0 55%; }
     .hero h1 {
-      font-size: 58px; font-weight: 800; letter-spacing: -1.5px;
+      font-size: clamp(36px, 5vw, 58px); font-weight: 800; letter-spacing: -1.5px;
       line-height: 1.1; color: var(--color-dark); margin-bottom: 20px;
     }
     .hero h1 em { font-style: italic; color: var(--color-primary); }
-    .hero-sub {
-      font-size: 17px; font-weight: 400; color: var(--color-body);
-      line-height: 1.7; margin-bottom: 28px;
-    }
+    .hero-sub { font-size: 17px; color: var(--color-body); line-height: 1.7; margin-bottom: 28px; }
     .hero-cta { display: flex; gap: 12px; flex-wrap: wrap; }
     .hero-note { font-size: 13px; color: #888; margin-top: 16px; }
-    /* Staggered fade-up */
     .hero-text > * { opacity: 0; transform: translateY(16px); }
     .hero-text.animated > *:nth-child(1) { animation: fadeUp 400ms ease-out 0ms forwards; }
     .hero-text.animated > *:nth-child(2) { animation: fadeUp 400ms ease-out 100ms forwards; }
@@ -185,8 +193,8 @@
 
     /* ── Phone scene ── */
     .hero-phones {
-      flex: 0 0 45%; display: flex; flex-direction: column;
-      align-items: center; opacity: 0; animation: fadeUp 600ms ease-out 400ms forwards;
+      display: flex; flex-direction: column; align-items: center;
+      opacity: 0; animation: fadeUp 600ms ease-out 400ms forwards;
     }
     .phone-scene {
       perspective: 900px;
@@ -215,17 +223,12 @@
       left: 50%; transform: translateX(calc(-50% + 140px)) rotateY(-12deg);
       transform-origin: left center;
     }
-    /* Status bar */
     .phone-status {
       display: flex; justify-content: space-between; align-items: center;
-      padding: 6px 12px 2px; font-size: 9px; font-weight: 600;
-      flex-shrink: 0;
+      padding: 6px 12px 2px; font-size: 9px; font-weight: 600; flex-shrink: 0;
     }
     .phone-center .phone-status { color: #fff; }
     .phone-left .phone-status, .phone-right .phone-status { color: #1A1A1A; }
-    .status-time { letter-spacing: 0; }
-    .status-icons { display: flex; gap: 3px; align-items: center; }
-    /* Contact header */
     .phone-header {
       display: flex; align-items: center; justify-content: center;
       padding: 4px 8px 6px; border-bottom: 0.5px solid rgba(128,128,128,0.25);
@@ -233,7 +236,6 @@
     }
     .phone-center .phone-header { color: #fff; border-color: rgba(255,255,255,0.12); }
     .phone-left .phone-header, .phone-right .phone-header { color: #1A1A1A; }
-    /* Message area */
     .phone-messages {
       flex: 1; padding: 8px 8px 6px; display: flex;
       flex-direction: column; gap: 6px; overflow: hidden;
@@ -247,23 +249,13 @@
     .bubble.show { opacity: 1; transform: translateY(0); }
     .bubble-out {
       background: #0A84FF; color: #fff;
-      border-radius: 16px 16px 3px 16px;
-      align-self: flex-end;
+      border-radius: 16px 16px 3px 16px; align-self: flex-end;
     }
     .bubble-in {
       background: #E8E8ED; color: #1A1A1A;
-      border-radius: 16px 16px 16px 3px;
-      align-self: flex-start;
+      border-radius: 16px 16px 16px 3px; align-self: flex-start;
     }
-    .phone-center .bubble-out {
-      background: #0A84FF; color: #fff;
-      border-radius: 16px 16px 3px 16px;
-    }
-    /* Composer */
-    .phone-composer {
-      padding: 6px 8px; border-top: 0.5px solid rgba(128,128,128,0.2);
-      flex-shrink: 0;
-    }
+    .phone-composer { padding: 6px 8px; border-top: 0.5px solid rgba(128,128,128,0.2); flex-shrink: 0; }
     .composer-input {
       background: rgba(118,118,128,0.24); border-radius: 16px;
       padding: 5px 10px; font-size: 10.5px; color: #fff;
@@ -275,287 +267,35 @@
       animation: blink 0.8s step-end infinite;
     }
     @keyframes blink { 0%,100% { opacity: 1; } 50% { opacity: 0; } }
-    /* Progress */
-    .phone-progress {
-      padding: 4px 8px 6px; flex-shrink: 0;
-    }
-    .progress-label {
-      font-size: 9.5px; color: #8E8E93; margin-bottom: 3px;
-    }
-    .progress-track {
-      height: 3px; background: rgba(255,255,255,0.15); border-radius: 99px; overflow: hidden;
-    }
-    .progress-fill-anim {
-      height: 100%; background: #0A84FF; border-radius: 99px;
-      width: 0%; transition: width 1.5s ease;
-    }
-    .progress-fill-anim.filling { width: 100%; }
-    /* Social proof line */
+    .phone-progress { padding: 4px 8px 5px; flex-shrink: 0; }
+    .progress-label { font-size: 9.5px; color: #8E8E93; margin-bottom: 3px; }
+    .progress-track { height: 3px; background: rgba(255,255,255,0.15); border-radius: 99px; overflow: hidden; }
+    .progress-fill-anim { height: 100%; background: #0A84FF; border-radius: 99px; width: 0%; transition: width 1.5s ease; }
     .phones-caption { font-size: 12px; color: #888; margin-top: 14px; text-align: center; }
 
-    /* ── Sections ── */
-    .section { padding: 80px 24px; }
-    .section-white { background: var(--color-white); }
-    .section-surface { background: var(--color-surface); }
-    .section-tint { background: var(--color-surface); }
-    .section-dark { background: var(--color-dark); }
-
-    .section-header { text-align: center; margin-bottom: 48px; }
-    .section-header h2 {
-      font-size: 36px; font-weight: 700; letter-spacing: -0.8px;
-      color: var(--color-dark); line-height: 1.2; margin-bottom: 12px;
-    }
-    .section-header p {
-      font-size: 17px; color: var(--color-body); line-height: 1.7;
-      max-width: 560px; margin: 0 auto;
-    }
-
-    .container { max-width: 960px; margin: 0 auto; }
-    .container-sm { max-width: 680px; margin: 0 auto; }
-
-    /* Scroll animation */
-    .fade-up { opacity: 0; transform: translateY(20px); transition: opacity 300ms ease, transform 300ms ease; }
-    .fade-up.visible { opacity: 1; transform: translateY(0); }
-
-    /* ── Why not group chat cards ── */
-    .problem-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; align-items: stretch; }
-    .problem-card {
-      background: var(--color-white); border: 1px solid var(--color-border);
-      border-radius: 16px; padding: 28px 24px; display: flex; flex-direction: column;
-    }
-    .problem-card .card-icon { margin-bottom: 14px; display: block; color: var(--color-primary); }
-    .problem-card .card-icon i, .problem-card .card-icon svg { width: 36px; height: 36px; stroke-width: 1.5; }
-    .problem-card h3 { font-size: 17px; font-weight: 700; color: var(--color-dark); margin-bottom: 8px; }
-    .problem-card p { font-size: 15px; color: var(--color-body); line-height: 1.65; }
-
-    /* ── Steps ── */
-    .steps-grid {
-      display: grid; grid-template-columns: repeat(3, 1fr);
-      align-items: stretch; position: relative;
-      gap: 0;
-    }
-    .steps-grid::before {
-      content: ''; position: absolute;
-      top: 18px; left: calc(16% + 8px); right: calc(16% + 8px);
-      height: 1px; background: var(--color-primary-light);
-      z-index: 0;
-    }
-    .step-card {
-      background: var(--color-white); border: 1px solid var(--color-border);
-      border-radius: 16px; padding: 24px 20px; margin: 0 8px;
-      position: relative; z-index: 1; transition: border-color 200ms;
-      display: flex; flex-direction: column;
-    }
-    .step-card.featured {
-      border: 2px solid var(--color-primary);
-      background: var(--color-primary-tint);
-    }
-    .step-num {
-      width: 36px; height: 36px; border-radius: 50%;
-      background: var(--color-primary); color: #fff;
-      font-size: 15px; font-weight: 700;
-      display: flex; align-items: center; justify-content: center;
-      margin-bottom: 14px;
-    }
-    .step-card h3 { font-size: 15px; font-weight: 700; color: var(--color-dark); margin-bottom: 6px; }
-    .step-card p { font-size: 13px; color: var(--color-body); line-height: 1.55; }
-
-    /* ── Features ── */
-    .features-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0; }
-    .feature-item {
-      display: flex; gap: 16px; padding: 20px 0;
-    }
-    .feature-item + .feature-item { border-top: 1px solid var(--color-border); }
-    .features-grid .feature-item:nth-child(odd) { padding-right: 40px; }
-    .features-grid .feature-item:nth-child(even) { padding-left: 40px; border-left: 1px solid var(--color-border); }
-    .features-grid .feature-item:nth-child(1),
-    .features-grid .feature-item:nth-child(2) { padding-top: 0; border-top: none; }
-    .feature-icon { flex-shrink: 0; margin-top: 2px; color: var(--color-primary); }
-    .feature-icon i, .feature-icon svg { width: 52px; height: 52px; stroke-width: 1.5; }
-    .feature-item h3 { font-size: 15px; font-weight: 700; color: var(--color-dark); margin-bottom: 4px; }
-    .feature-item p { font-size: 14px; color: var(--color-body); line-height: 1.6; }
-
-    /* ── Testimonial ── */
-    .testimonial { text-align: center; }
-    .testimonial blockquote {
-      font-size: 22px; font-style: italic; font-weight: 500;
-      color: var(--color-dark); line-height: 1.5;
-      max-width: 640px; margin: 0 auto 12px;
-    }
-    .testimonial cite { font-size: 14px; color: var(--color-body); font-style: normal; }
-
-    /* ── Who it's for ── */
-    .usecase-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; align-items: stretch; }
-    .usecase-card {
-      border: 1px solid var(--color-border); border-radius: 16px; padding: 24px;
-      display: flex; flex-direction: column;
-    }
-    .usecase-card .card-icon { margin-bottom: 12px; display: block; color: var(--color-primary); }
-    .usecase-card .card-icon i { width: 28px; height: 28px; stroke-width: 1.5; }
-    .usecase-card h3 { font-size: 15px; font-weight: 700; color: var(--color-dark); margin-bottom: 6px; }
-    .usecase-card p { font-size: 14px; color: var(--color-body); line-height: 1.6; }
-
-    /* ── Pricing ── */
-    .billing-toggle {
-      display: flex; align-items: center; justify-content: center; gap: 12px;
-      margin-bottom: 36px;
-    }
-    .toggle-label { font-size: 14px; font-weight: 500; color: var(--color-body); }
-    .toggle-label.active { color: var(--color-dark); font-weight: 700; }
-    .toggle-pill {
-      position: relative; display: inline-block; width: 48px; height: 28px; cursor: pointer;
-    }
-    .toggle-pill input { opacity: 0; width: 0; height: 0; position: absolute; }
-    .toggle-track {
-      position: absolute; inset: 0;
-      background: var(--color-border); border-radius: 100px;
-      transition: background 200ms;
-    }
-    .toggle-thumb {
-      position: absolute; top: 3px; left: 3px;
-      width: 22px; height: 22px; background: #fff;
-      border-radius: 50%; transition: transform 200ms;
-      box-shadow: 0 1px 4px rgba(0,0,0,0.15);
-    }
-    .toggle-pill input:checked + .toggle-track { background: var(--color-primary); }
-    .toggle-pill input:checked ~ .toggle-thumb { transform: translateX(20px); }
-    .savings-chip {
-      font-size: 12px; font-weight: 600;
-      background: var(--color-accent-tint); color: #1e3a8a;
-      padding: 3px 10px; border-radius: 100px;
-    }
-
-    .pricing-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; align-items: stretch; }
-    .pricing-card {
-      background: var(--color-white); border: 1px solid var(--color-border);
-      border-radius: 20px; padding: 32px 28px;
-      display: flex; flex-direction: column;
-    }
-    .pricing-card.featured { border: 2px solid var(--color-primary); }
-    .popular-badge {
-      display: inline-block; font-size: 11px; font-weight: 700;
-      background: var(--color-accent-tint); color: #1e3a8a;
-      padding: 4px 12px; border-radius: 100px; margin-bottom: 12px;
-    }
-    .plan-name { font-size: 22px; font-weight: 700; color: var(--color-dark); margin-bottom: 4px; }
-    .plan-price-wrap { margin: 16px 0 4px; }
-    .plan-price {
-      font-size: 48px; font-weight: 800; color: var(--color-dark);
-      letter-spacing: -2px; line-height: 1;
-    }
-    .plan-price .per-month { font-size: 16px; font-weight: 400; color: var(--color-body); letter-spacing: 0; }
-    .plan-savings { font-size: 13px; color: var(--color-body); margin-top: 6px; display: none; }
-    .plan-savings .save-amt { font-size: 12px; font-weight: 600; color: var(--color-accent); margin-top: 2px; }
-    .plan-desc { font-size: 14px; color: var(--color-body); margin-bottom: 20px; }
-    .plan-features { list-style: none; flex: 1; margin-bottom: 24px; display: flex; flex-direction: column; gap: 8px; }
-    .plan-features li { display: flex; align-items: flex-start; gap: 10px; font-size: 14px; color: var(--color-dark); }
-    .plan-features li .check { color: var(--color-accent); font-weight: 700; flex-shrink: 0; }
-    .plan-features li.unavail { color: #aaa; text-decoration: line-through; }
-    .plan-features li.unavail .check { color: #ccc; text-decoration: none; }
-    .plan-note { font-size: 11.5px; color: var(--color-body); margin-bottom: 16px; opacity: 0.8; }
-    .plan-cta { margin-top: auto; }
-
-    /* ── FAQ ── */
-    .faq-list { display: flex; flex-direction: column; }
-    .faq-item { border-bottom: 1px solid var(--color-border); }
-    .faq-item:last-child { border-bottom: none; }
-    .faq-toggle {
-      display: flex; align-items: center; justify-content: space-between;
-      width: 100%; padding: 20px 0; background: none; border: none; cursor: pointer;
-      text-align: left; gap: 16px;
-    }
-    .faq-toggle:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; border-radius: 4px; }
-    .faq-q { font-size: 16px; font-weight: 700; color: var(--color-dark); }
-    .faq-arrow {
-      flex-shrink: 0; width: 20px; height: 20px; color: var(--color-body);
-      transition: transform 300ms ease;
-    }
-    .faq-item.open .faq-arrow { transform: rotate(180deg); }
-    .faq-body {
-      overflow: hidden; max-height: 0;
-      transition: max-height 300ms ease, padding 300ms ease;
-    }
-    .faq-item.open .faq-body { max-height: 400px; }
-    .faq-a {
-      font-size: 15px; color: var(--color-body); line-height: 1.7;
-      padding-bottom: 20px;
-    }
-
-    /* ── CTA band ── */
-    .cta-band { text-align: center; padding: 80px 24px; }
-    .cta-band h2 {
-      font-size: 36px; font-weight: 800; color: #fff;
-      letter-spacing: -0.8px; margin-bottom: 14px;
-    }
-    .cta-band p { font-size: 18px; color: rgba(255,255,255,0.7); margin-bottom: 32px; }
-
-    /* ── Footer ── */
-    footer {
-      background: var(--color-white); border-top: 1px solid var(--color-border);
-      padding: 24px 40px;
-    }
-    .footer-inner {
-      max-width: 960px; margin: 0 auto;
-      display: flex; align-items: center; justify-content: space-between;
-      flex-wrap: wrap; gap: 12px;
-    }
-    .footer-logo { font-size: 14px; font-weight: 800; color: var(--color-primary); }
-    .footer-links { display: flex; gap: 20px; flex-wrap: wrap; }
-    .footer-links a { font-size: 13px; color: var(--color-body); text-decoration: none; }
-    .footer-links a:hover { color: var(--color-dark); }
-    .footer-copy { font-size: 13px; color: var(--color-body); }
-
-    /* ── Disclaimer ── */
-    .disclaimer-section {
-      background: var(--color-surface); padding: 40px 24px;
-    }
-    .disclaimer-inner { max-width: 720px; margin: 0 auto; }
-    .disclaimer-label {
-      font-size: 11px; font-weight: 600; letter-spacing: 2px; text-transform: uppercase;
-      color: var(--color-primary); margin-bottom: 16px; display: block;
-    }
-    .disclaimer-inner p {
-      font-size: 13px; color: var(--color-body); line-height: 1.65; margin-bottom: 10px;
-    }
-    .disclaimer-inner p:last-child { margin-bottom: 0; }
-
-    /* ── Before/After illustration ── */
-    .before-after { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; align-items: start; max-width: 640px; margin: 0 auto; }
-    .ba-side { display: flex; flex-direction: column; align-items: center; }
-    .ba-label { font-size: 17px; font-weight: 700; margin-bottom: 20px; text-align: center; letter-spacing: -0.3px; }
-    .ba-label-bad { color: #b91c1c; }
-    .ba-label-good { color: var(--color-accent); }
-
-    /* Shared phone shell */
+    /* ── Shared phone shell (before/after, trust) ── */
     .ph-shell {
-      border: 8px solid #1A1A1A;
-      border-radius: 36px;
-      overflow: hidden;
-      background: #fff;
-      box-shadow: inset 0 0 0 1px rgba(255,255,255,0.06), 0 20px 48px rgba(0,0,0,0.22);
-      display: flex;
-      flex-direction: column;
+      border: 8px solid #1A1A1A; border-radius: 36px; overflow: hidden;
+      background: #fff; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.06), 0 20px 48px rgba(0,0,0,0.22);
+      display: flex; flex-direction: column;
     }
-    .ph-shell-sm {
-      border: 7px solid #1A1A1A;
-      border-radius: 28px;
-    }
-    /* Status bar inside phone */
+    .ph-shell-sm { border: 7px solid #1A1A1A; border-radius: 28px; }
     .ph-status {
-      background: #111;
-      height: 26px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 0 12px;
-      flex-shrink: 0;
+      background: #111; height: 26px;
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0 12px; flex-shrink: 0;
     }
     .ph-time { font-size: 9px; font-weight: 700; color: #fff; letter-spacing: 0.3px; }
     .ph-icons { display: flex; gap: 3px; align-items: center; }
     .ph-icons span { width: 4px; height: 4px; border-radius: 50%; background: rgba(255,255,255,0.5); }
     .ph-icons span:last-child { background: rgba(255,255,255,0.2); }
 
-    /* Phone content */
+    /* ── Before/After ── */
+    .before-after { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; align-items: start; max-width: 640px; margin: 0 auto; }
+    .ba-side { display: flex; flex-direction: column; align-items: center; }
+    .ba-label { font-size: 17px; font-weight: 700; margin-bottom: 20px; text-align: center; letter-spacing: -0.3px; }
+    .ba-label-bad { color: #b91c1c; }
+    .ba-label-good { color: var(--color-accent); }
     .ba-phone-frame { width: 210px; height: 420px; }
     .ba-phone-frame .ba-phone-body { padding: 10px 10px 14px; flex: 1; overflow: hidden; }
     .ba-thread-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; padding-bottom: 8px; border-bottom: 1px solid #e8e8e8; }
@@ -569,15 +309,62 @@
     .ba-msg-out { align-items: flex-end; }
     .ba-msg-in { align-items: flex-start; }
     .ba-caption { font-size: 15px; color: var(--color-body); margin-top: 18px; text-align: center; line-height: 1.5; }
-
-    /* Two mini phones side by side */
     .ba-phones-pair { display: flex; gap: 14px; justify-content: center; width: 100%; }
     .ba-phone-mini { width: 140px; height: 290px; }
     .ba-phone-mini .ba-phone-body { padding: 8px 8px 10px; flex: 1; overflow: hidden; }
     .ba-phone-mini .ba-thread-header { margin-bottom: 8px; }
     .ba-phone-mini .ba-bubble { font-size: 10px; padding: 5px 8px; }
 
-    /* ── Trust illustration ── */
+    /* ── Problem cards ── */
+    .problem-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; align-items: stretch; }
+    .problem-card {
+      background: var(--color-white); border: 1px solid var(--color-border);
+      border-radius: 16px; padding: 28px 24px; display: flex; flex-direction: column;
+    }
+    .problem-card .card-icon { margin-bottom: 14px; display: block; color: var(--color-primary); }
+    .problem-card .card-icon i { width: 36px; height: 36px; stroke-width: 1.5; }
+    .problem-card h3 { font-size: 17px; font-weight: 700; color: var(--color-dark); margin-bottom: 8px; }
+    .problem-card p { font-size: 15px; color: var(--color-body); line-height: 1.65; }
+
+    /* ── Steps ── */
+    .steps-grid {
+      display: grid; grid-template-columns: repeat(3, 1fr);
+      gap: 0; position: relative;
+    }
+    .steps-grid::before {
+      content: ''; position: absolute;
+      top: 18px; left: calc(16% + 8px); right: calc(16% + 8px);
+      height: 1px; background: var(--color-border); z-index: 0;
+    }
+    .step-card {
+      background: var(--color-white); border: 1px solid var(--color-border);
+      border-radius: 16px; padding: 24px 20px; margin: 0 8px;
+      position: relative; z-index: 1; display: flex; flex-direction: column;
+    }
+    .step-num {
+      width: 36px; height: 36px; border-radius: 50%;
+      background: var(--color-primary); color: #fff;
+      font-size: 15px; font-weight: 700;
+      display: flex; align-items: center; justify-content: center;
+      margin-bottom: 14px;
+    }
+    .step-card h3 { font-size: 15px; font-weight: 700; color: var(--color-dark); margin-bottom: 6px; }
+    .step-card p { font-size: 13px; color: var(--color-body); line-height: 1.55; }
+
+    /* ── Features ── */
+    .features-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0; }
+    .feature-item { display: flex; gap: 16px; padding: 20px 0; }
+    .feature-item + .feature-item { border-top: 1px solid var(--color-border); }
+    .features-grid .feature-item:nth-child(odd) { padding-right: 40px; }
+    .features-grid .feature-item:nth-child(even) { padding-left: 40px; border-left: 1px solid var(--color-border); }
+    .features-grid .feature-item:nth-child(1),
+    .features-grid .feature-item:nth-child(2) { padding-top: 0; border-top: none; }
+    .feature-icon { flex-shrink: 0; margin-top: 2px; color: var(--color-primary); }
+    .feature-icon i { width: 28px; height: 28px; stroke-width: 1.5; }
+    .feature-item h3 { font-size: 15px; font-weight: 700; color: var(--color-dark); margin-bottom: 4px; }
+    .feature-item p { font-size: 14px; color: var(--color-body); line-height: 1.6; }
+
+    /* ── Trust ── */
     .trust-compare { display: grid; grid-template-columns: 1fr auto 1fr; align-items: start; gap: 24px; max-width: 560px; margin: 0 auto; }
     .trust-col { display: flex; flex-direction: column; align-items: center; text-align: center; }
     .trust-verdict { font-size: 17px; font-weight: 700; margin-bottom: 20px; letter-spacing: -0.3px; }
@@ -603,13 +390,20 @@
     .trust-stat-num.bad { color: #b91c1c; }
     .trust-stat-label { font-size: 13px; color: var(--color-body); line-height: 1.4; max-width: 160px; display: block; }
 
-    /* ── Testimonial avatar ── */
+    /* ── Testimonial ── */
+    .testimonial { text-align: center; }
+    .testimonial blockquote {
+      font-size: 22px; font-style: italic; font-weight: 500;
+      color: var(--color-dark); line-height: 1.5; max-width: 640px; margin: 0 auto 12px;
+    }
     .testimonial-author { display: flex; align-items: center; gap: 12px; margin-top: 20px; justify-content: center; }
     .testimonial-avatar { width: 48px; height: 48px; border-radius: 50%; object-fit: cover; border: 2px solid var(--color-border); }
     .testimonial-author-name { font-size: 14px; font-weight: 700; color: var(--color-dark); display: block; }
     .testimonial-author-role { font-size: 12px; color: var(--color-body); }
 
-    /* ── Use case face cards ── */
+    /* ── Use cases ── */
+    .usecase-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; align-items: stretch; }
+    .usecase-card { border: 1px solid var(--color-border); border-radius: 16px; padding: 24px; display: flex; flex-direction: column; }
     .usecase-head { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
     .usecase-face { width: 48px; height: 48px; border-radius: 50%; object-fit: cover; flex-shrink: 0; }
     .usecase-who { display: flex; flex-direction: column; }
@@ -621,13 +415,93 @@
     .usecase-bubble.blue { background: #0A84FF; }
     .usecase-bubble.green { background: #3dbb61; }
     .faux-link { text-decoration: underline; opacity: 0.85; cursor: default; }
-
-    /* ── Use cases CTA banner ── */
     .usecase-banner { margin-top: 40px; background: var(--color-dark); border-radius: 16px; padding: 36px 40px; display: flex; align-items: center; justify-content: space-between; gap: 24px; flex-wrap: wrap; }
     .usecase-banner-text h3 { font-size: 22px; font-weight: 700; color: #fff; margin-bottom: 6px; letter-spacing: -0.4px; }
     .usecase-banner-text p { font-size: 15px; color: rgba(255,255,255,0.65); }
-    .btn-white { background: #fff; color: var(--color-dark); }
-    .btn-white:hover { background: #f0f0f0; }
+
+    /* ── Pricing ── */
+    .billing-toggle { display: flex; align-items: center; justify-content: center; gap: 12px; margin-bottom: 36px; }
+    .toggle-label { font-size: 14px; font-weight: 500; color: var(--color-body); }
+    .toggle-label.active { color: var(--color-dark); font-weight: 700; }
+    .toggle-pill { position: relative; display: inline-block; width: 48px; height: 28px; cursor: pointer; }
+    .toggle-pill input { opacity: 0; width: 0; height: 0; position: absolute; }
+    .toggle-track { position: absolute; inset: 0; background: var(--color-border); border-radius: 100px; transition: background 200ms; }
+    .toggle-thumb { position: absolute; top: 3px; left: 3px; width: 22px; height: 22px; background: #fff; border-radius: 50%; transition: transform 200ms; box-shadow: 0 1px 4px rgba(0,0,0,0.15); }
+    .toggle-pill input:checked + .toggle-track { background: var(--color-primary); }
+    .toggle-pill input:checked ~ .toggle-thumb { transform: translateX(20px); }
+    .savings-chip { font-size: 12px; font-weight: 600; background: var(--color-accent-tint); color: #1e3a8a; padding: 3px 10px; border-radius: 100px; }
+    .pricing-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; align-items: stretch; }
+    .pricing-card {
+      background: var(--color-white); border: 1px solid var(--color-border);
+      border-radius: 20px; padding: 32px 28px; display: flex; flex-direction: column;
+    }
+    .pricing-card.featured { border: 2px solid var(--color-primary); }
+    .popular-badge { display: inline-block; font-size: 11px; font-weight: 700; background: var(--color-accent-tint); color: #1e3a8a; padding: 4px 12px; border-radius: 100px; margin-bottom: 12px; }
+    .plan-name { font-size: 22px; font-weight: 700; color: var(--color-dark); margin-bottom: 4px; }
+    .plan-price-wrap { margin: 16px 0 4px; }
+    .plan-price { font-size: 48px; font-weight: 800; color: var(--color-dark); letter-spacing: -2px; line-height: 1; }
+    .plan-price .per-month { font-size: 16px; font-weight: 400; color: var(--color-body); letter-spacing: 0; }
+    .plan-savings { font-size: 13px; color: var(--color-body); margin-top: 6px; }
+    .plan-savings .save-amt { font-size: 12px; font-weight: 600; color: var(--color-accent); margin-top: 2px; }
+    .plan-desc { font-size: 14px; color: var(--color-body); margin-bottom: 20px; }
+    .plan-features { list-style: none; flex: 1; margin-bottom: 24px; display: flex; flex-direction: column; gap: 8px; }
+    .plan-features li { display: flex; align-items: flex-start; gap: 10px; font-size: 14px; color: var(--color-dark); }
+    .plan-features li .check { color: var(--color-accent); font-weight: 700; flex-shrink: 0; }
+    .plan-features li.unavail { color: #aaa; text-decoration: line-through; }
+    .plan-features li.unavail .check { color: #ccc; text-decoration: none; }
+    .plan-note { font-size: 11.5px; color: var(--color-body); margin-bottom: 16px; opacity: 0.8; }
+    .plan-cta { margin-top: auto; }
+
+    /* ── FAQ ── */
+    .faq-list { display: flex; flex-direction: column; }
+    .faq-item { border-bottom: 1px solid var(--color-border); }
+    .faq-item:last-child { border-bottom: none; }
+    .faq-toggle {
+      display: flex; align-items: center; justify-content: space-between;
+      width: 100%; padding: 20px 0; background: none; border: none; cursor: pointer;
+      text-align: left; gap: 16px;
+    }
+    .faq-toggle:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; border-radius: 4px; }
+    .faq-q { font-size: 16px; font-weight: 700; color: var(--color-dark); }
+    .faq-arrow { flex-shrink: 0; width: 20px; height: 20px; color: var(--color-body); transition: transform 300ms ease; }
+    .faq-item.open .faq-arrow { transform: rotate(180deg); }
+    .faq-body { overflow: hidden; max-height: 0; transition: max-height 300ms ease; }
+    .faq-item.open .faq-body { max-height: 400px; }
+    .faq-a { font-size: 15px; color: var(--color-body); line-height: 1.7; padding-bottom: 20px; }
+
+    /* ── CTA Band ── */
+    .cta-band {
+      text-align: center; padding: 80px 24px;
+      background: var(--color-primary);
+      position: relative; overflow: hidden;
+    }
+    .cta-band::before {
+      content: ''; position: absolute; inset: 0;
+      background-image: repeating-linear-gradient(-45deg, rgba(255,255,255,0.04) 0, rgba(255,255,255,0.04) 1px, transparent 1px, transparent 10px);
+    }
+    .cta-band-inner { position: relative; z-index: 1; max-width: 680px; margin: 0 auto; }
+    .cta-band h2 { font-size: clamp(26px, 4vw, 36px); font-weight: 800; color: #fff; letter-spacing: -0.8px; margin-bottom: 14px; }
+    .cta-band p { font-size: 17px; color: rgba(255,255,255,0.8); margin-bottom: 32px; }
+    .cta-actions { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+
+    /* ── Disclaimer ── */
+    .disclaimer-section { background: var(--color-surface); padding: 40px 24px; }
+    .disclaimer-inner { max-width: 720px; margin: 0 auto; }
+    .disclaimer-label { font-size: 11px; font-weight: 600; letter-spacing: 2px; text-transform: uppercase; color: var(--color-primary); margin-bottom: 16px; display: block; }
+    .disclaimer-inner p { font-size: 13px; color: var(--color-body); line-height: 1.65; margin-bottom: 10px; }
+    .disclaimer-inner p:last-child { margin-bottom: 0; }
+
+    /* ── Footer ── */
+    footer { background: var(--color-white); border-top: 1px solid var(--color-border); padding: 24px 40px; }
+    .footer-inner {
+      max-width: 960px; margin: 0 auto;
+      display: flex; align-items: center; justify-content: space-between;
+      flex-wrap: wrap; gap: 12px;
+    }
+    .footer-links { display: flex; gap: 20px; flex-wrap: wrap; }
+    .footer-links a { font-size: 13px; color: var(--color-body); text-decoration: none; }
+    .footer-links a:hover { color: var(--color-dark); }
+    .footer-copy { font-size: 13px; color: var(--color-body); }
 
     /* ── Responsive ── */
     @media (max-width: 768px) {
@@ -636,13 +510,11 @@
       .nav-hamburger { display: flex; }
 
       .hero { padding: 56px 20px 48px; }
-      .hero-inner { flex-direction: column; gap: 40px; }
-      .hero-text { flex: none; width: 100%; text-align: center; }
+      .hero-inner { grid-template-columns: 1fr; gap: 40px; }
       .hero h1 { font-size: 36px; letter-spacing: -1px; }
       .hero-sub { font-size: 16px; }
-      .hero-cta { flex-direction: column; align-items: center; }
-      .hero-cta .btn { width: 100%; max-width: 320px; }
-      .hero-phones { flex: none; width: 100%; }
+      .hero-cta { flex-direction: column; align-items: stretch; }
+      .hero-cta .btn { width: 100%; }
       .phone-scene { height: 300px; }
       .phone-center { width: 161px; height: 315px; }
       .phone-left, .phone-right { width: 145px; height: 290px; }
@@ -650,21 +522,9 @@
       .phone-right { transform: translateX(calc(-50% + 120px)) rotateY(-12deg); }
 
       .section { padding: 56px 20px; }
-
-    @media (max-width: 480px) {
-      .phone-scene { height: 255px; }
-      .phone-center { width: 137px; height: 268px; border-radius: 24px; border-width: 6px; }
-      .phone-left, .phone-right { width: 123px; height: 247px; border-radius: 22px; }
-      .phone-left { transform: translateX(calc(-50% - 100px)) rotateY(12deg); }
-      .phone-right { transform: translateX(calc(-50% + 100px)) rotateY(-12deg); }
-      .bubble { font-size: 10px; padding: 6px 8px; }
-    }
       .section-header h2 { font-size: 28px; }
-
       .problem-grid { grid-template-columns: 1fr; }
-      .steps-grid {
-        grid-template-columns: 1fr; gap: 12px;
-      }
+      .steps-grid { grid-template-columns: 1fr; gap: 12px; }
       .steps-grid::before { display: none; }
       .step-card { margin: 0; }
       .features-grid { grid-template-columns: 1fr; }
@@ -677,11 +537,18 @@
       footer { padding: 20px; }
       .footer-inner { flex-direction: column; align-items: flex-start; gap: 16px; }
       .before-after { grid-template-columns: 1fr; }
-      .ba-before { border-right: none; border-bottom: 1px solid var(--color-border); }
-      .before-after { grid-template-columns: 1fr; }
-      .ba-before { border-right: none; border-bottom: 1px solid var(--color-border); }
       .trust-compare { grid-template-columns: 1fr; }
       .trust-vs { display: none; }
+      .usecase-banner { padding: 24px; }
+    }
+
+    @media (max-width: 480px) {
+      .phone-scene { height: 255px; }
+      .phone-center { width: 137px; height: 268px; border-radius: 24px; border-width: 6px; }
+      .phone-left, .phone-right { width: 123px; height: 247px; border-radius: 22px; }
+      .phone-left { transform: translateX(calc(-50% - 100px)) rotateY(12deg); }
+      .phone-right { transform: translateX(calc(-50% + 100px)) rotateY(-12deg); }
+      .bubble { font-size: 10px; padding: 6px 8px; }
     }
   </style>
 </head>
@@ -691,15 +558,13 @@
 <nav id="main-nav">
   <div class="nav-inner">
     <a href="/" class="nav-logo" aria-label="Text Your List home">
-      <svg width="36" height="36" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-        <rect width="36" height="36" rx="10" fill="#8C2249"/>
-        <rect x="7" y="10" width="22" height="4" rx="2" fill="white"/>
-        <rect x="7" y="17" width="16" height="4" rx="2" fill="white" opacity="0.7"/>
-        <rect x="7" y="24" width="19" height="4" rx="2" fill="white" opacity="0.5"/>
-        <circle cx="27" cy="26" r="5" fill="#2563eb"/>
-        <path d="M24.5 26L26.2 27.8L29.5 24.5" stroke="white" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
-      </svg>
-      <span class="nav-logo-text"><span class="w-text">Text </span><span class="w-your">Your</span><span class="w-text"> List</span></span>
+      <div class="logo-tile" aria-hidden="true">
+        <div class="logo-line"></div>
+        <div class="logo-line"></div>
+        <div class="logo-line"></div>
+        <div class="logo-check"><svg viewBox="0 0 7 7" fill="none"><polyline points="1.2,3.5 3,5 5.8,2" stroke="white" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+      </div>
+      <span class="logo-text">Text <span>Your</span> List</span>
     </a>
     <div class="nav-links">
       <a href="#how-it-works">How it works</a>
@@ -723,9 +588,7 @@
 
 <!-- Hero -->
 <section class="hero">
-  <div class="hero-photo-bg"></div>
   <div class="hero-inner">
-    <!-- Left: text -->
     <div class="hero-text" id="hero-content">
       <h1>Text your list <em>individually</em>, not as a group chat</h1>
       <p class="hero-sub">Upload your list, write one message, and each person gets their own private text from your real number. No group thread. No shortcode. No copying and pasting one by one.</p>
@@ -736,19 +599,13 @@
       <p class="hero-note">Works on Mac and Windows</p>
     </div>
 
-    <!-- Right: phone illustration -->
     <div class="hero-phones">
       <div class="phone-scene">
-
         <!-- Left phone — Marcus (light mode) -->
-        <div class="phone phone-left" id="phone-left">
+        <div class="phone phone-left">
           <div class="phone-status">
-            <span class="status-time">9:41</span>
-            <div class="status-icons">
-              <svg width="12" height="8" viewBox="0 0 12 8" fill="currentColor"><rect x="0" y="2" width="2" height="6" rx="0.5"/><rect x="3" y="1" width="2" height="7" rx="0.5"/><rect x="6" y="0" width="2" height="8" rx="0.5"/><rect x="9" y="0" width="3" height="8" rx="0.5" opacity="0.3"/></svg>
-              <svg width="10" height="8" viewBox="0 0 10 8" fill="currentColor"><path d="M5 1.5C3.2 1.5 1.6 2.3.5 3.5L2 5c.7-.8 1.8-1.3 3-1.3s2.3.5 3 1.3l1.5-1.5C8.4 2.3 6.8 1.5 5 1.5z" opacity="0.3"/><path d="M5 4C3.9 4 2.9 4.5 2.2 5.3L3.7 6.8C4.1 6.3 4.5 6 5 6s.9.3 1.3.8L7.8 5.3C7.1 4.5 6.1 4 5 4z" opacity="0.6"/><circle cx="5" cy="7.5" r="0.8"/></svg>
-              <svg width="16" height="8" viewBox="0 0 16 8" fill="currentColor"><rect x="0" y="1" width="13" height="6" rx="1.5" opacity="0.35"/><rect x="1" y="2" width="8" height="4" rx="0.8"/><rect x="14" y="2.5" width="1.5" height="3" rx="0.75"/></svg>
-            </div>
+            <span>9:41</span>
+            <svg width="30" height="8" viewBox="0 0 30 8" fill="currentColor"><rect x="0" y="2" width="2" height="6" rx=".5"/><rect x="3" y="1" width="2" height="7" rx=".5"/><rect x="6" y="0" width="2" height="8" rx=".5"/><rect x="9" y="0" width="3" height="8" rx=".5" opacity=".3"/><rect x="18" y="1" width="12" height="6" rx="1.5" opacity=".35"/><rect x="19" y="2" width="6" height="4" rx=".8"/></svg>
           </div>
           <div class="phone-header">Marcus</div>
           <div class="phone-messages">
@@ -756,19 +613,14 @@
             <div class="bubble bubble-out" id="left-reply">Can't wait!! I'll be there 🙌</div>
           </div>
         </div>
-
         <!-- Center phone — sender (dark mode) -->
-        <div class="phone phone-center" id="phone-center">
+        <div class="phone phone-center">
           <div class="phone-status">
-            <span class="status-time">9:41</span>
-            <div class="status-icons" style="color:#fff">
-              <svg width="12" height="8" viewBox="0 0 12 8" fill="currentColor"><rect x="0" y="2" width="2" height="6" rx="0.5"/><rect x="3" y="1" width="2" height="7" rx="0.5"/><rect x="6" y="0" width="2" height="8" rx="0.5"/><rect x="9" y="0" width="3" height="8" rx="0.5" opacity="0.3"/></svg>
-              <svg width="10" height="8" viewBox="0 0 10 8" fill="currentColor"><path d="M5 1.5C3.2 1.5 1.6 2.3.5 3.5L2 5c.7-.8 1.8-1.3 3-1.3s2.3.5 3 1.3l1.5-1.5C8.4 2.3 6.8 1.5 5 1.5z" opacity="0.3"/><path d="M5 4C3.9 4 2.9 4.5 2.2 5.3L3.7 6.8C4.1 6.3 4.5 6 5 6s.9.3 1.3.8L7.8 5.3C7.1 4.5 6.1 4 5 4z" opacity="0.6"/><circle cx="5" cy="7.5" r="0.8"/></svg>
-              <svg width="16" height="8" viewBox="0 0 16 8" fill="currentColor"><rect x="0" y="1" width="13" height="6" rx="1.5" opacity="0.35"/><rect x="1" y="2" width="8" height="4" rx="0.8"/><rect x="14" y="2.5" width="1.5" height="3" rx="0.75"/></svg>
-            </div>
+            <span style="color:#fff">9:41</span>
+            <svg width="30" height="8" viewBox="0 0 30 8" fill="rgba(255,255,255,0.7)"><rect x="0" y="2" width="2" height="6" rx=".5"/><rect x="3" y="1" width="2" height="7" rx=".5"/><rect x="6" y="0" width="2" height="8" rx=".5"/><rect x="9" y="0" width="3" height="8" rx=".5" opacity=".3"/><rect x="18" y="1" width="12" height="6" rx="1.5" opacity=".35"/><rect x="19" y="2" width="6" height="4" rx=".8"/></svg>
           </div>
           <div class="phone-header" style="font-size:10px;color:#8E8E93">Text Your List</div>
-          <div class="phone-messages" style="flex:1">
+          <div class="phone-messages">
             <div class="bubble bubble-out" id="center-msg" style="font-size:10.5px">Hey <span style="color:#F4C0D1">{first_name}</span>! You're invited to Sarah's birthday Saturday at 7pm. Hope you can make it! 🎉</div>
           </div>
           <div class="phone-progress">
@@ -779,24 +631,18 @@
             <div class="composer-input" id="composer-text"><span class="composer-cursor"></span></div>
           </div>
         </div>
-
         <!-- Right phone — Jen (light mode) -->
-        <div class="phone phone-right" id="phone-right">
+        <div class="phone phone-right">
           <div class="phone-status">
-            <span class="status-time">9:41</span>
-            <div class="status-icons">
-              <svg width="12" height="8" viewBox="0 0 12 8" fill="currentColor"><rect x="0" y="2" width="2" height="6" rx="0.5"/><rect x="3" y="1" width="2" height="7" rx="0.5"/><rect x="6" y="0" width="2" height="8" rx="0.5"/><rect x="9" y="0" width="3" height="8" rx="0.5" opacity="0.3"/></svg>
-              <svg width="10" height="8" viewBox="0 0 10 8" fill="currentColor"><path d="M5 1.5C3.2 1.5 1.6 2.3.5 3.5L2 5c.7-.8 1.8-1.3 3-1.3s2.3.5 3 1.3l1.5-1.5C8.4 2.3 6.8 1.5 5 1.5z" opacity="0.3"/><path d="M5 4C3.9 4 2.9 4.5 2.2 5.3L3.7 6.8C4.1 6.3 4.5 6 5 6s.9.3 1.3.8L7.8 5.3C7.1 4.5 6.1 4 5 4z" opacity="0.6"/><circle cx="5" cy="7.5" r="0.8"/></svg>
-              <svg width="16" height="8" viewBox="0 0 16 8" fill="currentColor"><rect x="0" y="1" width="13" height="6" rx="1.5" opacity="0.35"/><rect x="1" y="2" width="8" height="4" rx="0.8"/><rect x="14" y="2.5" width="1.5" height="3" rx="0.75"/></svg>
-            </div>
+            <span>9:41</span>
+            <svg width="30" height="8" viewBox="0 0 30 8" fill="currentColor"><rect x="0" y="2" width="2" height="6" rx=".5"/><rect x="3" y="1" width="2" height="7" rx=".5"/><rect x="6" y="0" width="2" height="8" rx=".5"/><rect x="9" y="0" width="3" height="8" rx=".5" opacity=".3"/><rect x="18" y="1" width="12" height="6" rx="1.5" opacity=".35"/><rect x="19" y="2" width="6" height="4" rx=".8"/></svg>
           </div>
           <div class="phone-header">Jen</div>
           <div class="phone-messages">
             <div class="bubble bubble-in" id="right-msg">Hey Jen! You're invited to Sarah's birthday Saturday at 7pm. Hope you can make it! 🎉</div>
-            <div class="bubble bubble-out" id="right-reply">Yay!! How fun, saving the date now 🎂</div>
+            <div class="bubble bubble-out" id="right-reply">Yay!! Saving the date now 🎂</div>
           </div>
         </div>
-
       </div>
       <p class="phones-caption">Every reply goes to your inbox — not a group thread.</p>
     </div>
@@ -812,77 +658,47 @@
       <p>One approach creates chaos. The other creates conversations.</p>
     </div>
     <div class="before-after fade-up">
-      <!-- Left: group chat in one phone -->
       <div class="ba-side">
         <div class="ba-label ba-label-bad">❌ Group chat</div>
         <div class="ba-phone-frame ph-shell">
-          <div class="ph-status">
-            <span class="ph-time">9:41</span>
-            <div class="ph-icons"><span></span><span></span><span></span></div>
-          </div>
+          <div class="ph-status"><span class="ph-time">9:41</span><div class="ph-icons"><span></span><span></span><span></span></div></div>
           <div class="ba-phone-body">
-            <div class="ba-thread-header">
-              <span class="ba-thread-name">Party Planning 🎉</span>
-              <span class="ba-thread-count">12 members</span>
-            </div>
-            <div class="ba-msg ba-msg-in">
-              <span class="ba-sender">Marcus</span>
-              <span class="ba-bubble ba-bubble-other">Can't wait!! What time again?</span>
-            </div>
-            <div class="ba-msg ba-msg-in">
-              <span class="ba-sender">Jen</span>
-              <span class="ba-bubble ba-bubble-other">What should I bring?</span>
-            </div>
-            <div class="ba-msg ba-msg-in">
-              <span class="ba-sender">Tom</span>
-              <span class="ba-bubble ba-bubble-other">Is it ok if I bring a +1?</span>
-            </div>
-            <div class="ba-msg ba-msg-in">
-              <span class="ba-sender">Aisha</span>
-              <span class="ba-bubble ba-bubble-other">Wait which Saturday??</span>
-            </div>
+            <div class="ba-thread-header"><span class="ba-thread-name">Party Planning 🎉</span><span class="ba-thread-count">12 members</span></div>
+            <div class="ba-msg ba-msg-in"><span class="ba-sender">Marcus</span><span class="ba-bubble ba-bubble-other">Can't wait!! What time again?</span></div>
+            <div class="ba-msg ba-msg-in"><span class="ba-sender">Jen</span><span class="ba-bubble ba-bubble-other">What should I bring?</span></div>
+            <div class="ba-msg ba-msg-in"><span class="ba-sender">Tom</span><span class="ba-bubble ba-bubble-other">Is it ok if I bring a +1?</span></div>
+            <div class="ba-msg ba-msg-in"><span class="ba-sender">Aisha</span><span class="ba-bubble ba-bubble-other">Wait which Saturday??</span></div>
           </div>
         </div>
         <p class="ba-caption">Everyone sees everyone's replies. Threads go sideways.</p>
       </div>
-      <!-- Right: two phones side by side, each with a private thread -->
       <div class="ba-side">
         <div class="ba-label ba-label-good">✓ Text Your List</div>
         <div class="ba-phones-pair">
           <div class="ba-phone-mini ph-shell ph-shell-sm">
-            <div class="ph-status">
-              <span class="ph-time">9:41</span>
-              <div class="ph-icons"><span></span><span></span></div>
-            </div>
+            <div class="ph-status"><span class="ph-time">9:41</span><div class="ph-icons"><span></span><span></span></div></div>
             <div class="ba-phone-body">
-              <div class="ba-thread-header">
-                <span class="ba-thread-name">Marcus</span>
-              </div>
-              <div class="ba-msg ba-msg-out"><span class="ba-bubble ba-bubble-out">Hey Marcus! Sarah's birthday Saturday at 7pm 🎉</span></div>
+              <div class="ba-thread-header"><span class="ba-thread-name">Marcus</span></div>
+              <div class="ba-msg ba-msg-out"><span class="ba-bubble ba-bubble-out">Sarah's birthday Saturday 7pm 🎉</span></div>
               <div class="ba-msg ba-msg-in"><span class="ba-bubble ba-bubble-other">I'll be there 🙌</span></div>
             </div>
           </div>
           <div class="ba-phone-mini ph-shell ph-shell-sm">
-            <div class="ph-status">
-              <span class="ph-time">9:41</span>
-              <div class="ph-icons"><span></span><span></span></div>
-            </div>
+            <div class="ph-status"><span class="ph-time">9:41</span><div class="ph-icons"><span></span><span></span></div></div>
             <div class="ba-phone-body">
-              <div class="ba-thread-header">
-                <span class="ba-thread-name">Jen</span>
-              </div>
-              <div class="ba-msg ba-msg-out"><span class="ba-bubble ba-bubble-out">Hey Jen! Sarah's birthday Saturday at 7pm 🎉</span></div>
+              <div class="ba-thread-header"><span class="ba-thread-name">Jen</span></div>
+              <div class="ba-msg ba-msg-out"><span class="ba-bubble ba-bubble-out">Sarah's birthday Saturday 7pm 🎉</span></div>
               <div class="ba-msg ba-msg-in"><span class="ba-bubble ba-bubble-other">Saving the date! 🎂</span></div>
             </div>
           </div>
         </div>
-        <p class="ba-caption">Each person gets their own private thread. Only they can see your conversation.</p>
+        <p class="ba-caption">Each person gets their own private thread. Only they can see it.</p>
       </div>
     </div>
   </div>
 </section>
 
-<!-- Why not a group chat -->
+<!-- Why not group chat -->
 <section class="section section-white">
   <div class="container">
     <div class="section-header">
@@ -894,7 +710,7 @@
       <div class="problem-card fade-up">
         <span class="card-icon"><i data-lucide="users"></i></span>
         <h3>Group chats feel mass</h3>
-        <p>When people get a group text, they know they're one of many. Response rates drop. People scroll past. A private text from your number gets read.</p>
+        <p>When people get a group text, they know they're one of many. Response rates drop. A private text from your number gets read.</p>
       </div>
       <div class="problem-card fade-up">
         <span class="card-icon"><i data-lucide="message-circle-x"></i></span>
@@ -910,7 +726,7 @@
   </div>
 </section>
 
-<!-- How it works / Steps -->
+<!-- How it works -->
 <section class="section section-surface" id="how-it-works">
   <div class="container">
     <div class="section-header">
@@ -965,7 +781,7 @@
         <span class="feature-icon"><i data-lucide="monitor"></i></span>
         <div>
           <h3>Mac and Windows</h3>
-          <p>Works on both, with iPhone or Android.</p>
+          <p>Works on both, with iPhone or Android. No switching devices.</p>
         </div>
       </div>
       <div class="feature-item fade-up">
@@ -978,15 +794,15 @@
       <div class="feature-item fade-up">
         <span class="feature-icon"><i data-lucide="zap"></i></span>
         <div>
-          <h3>Automation-friendly</h3>
-          <p>Trigger texts from Make, Zapier, or your CRM via our API. Pro plan required.</p>
+          <h3>Smart Throttle — built in</h3>
+          <p>Automatically spaces sends with randomized timing so your sending pattern looks natural. Available on all plans.</p>
         </div>
       </div>
       <div class="feature-item fade-up">
-        <span class="feature-icon"><i data-lucide="users-round"></i></span>
+        <span class="feature-icon"><i data-lucide="plug"></i></span>
         <div>
-          <h3>No group thread</h3>
-          <p>Every contact gets a private one-on-one message from you. No "reply all" chaos.</p>
+          <h3>API &amp; automation</h3>
+          <p>Trigger texts from Make, Zapier, or your CRM via our API. Pro plan required.</p>
         </div>
       </div>
     </div>
@@ -997,7 +813,7 @@
 </section>
 
 <!-- Trust illustration -->
-<section class="section section-white">
+<section class="section section-surface">
   <div class="container-sm">
     <div class="section-header">
       <span class="eyebrow">Trust</span>
@@ -1011,14 +827,10 @@
       </div>
     </div>
     <div class="trust-compare fade-up">
-      <!-- Left: shortcode/spam -->
       <div class="trust-col">
         <div class="trust-verdict trust-verdict-bad">❌ Shortcode</div>
         <div class="trust-phone ph-shell">
-          <div class="ph-status">
-            <span class="ph-time">9:41</span>
-            <div class="ph-icons"><span></span><span></span><span></span></div>
-          </div>
+          <div class="ph-status"><span class="ph-time">9:41</span><div class="ph-icons"><span></span><span></span><span></span></div></div>
           <div class="trust-phone-body">
             <div class="trust-contact-row">
               <div class="trust-contact-dot spam">?</div>
@@ -1036,17 +848,13 @@
         <p class="trust-cap">Looks like spam. Gets ignored or filtered.</p>
       </div>
       <div class="trust-vs">vs</div>
-      <!-- Right: your real number -->
       <div class="trust-col">
         <div class="trust-verdict trust-verdict-good">✓ Your real number</div>
         <div class="trust-phone ph-shell">
-          <div class="ph-status">
-            <span class="ph-time">9:41</span>
-            <div class="ph-icons"><span></span><span></span><span></span></div>
-          </div>
+          <div class="ph-status"><span class="ph-time">9:41</span><div class="ph-icons"><span></span><span></span><span></span></div></div>
           <div class="trust-phone-body">
             <div class="trust-contact-row">
-              <img src="/faces/2.jpg" alt="Sarah" class="trust-contact-photo" />
+              <div class="trust-contact-dot known">S</div>
               <div>
                 <div class="trust-contact-name">Sarah</div>
                 <div class="trust-contact-sub">saved contact</div>
@@ -1063,12 +871,13 @@
 </section>
 
 <!-- Testimonial -->
-<section class="section section-surface">
+<section class="section section-white">
   <div class="container-sm">
     <div class="testimonial fade-up">
+      <span class="eyebrow" style="text-align:center">What people say</span>
       <blockquote>"We switched from a $99/month SMS platform and haven't looked back. Our open rates doubled because people actually recognize our number."</blockquote>
       <div class="testimonial-author">
-        <img src="/faces/5.jpg" alt="Shannon R." class="testimonial-avatar" loading="lazy" />
+        <div class="testimonial-avatar" style="background:#D8D8D3;"></div>
         <div>
           <strong class="testimonial-author-name">Shannon R.</strong>
           <span class="testimonial-author-role">Small business owner</span>
@@ -1079,7 +888,7 @@
 </section>
 
 <!-- Who it's for -->
-<section class="section section-white" id="who-its-for">
+<section class="section section-surface" id="who-its-for">
   <div class="container">
     <div class="section-header">
       <span class="eyebrow">Use cases</span>
@@ -1089,7 +898,7 @@
     <div class="usecase-grid">
       <div class="usecase-card fade-up">
         <div class="usecase-head">
-          <img src="/faces/47.jpg" alt="Family organizer" class="usecase-face" loading="lazy" />
+          <div class="usecase-face" style="background:#A0D4FF;"></div>
           <div class="usecase-who">
             <span class="usecase-name">Family organizers</span>
             <span class="usecase-role">Coordinating extended family</span>
@@ -1103,7 +912,7 @@
       </div>
       <div class="usecase-card fade-up">
         <div class="usecase-head">
-          <img src="/faces/32.jpg" alt="Real estate agent" class="usecase-face" loading="lazy" />
+          <div class="usecase-face" style="background:#B5D5FF;"></div>
           <div class="usecase-who">
             <span class="usecase-name">Real estate agents</span>
             <span class="usecase-role">Open houses and sphere follow-ups</span>
@@ -1117,7 +926,7 @@
       </div>
       <div class="usecase-card fade-up">
         <div class="usecase-head">
-          <img src="/faces/36.jpg" alt="Ministry leader" class="usecase-face" loading="lazy" />
+          <div class="usecase-face" style="background:#B5A8FF;"></div>
           <div class="usecase-who">
             <span class="usecase-name">Religious and community groups</span>
             <span class="usecase-role">Youth groups, small groups, ward coordinators</span>
@@ -1131,7 +940,7 @@
       </div>
       <div class="usecase-card fade-up">
         <div class="usecase-head">
-          <img src="/faces/34.jpg" alt="Health coach" class="usecase-face" loading="lazy" />
+          <div class="usecase-face" style="background:#FFB5A0;"></div>
           <div class="usecase-who">
             <span class="usecase-name">Health and personal coaches</span>
             <span class="usecase-role">Checking in with clients</span>
@@ -1145,7 +954,7 @@
       </div>
       <div class="usecase-card fade-up">
         <div class="usecase-head">
-          <img src="/faces/57.jpg" alt="Instructor" class="usecase-face" loading="lazy" />
+          <div class="usecase-face" style="background:#FFE4A0;"></div>
           <div class="usecase-who">
             <span class="usecase-name">Instructors</span>
             <span class="usecase-role">Practice reminders, class updates</span>
@@ -1159,7 +968,7 @@
       </div>
       <div class="usecase-card fade-up">
         <div class="usecase-head">
-          <img src="/faces/60.jpg" alt="Small business owner" class="usecase-face" loading="lazy" />
+          <div class="usecase-face" style="background:#A8F5C0;"></div>
           <div class="usecase-who">
             <span class="usecase-name">Small business owners</span>
             <span class="usecase-role">Notifying customers</span>
@@ -1174,7 +983,7 @@
     </div>
     <div class="usecase-banner fade-up">
       <div class="usecase-banner-text">
-        <h3>How will you stay connected?</h3>
+        <h3>Your list. Your number. Your conversations.</h3>
         <p>If you send the same message to a list of people, Text Your List makes every one personal.</p>
       </div>
       <a href="/signup" class="btn btn-white btn-lg">Get started free →</a>
@@ -1183,14 +992,13 @@
 </section>
 
 <!-- Pricing -->
-<section class="section section-surface" id="pricing">
+<section class="section section-white" id="pricing">
   <div class="container">
     <div class="section-header">
       <span class="eyebrow">Pricing</span>
-      <h2>Start free</h2>
-      <p>Start free. Pay only when you need more sends.</p>
+      <h2>Simple, honest pricing</h2>
+      <p>Start free. No credit card. No contracts.</p>
     </div>
-
     <div class="billing-toggle">
       <span class="toggle-label" id="lbl-monthly">Monthly</span>
       <label class="toggle-pill">
@@ -1200,7 +1008,6 @@
       </label>
       <span class="toggle-label active" id="lbl-annual">Annual <span class="savings-chip">Save 20%</span></span>
     </div>
-
     <div class="pricing-grid">
       <!-- Free -->
       <div class="pricing-card fade-up">
@@ -1208,7 +1015,7 @@
         <div class="plan-price-wrap">
           <span class="plan-price">$0 <span class="per-month">/ month</span></span>
         </div>
-        <p class="plan-desc">Perfect for trying it out</p>
+        <p class="plan-desc">Try it out — no credit card needed.</p>
         <ul class="plan-features">
           <li><span class="check">✓</span> 50 texts per month</li>
           <li><span class="check">✓</span> Bulk send up to 10 contacts</li>
@@ -1217,22 +1024,21 @@
           <li class="unavail"><span class="check">—</span> No API/webhook sends</li>
         </ul>
         <div class="plan-cta">
-          <a href="/signup" class="btn btn-outline" style="width:100%">Get started free</a>
+          <a href="/signup" class="btn btn-outline" style="width:100%;justify-content:center;">Get started free</a>
         </div>
       </div>
-
       <!-- Starter -->
       <div class="pricing-card featured fade-up">
         <span class="popular-badge">Most popular</span>
         <div class="plan-name">Starter</div>
         <div class="plan-price-wrap">
           <span class="plan-price" id="price-starter">$8 <span class="per-month">/ month</span></span>
-          <div class="plan-savings" id="savings-starter" style="display:block">
+          <div class="plan-savings" id="savings-starter">
             <div>billed $96/yr</div>
             <div class="save-amt">Save $24/yr</div>
           </div>
         </div>
-        <p class="plan-desc">For small teams and regular senders</p>
+        <p class="plan-desc">For small teams and regular senders.</p>
         <ul class="plan-features">
           <li><span class="check">✓</span> 2,000 texts per month*</li>
           <li><span class="check">✓</span> CSV upload &amp; bulk send — unlimited contacts</li>
@@ -1241,46 +1047,45 @@
         </ul>
         <p class="plan-note">*Recommended max 200/day to protect your number</p>
         <div class="plan-cta">
-          <a href="/signup?plan=starter" class="btn btn-primary" style="width:100%">Get Starter</a>
+          <a href="/signup?plan=starter" class="btn btn-primary" style="width:100%;justify-content:center;">Get Starter</a>
         </div>
       </div>
-
       <!-- Pro -->
       <div class="pricing-card fade-up">
         <div class="plan-name">Pro</div>
         <div class="plan-price-wrap">
           <span class="plan-price" id="price-pro">$24 <span class="per-month">/ month</span></span>
-          <div class="plan-savings" id="savings-pro" style="display:block">
+          <div class="plan-savings" id="savings-pro">
             <div>billed $288/yr</div>
             <div class="save-amt">Save $72/yr</div>
           </div>
         </div>
-        <p class="plan-desc">For power users and growing orgs</p>
+        <p class="plan-desc">For power users and growing orgs.</p>
         <ul class="plan-features">
           <li><span class="check">✓</span> 6,000 texts per month*</li>
+          <li><span class="check">✓</span> Everything in Starter</li>
+          <li><span class="check">✓</span> API &amp; webhook sends (Make, Zapier)</li>
           <li><span class="check">✓</span> Unlimited API keys</li>
-          <li><span class="check">✓</span> CSV upload &amp; bulk send — unlimited contacts</li>
-          <li><span class="check">✓</span> Saved templates</li>
-          <li><span class="check">✓</span> API webhook sends (Make, Zapier)</li>
+          <li><span class="check">✓</span> Photo attachments (Mac)</li>
         </ul>
         <p class="plan-note">*Recommended max 200/day to protect your number</p>
         <div class="plan-cta">
-          <a href="/signup?plan=pro" class="btn btn-primary" style="width:100%">Get Pro</a>
+          <a href="/signup?plan=pro" class="btn btn-primary" style="width:100%;justify-content:center;">Get Pro</a>
         </div>
       </div>
     </div>
+    <p style="text-align:center;font-size:13px;color:#888;margin-top:20px;">We recommend no more than 200 texts/day to protect your number from spam filters.</p>
   </div>
 </section>
 
 <!-- FAQ -->
-<section class="section section-white" id="faq">
+<section class="section section-surface" id="faq">
   <div class="container-sm">
-    <div class="section-header" style="text-align:left">
+    <div class="section-header">
       <span class="eyebrow">FAQ</span>
       <h2>Common questions</h2>
     </div>
     <div class="faq-list">
-
       <div class="faq-item">
         <button class="faq-toggle" aria-expanded="false">
           <span class="faq-q">How is this different from a group text?</span>
@@ -1288,7 +1093,6 @@
         </button>
         <div class="faq-body" role="region"><p class="faq-a">In a group text, everyone can see each other and reply to the whole group. Text Your List sends a separate, private text to each person from your real number. They reply only to you.</p></div>
       </div>
-
       <div class="faq-item">
         <button class="faq-toggle" aria-expanded="false">
           <span class="faq-q">Does it work on Windows?</span>
@@ -1296,7 +1100,6 @@
         </button>
         <div class="faq-body" role="region"><p class="faq-a">Yes. Windows works with Android phones using Microsoft Phone Link — a free app built into Windows 11. iPhone users can use the Mac companion, which sends through Apple Messages and your iPhone.</p></div>
       </div>
-
       <div class="faq-item">
         <button class="faq-toggle" aria-expanded="false">
           <span class="faq-q">Do I need a special number or carrier plan?</span>
@@ -1304,7 +1107,6 @@
         </button>
         <div class="faq-body" role="region"><p class="faq-a">No. Text Your List uses your existing phone number — whatever number your phone already has. No new number or carrier plan needed.</p></div>
       </div>
-
       <div class="faq-item">
         <button class="faq-toggle" aria-expanded="false">
           <span class="faq-q">Does my computer need to stay on?</span>
@@ -1312,15 +1114,13 @@
         </button>
         <div class="faq-body" role="region"><p class="faq-a">Yes, the companion app needs to be running while messages send. Most people leave it open during work hours and queue up sends.</p></div>
       </div>
-
       <div class="faq-item">
         <button class="faq-toggle" aria-expanded="false">
           <span class="faq-q">What's the send limit?</span>
           <svg class="faq-arrow" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polyline points="5 8 10 13 15 8"/></svg>
         </button>
-        <div class="faq-body" role="region"><p class="faq-a">Free: 50 texts/month. Starter: 2,000/month. Pro: 6,000/month. We recommend no more than 200/day to protect your number from spam filters.</p></div>
+        <div class="faq-body" role="region"><p class="faq-a">Free: 50 texts/month. Starter: 2,000/month. Pro: 6,000/month. We recommend no more than 200/day to protect your number from spam filters. Smart Throttle is included on all plans and automatically spaces sends with randomized timing to keep your sending pattern looking natural.</p></div>
       </div>
-
       <div class="faq-item">
         <button class="faq-toggle" aria-expanded="false">
           <span class="faq-q">Can I personalize each message?</span>
@@ -1328,7 +1128,6 @@
         </button>
         <div class="faq-body" role="region"><p class="faq-a">Yes. Use fields like {first_name} or any column from your CSV to customize every message automatically.</p></div>
       </div>
-
       <div class="faq-item">
         <button class="faq-toggle" aria-expanded="false">
           <span class="faq-q">Can I cancel anytime?</span>
@@ -1336,33 +1135,42 @@
         </button>
         <div class="faq-body" role="region"><p class="faq-a">Yes. No contracts. Cancel from your account settings. You keep full access until the end of your billing period.</p></div>
       </div>
-
     </div>
   </div>
 </section>
 
 <!-- CTA Band -->
-<section class="cta-band section-dark">
-  <div class="container-sm">
-    <h2>Ready to send your first text?</h2>
+<section class="cta-band">
+  <div class="cta-band-inner">
+    <h2>Start free. Pay only when you need more sends.</h2>
     <p>Free account. No credit card. Up and running in 5 minutes.</p>
-    <a href="/signup" class="btn btn-primary">Create your free account</a>
+    <div class="cta-actions">
+      <a href="/signup" class="btn btn-white btn-lg">Create your free account</a>
+      <a href="/downloads" class="btn btn-outline-white">Download the app</a>
+    </div>
   </div>
 </section>
+
+<!-- Disclaimer -->
+<div class="disclaimer-section">
+  <div class="disclaimer-inner">
+    <span class="disclaimer-label">Compliance notice</span>
+    <p>Text Your List is a tool that sends messages through your own phone and number. You are responsible for ensuring you have appropriate consent from recipients under applicable laws, including the TCPA. We recommend only texting people who have an established relationship with you and have not asked to stop receiving messages.</p>
+    <p>Do not use Text Your List for cold outreach or unsolicited marketing. Sending unwanted texts is illegal and can result in carrier filtering or legal liability.</p>
+  </div>
+</div>
 
 <!-- Footer -->
 <footer>
   <div class="footer-inner">
-    <a href="/" class="nav-logo" style="text-decoration:none" aria-label="Text Your List">
-      <svg width="28" height="28" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-        <rect width="36" height="36" rx="10" fill="#8C2249"/>
-        <rect x="7" y="10" width="22" height="4" rx="2" fill="white"/>
-        <rect x="7" y="17" width="16" height="4" rx="2" fill="white" opacity="0.7"/>
-        <rect x="7" y="24" width="19" height="4" rx="2" fill="white" opacity="0.5"/>
-        <circle cx="27" cy="26" r="5" fill="#2563eb"/>
-        <path d="M24.5 26L26.2 27.8L29.5 24.5" stroke="white" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
-      </svg>
-      <span class="nav-logo-text" style="font-size:15px"><span class="w-text">Text </span><span class="w-your">Your</span><span class="w-text"> List</span></span>
+    <a href="/" class="nav-logo" aria-label="Text Your List">
+      <div class="logo-tile" aria-hidden="true" style="width:24px;height:24px;border-radius:7px;padding:5px;gap:2.5px;">
+        <div class="logo-line" style="height:2.5px;"></div>
+        <div class="logo-line" style="height:2.5px;"></div>
+        <div class="logo-line" style="height:2.5px;"></div>
+        <div class="logo-check" style="width:10px;height:10px;bottom:-2px;right:-2px;"><svg viewBox="0 0 7 7" fill="none"><polyline points="1.2,3.5 3,5 5.8,2" stroke="white" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+      </div>
+      <span class="logo-text" style="font-size:13px;">Text <span>Your</span> List</span>
     </a>
     <div class="footer-links">
       <a href="/send-texts-individually">Send texts individually</a>
@@ -1380,9 +1188,7 @@
   </div>
 </footer>
 
-
 <script>
-  // Init Lucide icons (wrapped so a CDN load failure doesn't kill the rest of the page)
   try { lucide.createIcons({ attrs: { 'stroke-width': '1.5' } }); } catch (_) {}
 
   // Sticky nav border
@@ -1423,19 +1229,19 @@
 
   // Billing toggle
   const billingToggle = document.getElementById('billing-toggle');
-  const priceStarter = document.getElementById('price-starter');
-  const pricePro = document.getElementById('price-pro');
+  const priceStarter  = document.getElementById('price-starter');
+  const pricePro      = document.getElementById('price-pro');
   const savingsStarter = document.getElementById('savings-starter');
-  const savingsPro = document.getElementById('savings-pro');
-  const lblMonthly = document.getElementById('lbl-monthly');
-  const lblAnnual = document.getElementById('lbl-annual');
+  const savingsPro    = document.getElementById('savings-pro');
+  const lblMonthly    = document.getElementById('lbl-monthly');
+  const lblAnnual     = document.getElementById('lbl-annual');
 
   billingToggle.addEventListener('change', () => {
     const annual = billingToggle.checked;
-    priceStarter.innerHTML = annual ? '$8 <span class="per-month">/ month</span>' : '$10 <span class="per-month">/ month</span>';
-    pricePro.innerHTML = annual ? '$24 <span class="per-month">/ month</span>' : '$30 <span class="per-month">/ month</span>';
+    priceStarter.innerHTML  = annual ? '$8 <span class="per-month">/ month</span>'  : '$10 <span class="per-month">/ month</span>';
+    pricePro.innerHTML      = annual ? '$24 <span class="per-month">/ month</span>' : '$30 <span class="per-month">/ month</span>';
     savingsStarter.style.display = annual ? 'block' : 'none';
-    savingsPro.style.display = annual ? 'block' : 'none';
+    savingsPro.style.display     = annual ? 'block' : 'none';
     lblMonthly.classList.toggle('active', !annual);
     lblAnnual.classList.toggle('active', annual);
   });
@@ -1443,9 +1249,8 @@
   // FAQ accordion
   document.querySelectorAll('.faq-toggle').forEach(btn => {
     btn.addEventListener('click', () => {
-      const item = btn.closest('.faq-item');
+      const item   = btn.closest('.faq-item');
       const isOpen = item.classList.contains('open');
-      // Close all
       document.querySelectorAll('.faq-item.open').forEach(i => {
         i.classList.remove('open');
         i.querySelector('.faq-toggle').setAttribute('aria-expanded', 'false');
@@ -1457,23 +1262,19 @@
     });
   });
 
-  // Smooth scroll for anchor links
+  // Smooth scroll
   document.querySelectorAll('a[href^="#"]').forEach(a => {
     a.addEventListener('click', e => {
       const target = document.querySelector(a.getAttribute('href'));
-      if (target) {
-        e.preventDefault();
-        target.scrollIntoView({ behavior: 'smooth' });
-      }
+      if (target) { e.preventDefault(); target.scrollIntoView({ behavior: 'smooth' }); }
     });
   });
 
-  // ── Phone animation (single play) ───────────────────────────────
+  // ── Phone animation ──────────────────────────────────────────────
   (function phoneAnim() {
     const composerEl  = document.getElementById('composer-text');
     const progressBar = document.getElementById('progress-bar');
     const progressLbl = document.getElementById('progress-label');
-    const centerMsg   = document.getElementById('center-msg');
     const leftMsg     = document.getElementById('left-msg');
     const leftReply   = document.getElementById('left-reply');
     const rightMsg    = document.getElementById('right-msg');
@@ -1481,53 +1282,47 @@
     if (!composerEl) return;
 
     const MESSAGE = "Hey! You're invited to Sarah's birthday Saturday at 7pm 🎉";
-
     function delay(ms) { return new Promise(r => setTimeout(r, ms)); }
 
     async function run() {
-      // 1. Type message character by character in the composer
+      // Type message in composer
       const cursor = composerEl.querySelector('.composer-cursor');
       for (let i = 0; i < MESSAGE.length; i++) {
         const t = document.createTextNode(MESSAGE[i]);
         composerEl.insertBefore(t, cursor);
-        await delay(55 + Math.random() * 30);
+        await delay(50 + Math.random() * 25);
       }
-
       await delay(400);
 
-      // 2. "Send" — clear composer, show blue sent bubble in center phone
+      // Send — clear composer, animate progress
       composerEl.innerHTML = '<span class="composer-cursor"></span>';
-      centerMsg.classList.add('show');
+      if (progressBar) { progressBar.style.width = '0%'; }
+      await delay(100);
+      if (progressBar) { progressBar.style.width = '68%'; }
+      if (progressLbl) { progressLbl.textContent = 'Sent 32 of 47...'; }
 
+      // Messages appear on side phones
       await delay(500);
+      if (leftMsg)    leftMsg.classList.add('show');
+      await delay(300);
+      if (rightMsg)   rightMsg.classList.add('show');
+      await delay(700);
+      if (leftReply)  leftReply.classList.add('show');
+      await delay(400);
+      if (rightReply) rightReply.classList.add('show');
 
-      // 3. Progress bar fills over 2s
-      progressBar.style.transition = 'width 2s ease';
-      progressBar.style.width = '100%';
-      await delay(1200);
-      progressLbl.textContent = 'Delivered ✓';
-      await delay(900);
-
-      // 4. Left phone receives message
-      leftMsg.classList.add('show');
-      await delay(600);
-
-      // 5. Right phone receives message
-      rightMsg.classList.add('show');
-      await delay(1600);
-
-      // 6. Left reply
-      leftReply.classList.add('show');
-      await delay(900);
-
-      // 7. Right reply
-      rightReply.classList.add('show');
-
-      // Done — no loop
+      // Reset after pause
+      await delay(3500);
+      [leftMsg, leftReply, rightMsg, rightReply].forEach(el => { if (el) el.classList.remove('show'); });
+      if (progressBar) { progressBar.style.transition = 'none'; progressBar.style.width = '0%'; }
+      if (progressLbl) { progressLbl.textContent = 'Sending to 47 contacts...'; }
+      composerEl.innerHTML = '<span class="composer-cursor"></span>';
+      await delay(200);
+      if (progressBar) { progressBar.style.transition = 'width 1.5s ease'; }
+      run();
     }
 
-    // Start after hero fade-in completes
-    setTimeout(run, 1000);
+    run();
   })();
 </script>
 </body>

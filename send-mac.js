@@ -134,10 +134,21 @@ end tell`;
 }
 
 // Send image + text (if any) using the specified service.
+// Images are copied to /tmp first so Messages.app can always access them regardless
+// of TCC restrictions on Application Support directories.
 async function executeSend(serviceType, number, tmpFile, imagePath) {
   const hasText = !!fs.readFileSync(tmpFile, 'utf8').trim();
   if (imagePath && fs.existsSync(imagePath)) {
-    execFileSync('osascript', ['-e', buildImageScript(serviceType, number, imagePath)], { timeout: 30000 });
+    const ext = path.extname(imagePath) || '.jpg';
+    const tmpImg = path.join(os.tmpdir(), `tyl_img_${Date.now()}${ext}`);
+    fs.copyFileSync(imagePath, tmpImg);
+    try {
+      execFileSync('osascript', ['-e', buildImageScript(serviceType, number, tmpImg)], { timeout: 30000 });
+      // Small pause so Messages queues the image before the text bubble arrives
+      await new Promise(r => setTimeout(r, 800));
+    } finally {
+      try { fs.unlinkSync(tmpImg); } catch (_) {}
+    }
   }
   if (hasText) {
     execFileSync('osascript', ['-e', buildScript(serviceType, number, tmpFile)], { timeout: 30000 });
