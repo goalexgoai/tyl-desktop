@@ -651,7 +651,7 @@ function showSendConfirmModal(previewContact, previewMessage, count, onConfirm, 
   modal.className = 'confirm-modal';
 
   const showWarning = count > 200;
-  const { freeTruncated, freeTruncatedFrom } = opts;
+  const { freeTruncated, freeTruncatedFrom, imageName } = opts;
 
   // Build preview rows HTML — show up to 10, scrollable, highlight empty merge fields
   let previewHtml = '';
@@ -676,6 +676,7 @@ function showSendConfirmModal(previewContact, previewMessage, count, onConfirm, 
     <h2 style="font-size:17px;font-weight:700;margin-bottom:4px">Ready to send?</h2>
     <div style="font-size:13.5px;color:var(--text-muted);margin-bottom:14px">Sending to <strong style="color:var(--text)">${freeTruncated ? 'up to ' : ''}${count} contact${count===1?'':'s'}</strong>${freeTruncated ? ` <span style="color:var(--warning,#b45309)">(Free plan: first ${count} of ${freeTruncatedFrom})</span>` : ''}</div>
     ${freeTruncated ? `<div class="alert alert-warn" style="margin-bottom:12px">Free plan sends are limited to <strong>${count} contacts</strong>. Only the first ${count} contacts in your list will receive this message. <button class="btn btn-primary btn-sm" onclick="document.getElementById('wizard-root').innerHTML='';navigate('billing')">Upgrade for the full list</button></div>` : ''}
+    ${imageName ? `<div style="font-size:13px;margin-bottom:10px;padding:8px 10px;background:#f0f9ff;border:1px solid #bae6fd;border-radius:6px;color:var(--text)">&#128206; <strong>Attachment:</strong> ${escHtml(imageName)}</div>` : ''}
     ${previewHtml ? `<div style="font-size:12px;color:var(--text-muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em">Message preview</div>${previewHtml}` : ''}
     ${showWarning ? `<div class="alert alert-warn" style="margin:12px 0 0">Sending to ${count} contacts. We recommend no more than 200/day to keep your number healthy.</div>` : ''}
     <div id="confirm-app-warn" style="display:none" class="alert alert-error" style="margin:10px 0 0"></div>
@@ -832,17 +833,17 @@ async function renderBulkSend(body) {
   body.innerHTML = `
     <div style="max-width:700px">
       <!-- Daily Health Monitor -->
-      <div style="background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:12px 16px;margin-bottom:16px;display:flex;align-items:center;gap:14px">
-        <div style="width:12px;height:12px;border-radius:50%;background:${healthColor};flex-shrink:0;box-shadow:0 0 6px ${healthColor}55"></div>
+      <div id="bs-health-monitor" style="background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:12px 16px;margin-bottom:16px;display:flex;align-items:center;gap:14px">
+        <div id="bs-health-dot" style="width:12px;height:12px;border-radius:50%;background:${healthColor};flex-shrink:0;box-shadow:0 0 6px ${healthColor}55"></div>
         <div style="flex:1">
-          <div style="font-size:12.5px;font-weight:600;color:var(--text)">Today: ${dailySends} / 200 bulk messages${healthLabel ? ` <span style="font-weight:400;color:${healthColor}">${healthLabel}</span>` : ''}
+          <div style="font-size:12.5px;font-weight:600;color:var(--text)">Today: <span id="bs-health-text">${dailySends} / 200 bulk messages${healthLabel ? ` <span style="font-weight:400;color:${healthColor}">${healthLabel}</span>` : ''}</span>
             <span class="daily-info-icon" title="We recommend no more than 200 bulk sends per day to protect your number from spam filters. Personalizing messages with merge fields (e.g. {first_name}) also helps. Test sends don't count toward this limit." style="display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;border-radius:50%;background:#e5e7eb;color:#6b7280;font-size:10px;font-weight:700;cursor:default;margin-left:5px;vertical-align:middle">i</span>
           </div>
           <div style="background:#f3f4f6;border-radius:4px;height:5px;margin-top:5px;overflow:hidden">
-            <div style="height:100%;width:${healthPct}%;background:${healthColor};border-radius:4px;transition:width 0.3s"></div>
+            <div id="bs-health-bar" style="height:100%;width:${healthPct}%;background:${healthColor};border-radius:4px;transition:width 0.3s"></div>
           </div>
         </div>
-        <div style="font-size:11px;color:var(--text-muted);text-align:right;flex-shrink:0">${Math.max(0, 200 - dailySends)} left today</div>
+        <div id="bs-health-remaining" style="font-size:11px;color:var(--text-muted);text-align:right;flex-shrink:0">${Math.max(0, 200 - dailySends)} left today</div>
       </div>
       ${isFree ? `<div class="alert alert-info" style="margin-bottom:16px">Free plan: bulk sends are limited to <strong>10 contacts</strong> per send. <button class="btn btn-primary btn-sm" onclick="navigate('billing')">Upgrade for more</button></div>` : ''}
 
@@ -967,7 +968,40 @@ async function renderBulkSend(body) {
   // State
   const bsState = { csvRaw: null, csvRows: [], csvColumns: [], columnMap: { phone: '', first_name: '', last_name: '', special: '' }, isNewList: false, totalCount: 0, imageFile: null, imageName: null };
 
+  function showListLoaded(listName, rowCount) {
+    document.getElementById('bs-csv-status').innerHTML = `<div class="alert alert-success" style="margin:0;display:flex;justify-content:space-between;align-items:center">&#10003; List "${escHtml(listName)}" loaded — ${rowCount} contacts <button id="bs-saved-clear-btn" class="btn btn-ghost btn-sm" style="padding:2px 8px;font-size:12px">Change list</button></div>`;
+    document.getElementById('bs-saved-clear-btn').addEventListener('click', () => {
+      document.getElementById('bs-csv-status').innerHTML = '';
+      const sel = document.getElementById('bs-saved-list');
+      if (sel) sel.value = '';
+      Object.assign(bsState, { csvRaw: null, csvRows: [], csvColumns: [], columnMap: { phone: '', first_name: '', last_name: '', special: '' }, isNewList: false, totalCount: 0 });
+      updateEstimate();
+    });
+  }
+
   bindMergeChips();
+
+  // Auto-refresh daily send counter every 10 seconds
+  const healthPollInterval = setInterval(async () => {
+    try {
+      const fresh = await get('/api/auth/me');
+      const n = fresh.daily_sends || 0;
+      const hc = n <= 100 ? '#16a34a' : n <= 150 ? '#d97706' : '#dc2626';
+      const hl = n <= 100 ? '' : n <= 150 ? 'Caution' : 'Warning';
+      const hp = Math.min(100, Math.round(n / 200 * 100));
+      const dot = document.getElementById('bs-health-dot');
+      const txt = document.getElementById('bs-health-text');
+      const bar = document.getElementById('bs-health-bar');
+      const rem = document.getElementById('bs-health-remaining');
+      if (!dot) { clearInterval(healthPollInterval); return; }
+      dot.style.background = hc;
+      dot.style.boxShadow = `0 0 6px ${hc}55`;
+      txt.innerHTML = `${n} / 200 bulk messages${hl ? ` <span style="font-weight:400;color:${hc}">${hl}</span>` : ''}`;
+      bar.style.width = hp + '%';
+      bar.style.background = hc;
+      rem.textContent = `${Math.max(0, 200 - n)} left today`;
+    } catch (_) {}
+  }, 10000);
 
   if (showImageAttach) {
     const bsFileInput = document.getElementById('bs-image-file');
@@ -1028,7 +1062,7 @@ async function renderBulkSend(body) {
           });
         } catch (_) {}
         autoDetectColumns(bsState);
-        document.getElementById('bs-csv-status').innerHTML = `<div class="alert alert-success" style="margin:0">&#10003; List "${escHtml(list.name)}" loaded — ${list.row_count} contacts</div>`;
+        showListLoaded(list.name, list.row_count);
         updateMergeChips('bs-message', bsState.columnMap);
         refreshBsPreview();
         const nameEl = document.getElementById('bs-campaign-name');
@@ -1213,7 +1247,7 @@ async function renderBulkSend(body) {
           });
         } catch (_) {}
         autoDetectColumns(bsState);
-        document.getElementById('bs-csv-status').innerHTML = `<div class="alert alert-success" style="margin:0">&#10003; List "${escHtml(list.name)}" loaded — ${list.row_count} contacts</div>`;
+        showListLoaded(list.name, list.row_count);
         updateMergeChips('bs-message', bsState.columnMap);
         const nameEl = document.getElementById('bs-campaign-name');
         refreshBsPreview();
@@ -1296,7 +1330,7 @@ async function renderBulkSend(body) {
       });
       if (!previewRows.length) previewRows.push({ phone: '', body: template });
 
-      showSendConfirmModal(null, template, effectiveTotal, () => doSubmitBulk(true, name, template, pace), previewRows, { freeTruncated, freeTruncatedFrom: totalInList });
+      showSendConfirmModal(null, template, effectiveTotal, () => doSubmitBulk(true, name, template, pace), previewRows, { freeTruncated, freeTruncatedFrom: totalInList, imageName: bsState.imageFile ? bsState.imageFile.name : null });
     } else {
       doSubmitBulk(false, name, template, pace);
     }

@@ -246,11 +246,17 @@ module.exports = async function sendViaMac(number, message, imagePath) {
           return true;
         }
 
-        // Timeout — treat as delivered; don't double-send.
+        // Timeout — iMessage delivery unconfirmed for unknown number.
+        // Fall back to SMS to guarantee delivery rather than silently dropping the message.
+        // Risk of double-delivery is accepted; silent failure is not.
+        routingCache.set(number, 'sms');
+        await executeSend('SMS', number, tmp, stagedImg);
         return true;
       } else {
-        // Image-only send to unknown number: try iMessage, fall back to SMS on error.
-        // (Image was already sent above. If it threw, the catch in the send loop handles it.)
+        // Image-only send to unknown number: iMessage already attempted above.
+        // Fall back to SMS as well to match text behavior.
+        routingCache.set(number, 'sms');
+        await executeSend('SMS', number, tmp, null); // image already sent via iMessage attempt
         return true;
       }
     }

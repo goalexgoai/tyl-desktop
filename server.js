@@ -769,7 +769,7 @@ app.get('/api/auth/me', requireAuth, async (req, res) => {
       JOIN messages m ON m.id = sl.message_id
       JOIN jobs j ON j.id = m.job_id
       WHERE sl.user_id = ? AND sl.status = 'sent'
-        AND date(sl.created_at) = date('now')
+        AND date(sl.created_at, 'localtime') = date('now', 'localtime')
         AND j.is_test = 0
     `).get(fresh.id).c || 0,
   });
