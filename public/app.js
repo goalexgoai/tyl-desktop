@@ -2254,7 +2254,7 @@ async function renderHistoryTab(body) {
   monitorInterval = setInterval(async () => {
     const jobs = await get('/api/jobs').catch(() => []);
     const hasActive = jobs.some(j => j.status === 'queued');
-    if (!hasActive) { clearInterval(monitorInterval); monitorInterval = null; return; }
+    if (!hasActive) { clearInterval(monitorInterval); monitorInterval = null; loadCampaignHistory(); return; }
     loadCampaignHistory();
   }, 3000);
 }
