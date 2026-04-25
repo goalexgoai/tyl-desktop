@@ -134,21 +134,13 @@ end tell`;
 }
 
 // Send image + text (if any) using the specified service.
-// Images are copied to /tmp first so Messages.app can always access them regardless
-// of TCC restrictions on Application Support directories.
-async function executeSend(serviceType, number, tmpFile, imagePath) {
+// stagedImgPath must already be in /tmp (use stageTmpImage before calling).
+async function executeSend(serviceType, number, tmpFile, stagedImgPath) {
   const hasText = !!fs.readFileSync(tmpFile, 'utf8').trim();
-  if (imagePath && fs.existsSync(imagePath)) {
-    const ext = path.extname(imagePath) || '.jpg';
-    const tmpImg = path.join(os.tmpdir(), `tyl_img_${Date.now()}${ext}`);
-    fs.copyFileSync(imagePath, tmpImg);
-    try {
-      execFileSync('osascript', ['-e', buildImageScript(serviceType, number, tmpImg)], { timeout: 30000 });
-      // Small pause so Messages queues the image before the text bubble arrives
-      await new Promise(r => setTimeout(r, 800));
-    } finally {
-      try { fs.unlinkSync(tmpImg); } catch (_) {}
-    }
+  if (stagedImgPath && fs.existsSync(stagedImgPath)) {
+    execFileSync('osascript', ['-e', buildImageScript(serviceType, number, stagedImgPath)], { timeout: 30000 });
+    // Pause so Messages queues the image before the text bubble arrives
+    await new Promise(r => setTimeout(r, 800));
   }
   if (hasText) {
     execFileSync('osascript', ['-e', buildScript(serviceType, number, tmpFile)], { timeout: 30000 });
@@ -183,23 +175,34 @@ function lookupKnownRoute(phone) {
   }
 }
 
+// Copy image to /tmp so Messages.app can always access it regardless of TCC
+// restrictions on Application Support directories. Returns the tmp path.
+function stageTmpImage(imagePath) {
+  const ext = path.extname(imagePath) || '.jpg';
+  const tmpImg = path.join(os.tmpdir(), `tyl_img_${Date.now()}${ext}`);
+  fs.copyFileSync(imagePath, tmpImg);
+  return tmpImg;
+}
+
 module.exports = async function sendViaMac(number, message, imagePath) {
   const tmp = path.join(os.tmpdir(), `tyl_${Date.now()}.txt`);
   fs.writeFileSync(tmp, message || '', 'utf8');
   const hasText = !!(message && message.trim());
   const hasImage = !!(imagePath && fs.existsSync(imagePath));
+  let stagedImg = null;
 
   try {
+    if (hasImage) stagedImg = stageTmpImage(imagePath);
     await ensureMessagesRunning();
 
     // ── Session cache (in-memory, resets on restart) ─────────────────────────
     const cached = routingCache.get(number);
     if (cached === 'imessage') {
-      await executeSend('iMessage', number, tmp, hasImage ? imagePath : null);
+      await executeSend('iMessage', number, tmp, stagedImg);
       return true;
     }
     if (cached === 'sms') {
-      await executeSend('SMS', number, tmp, hasImage ? imagePath : null);
+      await executeSend('SMS', number, tmp, stagedImg);
       return true;
     }
 
@@ -208,20 +211,21 @@ module.exports = async function sendViaMac(number, message, imagePath) {
       const knownRoute = lookupKnownRoute(number);
       if (knownRoute === 'imessage') {
         routingCache.set(number, 'imessage');
-        await executeSend('iMessage', number, tmp, hasImage ? imagePath : null);
+        await executeSend('iMessage', number, tmp, stagedImg);
         return true;
       }
       if (knownRoute === 'sms') {
         routingCache.set(number, 'sms');
-        await executeSend('SMS', number, tmp, hasImage ? imagePath : null);
+        await executeSend('SMS', number, tmp, stagedImg);
         return true;
       }
 
       // ── Unknown number: iMessage-first with delivery poll ────────────────────
       // Send image first (if any) via iMessage — osascript doesn't throw for Android
       // numbers immediately; the error shows up in chat.db within a few seconds.
-      if (hasImage) {
-        execFileSync('osascript', ['-e', buildImageScript('iMessage', number, imagePath)], { timeout: 30000 });
+      if (stagedImg) {
+        execFileSync('osascript', ['-e', buildImageScript('iMessage', number, stagedImg)], { timeout: 30000 });
+        await new Promise(r => setTimeout(r, 800));
       }
 
       if (hasText) {
@@ -238,7 +242,7 @@ module.exports = async function sendViaMac(number, message, imagePath) {
         if (result === 'error') {
           // iMessage failed (Android) — resend both image and text via SMS.
           routingCache.set(number, 'sms');
-          await executeSend('SMS', number, tmp, hasImage ? imagePath : null);
+          await executeSend('SMS', number, tmp, stagedImg);
           return true;
         }
 
@@ -252,10 +256,11 @@ module.exports = async function sendViaMac(number, message, imagePath) {
     }
 
     // ── Fallback: no Full Disk Access — use SMS relay ────────────────────────
-    await executeSend('SMS', number, tmp, hasImage ? imagePath : null);
+    await executeSend('SMS', number, tmp, stagedImg);
     return true;
 
   } finally {
     try { fs.unlinkSync(tmp); } catch (_) {}
+    if (stagedImg) try { fs.unlinkSync(stagedImg); } catch (_) {}
   }
 };
