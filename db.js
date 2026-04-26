@@ -279,6 +279,9 @@ try { db.exec(`ALTER TABLE users ADD COLUMN web_companion_key TEXT`); } catch (_
 // API send platform preference (synced from web — mac/windows/any)
 try { db.exec(`ALTER TABLE users ADD COLUMN api_send_platform TEXT NOT NULL DEFAULT 'mac'`); } catch (_) {}
 
+// Web pending count — cached from last web poll, included in /api/auth/me so UI can show prompt
+try { db.exec(`ALTER TABLE users ADD COLUMN web_pending_count INTEGER NOT NULL DEFAULT 0`); } catch (_) {}
+
 // Test send flag — test sends don't count against monthly send limit
 try {
   db.exec(`ALTER TABLE jobs ADD COLUMN is_test INTEGER NOT NULL DEFAULT 0`);

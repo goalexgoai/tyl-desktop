@@ -262,14 +262,15 @@ async function init() {
     return;
   }
 
-  // Heartbeat — tells server the desktop is active so API sends auto-route
-  post('/api/desktop-ping').catch(() => {});
+  // Heartbeat — tells server the desktop is active so API sends auto-route.
+  // On startup: wait for ping to update web_pending_count before checking for prompt.
+  post('/api/desktop-ping').then(async () => {
+    const fresh = await get('/api/auth/me').catch(() => null);
+    if (fresh) { currentUser = fresh; updateUserBadge(); }
+    const pending = currentUser.pending_api_count || 0;
+    if (pending > 0) setTimeout(() => showPendingApiPrompt(pending), 400);
+  }).catch(() => {});
   setInterval(() => post('/api/desktop-ping').catch(() => {}), 60000);
-
-  // On open: if messages are waiting, ask user what to do — never auto-send
-  if ((currentUser.pending_api_count || 0) > 0) {
-    setTimeout(() => showPendingApiPrompt(currentUser.pending_api_count), 800);
-  }
 
   // API pending poller — refreshes the dashboard banner without a full re-render
   setInterval(async () => {
@@ -3632,27 +3633,27 @@ function renderAccount(main) {
         <div class="card-header"><h3 style="text-transform:none">Api send behavior <span style="font-size:11px;font-weight:500;background:var(--accent-light,#e8f0ff);color:var(--accent);padding:2px 7px;border-radius:10px;margin-left:6px">Pro</span></h3></div>
         <div class="card-body">
           <div id="api-pace-alert"></div>
-          <p style="font-size:13px;color:var(--text-muted);margin-bottom:6px;font-weight:600">When app is open, send:</p>
+          <p style="font-size:13px;color:var(--text-muted);margin-bottom:6px;font-weight:600">When a message arrives via API:</p>
           <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:18px">
             <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;text-transform:none;letter-spacing:0;font-weight:normal">
               <input type="radio" name="api_pace" value="0" style="margin-top:3px" ${u.api_default_pace === 0 ? 'checked' : ''}>
               <span>
                 <strong style="font-size:13.5px">Fast</strong>
-                <div style="font-size:12.5px;color:var(--text-muted)">Send immediately as API messages arrive</div>
+                <div style="font-size:12.5px;color:var(--text-muted)">Send immediately while the app is open. Held for review if the app is closed.</div>
               </span>
             </label>
             <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;text-transform:none;letter-spacing:0;font-weight:normal">
               <input type="radio" name="api_pace" value="7" style="margin-top:3px" ${(u.api_default_pace === 7 || u.api_default_pace === 20 || u.api_default_pace == null) ? 'checked' : ''}>
               <span>
                 <strong style="font-size:13.5px">Smart throttle (recommended)</strong>
-                <div style="font-size:12.5px;color:var(--text-muted)">Randomized 7-14s delay between sends</div>
+                <div style="font-size:12.5px;color:var(--text-muted)">7-14s randomized delay while the app is open. Held for review if the app is closed.</div>
               </span>
             </label>
             <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;text-transform:none;letter-spacing:0;font-weight:normal">
               <input type="radio" name="api_pace" value="-1" style="margin-top:3px" ${u.api_default_pace === -1 ? 'checked' : ''}>
               <span>
                 <strong style="font-size:13.5px">Hold for review</strong>
-                <div style="font-size:12.5px;color:var(--text-muted)">API messages are always held. When you open the app you choose whether to send, keep holding, or cancel — nothing goes out without your say-so</div>
+                <div style="font-size:12.5px;color:var(--text-muted)">Always held — even if the app is open. Nothing sends until you explicitly approve it. Best for Windows or anyone who wants full control.</div>
               </span>
             </label>
           </div>

@@ -812,7 +812,7 @@ app.get('/api/auth/me', requireAuth, async (req, res) => {
     manual_account: fresh.manual_account,
     billing_period_end: fresh.billing_period_end || null,
     billing_interval: fresh.billing_interval || null,
-    pending_api_count: db.prepare("SELECT COUNT(*) as c FROM jobs WHERE user_id = ? AND status = 'api_pending'").get(fresh.id).c,
+    pending_api_count: db.prepare("SELECT COUNT(*) as c FROM jobs WHERE user_id = ? AND status = 'api_pending'").get(fresh.id).c + (fresh.web_pending_count || 0),
     api_default_pace: fresh.api_default_pace != null ? fresh.api_default_pace : null,
     api_send_platform: fresh.api_send_platform || 'mac',
     daily_sends: db.prepare(`
@@ -824,6 +824,24 @@ app.get('/api/auth/me', requireAuth, async (req, res) => {
         AND j.is_test = 0
     `).get(fresh.id).c || 0,
   });
+});
+
+// Desktop heartbeat — updates local timestamp, signals web server, caches web pending count
+app.post('/api/desktop-ping', requireAuth, (req, res) => {
+  db.prepare("UPDATE users SET last_active_at = datetime('now') WHERE id = ?").run(req.user.id);
+  if (req.user.web_user_id) {
+    // Signal web server that desktop is active (updates desktop_last_seen_at for API routing)
+    desktopWebPost('/api/desktop-heartbeat', { web_user_id: req.user.web_user_id }).catch(() => {});
+    // Fetch and cache web pending count so /api/auth/me can include it
+    desktopWebPost('/api/desktop-web-pending', { web_user_id: req.user.web_user_id, action: 'count' })
+      .then(r => {
+        if (r.status === 200 && typeof r.body.pending === 'number') {
+          db.prepare('UPDATE users SET web_pending_count = ? WHERE id = ?').run(r.body.pending, req.user.id);
+        }
+      })
+      .catch(() => {});
+  }
+  res.json({ ok: true });
 });
 
 // User settings — Pro users can set api_default_pace and api_send_platform
@@ -940,26 +958,39 @@ app.get('/api/jobs', requireAuth, (req, res) => {
   res.json(jobs);
 });
 
-// Release API-pending jobs: set to 'queued' with optional paceSeconds so the send loop picks them up
+// Release API-pending jobs: set to 'queued' — handles both local DB and web DB jobs
 app.post('/api/jobs/release-api', requireAuth, (req, res) => {
   const { paceSeconds = 0 } = req.body;
   const pace = Math.max(0, parseInt(paceSeconds, 10) || 0);
   const jobs = db.prepare("SELECT id FROM jobs WHERE user_id = ? AND status = 'api_pending'").all(req.user.id);
-  if (!jobs.length) return res.json({ released: 0 });
   const update = db.prepare("UPDATE jobs SET status='queued', pace_seconds=?, updated_at=datetime('now') WHERE id=?");
-  db.transaction(() => { jobs.forEach(j => update.run(pace, j.id)); })();
+  if (jobs.length) { db.transaction(() => { jobs.forEach(j => update.run(pace, j.id)); })(); }
+  // Also release web-server pending jobs (fire-and-forget)
+  if (req.user.web_user_id) {
+    desktopWebPost('/api/desktop-web-pending', { web_user_id: req.user.web_user_id, action: 'release', pace_seconds: pace })
+      .then(() => { db.prepare('UPDATE users SET web_pending_count = 0 WHERE id = ?').run(req.user.id); })
+      .catch(() => {});
+  }
   res.json({ released: jobs.length });
 });
 
+// Cancel API-pending jobs — handles both local DB and web DB jobs
 app.post('/api/jobs/cancel-api', requireAuth, (req, res) => {
   const jobs = db.prepare("SELECT id FROM jobs WHERE user_id = ? AND status = 'api_pending'").all(req.user.id);
-  if (!jobs.length) return res.json({ cancelled: 0 });
-  db.transaction(() => {
-    jobs.forEach(j => {
-      db.prepare("UPDATE messages SET status='cancelled', updated_at=datetime('now') WHERE job_id=?").run(j.id);
-      db.prepare("UPDATE jobs SET status='cancelled', updated_at=datetime('now') WHERE id=?").run(j.id);
-    });
-  })();
+  if (jobs.length) {
+    db.transaction(() => {
+      jobs.forEach(j => {
+        db.prepare("UPDATE messages SET status='cancelled', updated_at=datetime('now') WHERE job_id=?").run(j.id);
+        db.prepare("UPDATE jobs SET status='cancelled', updated_at=datetime('now') WHERE id=?").run(j.id);
+      });
+    })();
+  }
+  // Also cancel web-server pending jobs (fire-and-forget)
+  if (req.user.web_user_id) {
+    desktopWebPost('/api/desktop-web-pending', { web_user_id: req.user.web_user_id, action: 'cancel' })
+      .then(() => { db.prepare('UPDATE users SET web_pending_count = 0 WHERE id = ?').run(req.user.id); })
+      .catch(() => {});
+  }
   res.json({ cancelled: jobs.length });
 });
 
