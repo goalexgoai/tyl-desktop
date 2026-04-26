@@ -680,20 +680,44 @@ function showSendConfirmModal(previewContact, previewMessage, count, onConfirm, 
     ${previewHtml ? `<div style="font-size:12px;color:var(--text-muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em">Message preview</div>${previewHtml}` : ''}
     ${showWarning ? `<div class="alert alert-warn" style="margin:12px 0 0">Sending to ${count} contacts. We recommend no more than 200/day to keep your number healthy.</div>` : ''}
     <div id="confirm-app-warn" style="display:none" class="alert alert-error" style="margin:10px 0 0"></div>
-    <div style="background:var(--bg-alt,#f7f7f7);border-radius:8px;padding:12px 14px;margin:14px 0 0;font-size:13px;color:var(--text-muted);line-height:1.7">
-      ${window.electronAPI?.platform === 'darwin'
-        ? 'Be sure <strong style="color:var(--text)">Messages</strong> is open on your Mac before sending.'
-        : 'Be sure <strong style="color:var(--text)">Phone Link</strong> is open and your phone is nearby before sending.'}
-    </div>
+    ${window.electronAPI?.platform === 'darwin'
+      ? `<div style="background:var(--bg-alt,#f7f7f7);border-radius:8px;padding:12px 14px;margin:14px 0 0;font-size:13px;color:var(--text-muted);line-height:1.7">
+          Be sure <strong style="color:var(--text)">Messages</strong> is open on your Mac before sending.
+         </div>`
+      : `<div style="background:var(--bg-alt,#f7f7f7);border-radius:8px;padding:12px 14px;margin:14px 0 0">
+          <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;user-select:none">
+            <input type="checkbox" id="phonelink-confirm" style="margin-top:2px;flex-shrink:0;width:16px;height:16px;cursor:pointer">
+            <span style="font-size:13px;color:var(--text);line-height:1.5">
+              <strong>Phone Link</strong> is open and my phone is nearby.
+              <a href="#" id="phonelink-help-link" style="color:var(--primary,#C44A76);margin-left:4px">Need help?</a>
+            </span>
+          </label>
+         </div>`}
     <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px">
       <button class="btn btn-ghost" id="confirm-cancel">Cancel</button>
-      <button class="btn btn-primary" id="confirm-send">Send</button>
+      <button class="btn btn-primary" id="confirm-send"${window.electronAPI?.platform !== 'darwin' ? ' disabled' : ''}>Send</button>
     </div>`;
 
   overlay.appendChild(modal);
   root.appendChild(overlay);
 
   document.getElementById('confirm-cancel').addEventListener('click', () => root.innerHTML = '');
+
+  // Windows only: enable Send only after Phone Link checkbox is checked
+  const phoneLinkCheck = document.getElementById('phonelink-confirm');
+  if (phoneLinkCheck) {
+    phoneLinkCheck.addEventListener('change', () => {
+      document.getElementById('confirm-send').disabled = !phoneLinkCheck.checked;
+    });
+  }
+  const phoneLinkHelpLink = document.getElementById('phonelink-help-link');
+  if (phoneLinkHelpLink) {
+    phoneLinkHelpLink.addEventListener('click', e => {
+      e.preventDefault();
+      if (window.electronAPI?.openExternal) window.electronAPI.openExternal('https://textyourlist.com/help-windows');
+    });
+  }
+
   document.getElementById('confirm-send').addEventListener('click', async () => {
     const sendBtn = document.getElementById('confirm-send');
     const warnEl = document.getElementById('confirm-app-warn');

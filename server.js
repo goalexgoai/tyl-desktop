@@ -534,14 +534,23 @@ async function upsertLocalUser(u, password) {
        last_active_at = datetime('now'), last_web_auth_at = datetime('now') WHERE id = ?`
     ).run(u.email, u.plan, u.subscription_status, u.billing_period_end || null,
       u.manual_account ? 1 : 0, u.is_admin ? 1 : 0, u.web_user_id || null, offlineHash, existing.id);
+    // Sync monthly_sends from web — web is the cross-machine source of truth.
+    // Take the higher of local vs web to handle offline sends that haven't reported yet.
+    if (typeof u.monthly_sends === 'number') {
+      const local = db.prepare('SELECT monthly_sends FROM users WHERE id = ?').get(existing.id);
+      const synced = Math.max(local ? (local.monthly_sends || 0) : 0, u.monthly_sends);
+      db.prepare('UPDATE users SET monthly_sends = ?, period_start = ? WHERE id = ?')
+        .run(synced, u.period_start || new Date().toISOString().slice(0, 10), existing.id);
+    }
     return existing.id;
   } else {
     const result = db.prepare(
       `INSERT INTO users (email, password_hash, is_admin, plan, subscription_status,
-       billing_period_end, manual_account, web_user_id, offline_hash, last_web_auth_at)
-       VALUES (?, 'web-auth', ?, ?, ?, ?, ?, ?, ?, datetime('now'))`
+       billing_period_end, manual_account, web_user_id, offline_hash, last_web_auth_at, monthly_sends, period_start)
+       VALUES (?, 'web-auth', ?, ?, ?, ?, ?, ?, ?, datetime('now'), ?, ?)`
     ).run(u.email, u.is_admin ? 1 : 0, u.plan, u.subscription_status,
-      u.billing_period_end || null, u.manual_account ? 1 : 0, u.web_user_id || null, offlineHash);
+      u.billing_period_end || null, u.manual_account ? 1 : 0, u.web_user_id || null, offlineHash,
+      u.monthly_sends || 0, u.period_start || new Date().toISOString().slice(0, 10));
     return result.lastInsertRowid;
   }
 }
@@ -2474,7 +2483,7 @@ if (process.env.TYL_DESKTOP) {
       } catch (err) {
         // Detect messaging-app errors that should pause the job vs. hard failures.
         const isAuthError = /not authorized to send apple events/i.test(err.message);
-        const isAppClosed = !isAuthError && /connection is invalid|application isn't running|phone link not found|phonelink.*not found|execution error.*messages/i.test(err.message);
+        const isAppClosed = !isAuthError && /connection is invalid|application isn't running|phone link not found|phonelink.*not found|execution error.*messages|phone link window|could not find phone link/i.test(err.message);
         if (isAuthError) {
           // macOS Automation permission not granted — pause with actionable message.
           const pauseReason = 'macOS permission needed. Go to Help → Manage Permissions to grant access, then click Resume.';

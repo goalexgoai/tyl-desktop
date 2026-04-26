@@ -15,7 +15,9 @@ function escapePowerShell(value) {
 
 module.exports = async function sendViaPhoneLink(number, message) {
   const safeNumber = escapeSendKeys(escapePowerShell(number));
-  const safeMessage = escapeSendKeys(escapePowerShell(message));
+  // Message goes via clipboard, not SendKeys — clipboard preserves emoji and unicode.
+  // Only PowerShell single-quote escaping is needed here.
+  const safeMessage = escapePowerShell(message || '');
   const tmpFile = join(os.tmpdir(), `textyourlist-${Date.now()}.ps1`);
 
   const processNames = ['PhoneLink', 'PhoneLinkHost', 'PhoneExperienceHost', 'PhoneExperience', 'PhoneLinkInfrastructureHost', 'YourPhone', 'YourPhoneServiceHost'];
@@ -108,7 +110,10 @@ if (-not $msgField) { throw 'Message field not found' }
 
 $msgField.SetFocus()
 Start-Sleep -Milliseconds 300
-[System.Windows.Forms.SendKeys]::SendWait('${safeMessage}')
+# Use clipboard paste so emoji and unicode characters are preserved
+[System.Windows.Forms.Clipboard]::SetText('${safeMessage}')
+Start-Sleep -Milliseconds 150
+[System.Windows.Forms.SendKeys]::SendWait('^v')
 Start-Sleep -Milliseconds 500
 
 # Try to find and invoke the Send button — more reliable than Enter in Phone Link
