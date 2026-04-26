@@ -28,11 +28,14 @@
     .logo { font-size: 20px; font-weight: 800; letter-spacing: -0.5px; margin-bottom: 6px; }
     .tagline { font-size: 13px; color: #666; margin-bottom: 28px; }
     label { display: block; font-size: 12.5px; font-weight: 600; color: #555; margin-bottom: 5px; text-transform: uppercase; letter-spacing: 0.4px; }
-    input[type="email"], input[type="password"] {
+    input[type="email"], input[type="password"], input[type="text"].pw-field {
       width: 100%; padding: 9px 12px; border: 1px solid #ddd; border-radius: 7px;
       font-size: 14px; font-family: inherit; outline: none; margin-bottom: 16px;
       transition: border-color 0.15s;
     }
+    .pw-wrap { position: relative; }
+    .pw-wrap input { padding-right: 38px; margin-bottom: 16px; }
+    .pw-toggle { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer; color: #9ca3af; padding: 4px; line-height: 0; }
     input:focus { border-color: #111; }
     .btn {
       width: 100%; padding: 10px; background: #111; color: #fff; border: none; border-radius: 7px;
@@ -57,7 +60,12 @@
     <label>Email</label>
     <input type="email" id="email" placeholder="you@example.com" autocomplete="email" required />
     <label>Password</label>
-    <input type="password" id="password" placeholder="••••••••" autocomplete="current-password" required />
+    <div class="pw-wrap">
+      <input type="password" id="password" class="pw-field" placeholder="••••••••" autocomplete="current-password" required />
+      <button type="button" class="pw-toggle" tabindex="-1" onclick="var i=document.getElementById('password');i.type=i.type==='password'?'text':'password'" aria-label="Show password">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+      </button>
+    </div>
     <button type="submit" class="btn" id="btn">Log in</button>
   </form>
   <div class="footer-link" style="margin-top:12px"><a href="/forgot-password">Forgot your password?</a></div>

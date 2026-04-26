@@ -358,6 +358,13 @@ function updateUserBadge() {
 // ── Routing ──────────────────────────────────────────────────────────────
 
 function navigate(view) {
+  if (view === 'billing') {
+    // All billing/pricing lives on the web — open account page in system browser
+    const url = 'https://textyourlist.com/account';
+    if (window.electronAPI?.openExternal) window.electronAPI.openExternal(url);
+    else window.open(url, '_blank');
+    return;
+  }
   if (monitorInterval) { clearInterval(monitorInterval); monitorInterval = null; }
   currentView = view;
   document.querySelectorAll('.nav-item[data-view]').forEach(el => {
@@ -2524,7 +2531,7 @@ async function renderDeveloper(main) {
           ` : `
             <div class="alert alert-info">
               API keys require Pro plan. Upgrade to create integrations with Make, Zapier, and AI agents.
-              <button class="btn btn-primary btn-sm" onclick="${window.electronAPI?.openBilling ? 'window.electronAPI.openBilling()' : `navigate('billing')`}" style="margin-left:8px">Upgrade</button>
+              <button class="btn btn-primary btn-sm" onclick="navigate('billing')" style="margin-left:8px">Upgrade</button>
             </div>
           `}
           <div id="key-result" style="margin-top:12px"></div>

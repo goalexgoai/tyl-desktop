@@ -29,11 +29,14 @@
     .tagline { font-size: 14px; color: #666; margin-bottom: 24px; }
     .free-badge { display: inline-block; background: #dcfce7; color: #15803d; font-size: 12px; font-weight: 700; padding: 2px 10px; border-radius: 99px; margin-bottom: 20px; }
     label { display: block; font-size: 12.5px; font-weight: 600; color: #555; margin-bottom: 5px; text-transform: uppercase; letter-spacing: 0.4px; }
-    input[type="email"], input[type="password"] {
+    input[type="email"], input[type="password"], input[type="text"].pw-field {
       width: 100%; padding: 9px 12px; border: 1px solid #ddd; border-radius: 7px;
-      font-size: 14px; font-family: inherit; outline: none; margin-bottom: 16px;
+      font-size: 14px; font-family: inherit; outline: none; margin-bottom: 0;
       transition: border-color 0.15s;
     }
+    .pw-wrap { position: relative; margin-bottom: 0; }
+    .pw-wrap input { padding-right: 38px; }
+    .pw-toggle { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer; color: #9ca3af; padding: 4px; line-height: 0; }
     input:focus { border-color: #111; }
     .btn {
       width: 100%; padding: 11px; background: #111; color: #fff; border: none; border-radius: 7px;
@@ -75,7 +78,12 @@
     <label>Email</label>
     <input type="email" id="email" placeholder="you@example.com" autocomplete="email" required />
     <label>Password</label>
-    <input type="password" id="password" placeholder="8+ chars, letter, number, special" autocomplete="new-password" required />
+    <div class="pw-wrap">
+      <input type="password" id="password" class="pw-field" placeholder="8+ chars, letter, number, special" autocomplete="new-password" required />
+      <button type="button" class="pw-toggle" tabindex="-1" onclick="var i=document.getElementById('password');i.type=i.type==='password'?'text':'password'" aria-label="Show password">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+      </button>
+    </div>
     <div class="pw-strength">
       <div class="pw-strength-bar" id="ps1"></div>
       <div class="pw-strength-bar" id="ps2"></div>
