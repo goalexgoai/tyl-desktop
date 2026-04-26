@@ -2664,14 +2664,12 @@ async function renderDeveloper(main) {
     <div class="main-body">
 
       <!-- API Keys section -->
-      <h3 style="font-size:16px;font-weight:700;margin-bottom:16px">API Keys</h3>
-      <div class="alert alert-info" style="margin-bottom:16px">
-        ${window.electronAPI?.isDesktop
-          ? 'API keys are used for webhook sends (Pro plan) — integrate with Make, Zapier, or your own systems. The desktop app handles all sending automatically. API keys also work for AI agents (Claude, GPT, etc.) to send texts through your account.'
-          : 'API keys connect your companion app to Text Your List. The companion picks up queued messages and sends them through your phone.'}
-        ${window.electronAPI?.isDesktop ? '' : (u.plan === 'free' || u.plan === 'starter' ? ' Free and Starter plans include 1 companion key.' : ' Pro plan includes unlimited keys.')}
-        ${isProOrAdmin ? ' Pro plan also enables the <code style="font-family:monospace">/api/make/send</code> webhook for Make, Zapier, etc.' : ''}
-      </div>
+      <h3 style="font-size:16px;font-weight:700;margin-bottom:8px">API Keys</h3>
+      <p style="font-size:13px;color:var(--text-muted);margin-bottom:16px;line-height:1.6">
+        API keys let Make, Zapier, AI agents, or any HTTP client send texts through your account.
+        Keys are stored on our server and work even when your desktop app is closed — messages hold until you open the app and approve them (based on your API send settings).
+        ${isProOrAdmin ? '' : ' <strong>Pro plan required</strong> for API sends.'}
+      </p>
       <div class="card" style="margin-bottom:16px">
         <div class="card-header"><h3>Create New Key</h3></div>
         <div class="card-body">
@@ -2679,13 +2677,13 @@ async function renderDeveloper(main) {
             <div class="form-row-inline">
               <div class="form-row">
                 <label>Key Name</label>
-                <input type="text" id="key-name" placeholder="${window.electronAPI?.isDesktop ? 'Webhook integration, Make, Zapier, etc.' : 'Mac companion, Windows companion, etc.'}" ${!canCreateKey ? 'disabled' : ''} />
+                <input type="text" id="key-name" placeholder="Make integration, Zapier, AI agent, etc." />
               </div>
-              <button class="btn btn-primary" id="key-create" style="margin-bottom:0" ${!canCreateKey ? 'disabled' : ''}>Create</button>
+              <button class="btn btn-primary" id="key-create" style="margin-bottom:0">Create</button>
             </div>
           ` : `
             <div class="alert alert-info">
-              API keys require Pro plan. Upgrade to create integrations with Make, Zapier, and AI agents.
+              Pro plan required to create API keys and send via Make, Zapier, or AI agents.
               <button class="btn btn-primary btn-sm" onclick="navigate('billing')" style="margin-left:8px">Upgrade</button>
             </div>
           `}
@@ -2723,7 +2721,7 @@ async function renderDeveloper(main) {
     const name = document.getElementById('key-name').value.trim();
     if (!name) return;
     try {
-      const result = await post('/api/keys', { name });
+      const result = await post('/api/web-keys', { name });
       document.getElementById('key-name').value = '';
       document.getElementById('key-result').innerHTML = `
         <div class="alert alert-success">
@@ -2732,6 +2730,7 @@ async function renderDeveloper(main) {
             <code style="font-family:var(--mono);font-size:13px;background:rgba(0,0,0,0.08);padding:4px 8px;border-radius:4px;flex:1;word-break:break-all">${result.key}</code>
             <button class="btn btn-ghost btn-sm" onclick="copyText('${result.key}');showToast('Copied!')">Copy</button>
           </div>
+          <p style="font-size:12px;color:var(--text-muted);margin-top:8px">Use this key as a Bearer token in Make, Zapier, or any API call. See <button class="btn-link" onclick="document.getElementById('dev-docs-btn').click()">API Docs</button> for setup instructions.</p>
         </div>`;
       loadKeys();
     } catch (err) {
@@ -2745,24 +2744,24 @@ async function renderDeveloper(main) {
 }
 
 async function loadKeys() {
-  const keys = await get('/api/keys');
+  const keys = await get('/api/web-keys').catch(() => []);
   const el = document.getElementById('keys-list');
   if (!el) return;
   if (!keys.length) {
-    el.innerHTML = `<div class="empty-state"><p>No API keys. Create one above.</p></div>`;
+    el.innerHTML = `<div class="empty-state"><p>No API keys yet. Create one above to start using Make, Zapier, or the API.</p></div>`;
     return;
   }
   el.innerHTML = `
-    <div class="card-header"><h3>Your Keys</h3></div>
+    <div class="card-header"><h3>Your API Keys</h3></div>
     <table>
     <thead><tr><th>Name</th><th>Last Used</th><th>Created</th><th></th></tr></thead>
     <tbody>
       ${keys.map(k => `<tr>
         <td><strong>${escHtml(k.name)}</strong></td>
-        <td style="color:var(--text-muted)">${fmt(k.last_used_at)}</td>
+        <td style="color:var(--text-muted)">${k.last_used_at ? fmt(k.last_used_at) : 'Never'}</td>
         <td style="color:var(--text-muted)">${fmt(k.created_at)}</td>
         <td style="text-align:right">
-          ${k.active ? `<button class="btn btn-ghost btn-sm" style="color:var(--danger)" onclick="revokeKey(${k.id})">Revoke</button>` : ''}
+          <button class="btn btn-ghost btn-sm" style="color:var(--danger)" onclick="revokeKey(${k.id})">Revoke</button>
         </td>
       </tr>`).join('')}
     </tbody>
@@ -2770,8 +2769,8 @@ async function loadKeys() {
 }
 
 async function revokeKey(id) {
-  if (!confirm('Revoke this API key? This cannot be undone.')) return;
-  await del(`/api/keys/${id}`);
+  if (!confirm('Revoke this API key? Any Make/Zapier scenarios using it will stop working immediately.')) return;
+  await del(`/api/web-keys/${id}`);
   loadKeys();
 }
 

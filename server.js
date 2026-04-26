@@ -1556,6 +1556,31 @@ app.delete('/api/keys/:id', requireAuth, (req, res) => {
   res.json({ ok: true });
 });
 
+// Web API key management — proxied to the web server so keys work with Make/Zapier
+app.get('/api/web-keys', requireAuth, async (req, res) => {
+  if (!req.user.web_user_id) return res.json([]);
+  try {
+    const r = await desktopWebPost('/api/desktop-manage-keys', { web_user_id: req.user.web_user_id, action: 'list' });
+    res.json(r.status === 200 ? (r.body.keys || []) : []);
+  } catch (_) { res.json([]); }
+});
+
+app.post('/api/web-keys', requireAuth, async (req, res) => {
+  if (!req.user.web_user_id) return res.status(400).json({ error: 'Not connected to web account. Please log out and back in.' });
+  try {
+    const r = await desktopWebPost('/api/desktop-manage-keys', { web_user_id: req.user.web_user_id, action: 'create', name: req.body.name });
+    res.status(r.status).json(r.body);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.delete('/api/web-keys/:id', requireAuth, async (req, res) => {
+  if (!req.user.web_user_id) return res.status(400).json({ error: 'Not connected to web account.' });
+  try {
+    const r = await desktopWebPost('/api/desktop-manage-keys', { web_user_id: req.user.web_user_id, action: 'revoke', key_id: parseInt(req.params.id, 10) });
+    res.status(r.status).json(r.body);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 app.get('/api/keys/:id/companion', requireAuth, (req, res) => {
   const row = db.prepare('SELECT * FROM api_keys WHERE id = ? AND user_id = ? AND active = 1').get(req.params.id, req.user.id);
   if (!row) return res.status(404).json({ error: 'Key not found or revoked' });
