@@ -1,4 +1,7 @@
 const { execFileSync } = require('child_process');
+const { writeFileSync, unlinkSync } = require('fs');
+const { join } = require('path');
+const os = require('os');
 
 function escapeSendKeys(value) {
   // Escape SendKeys special characters
@@ -15,6 +18,7 @@ module.exports = async function sendViaPhoneLink(number, message) {
   // Message goes via clipboard, not SendKeys — clipboard preserves emoji and unicode.
   // Only PowerShell single-quote escaping is needed here.
   const safeMessage = escapePowerShell(message || '');
+  const tmpFile = join(os.tmpdir(), `textyourlist-${Date.now()}.ps1`);
 
   const processNames = ['PhoneLink', 'PhoneLinkHost', 'PhoneExperienceHost', 'PhoneExperience', 'PhoneLinkInfrastructureHost', 'YourPhone', 'YourPhoneServiceHost'];
 
@@ -123,20 +127,25 @@ if ($sendBtn) {
 Start-Sleep -Milliseconds 500
 `;
 
-  // Encode as UTF-16 LE Base64 for PowerShell -EncodedCommand.
-  // PS5 (Windows 10 default) reads .ps1 files as system ANSI when there's no BOM,
-  // which corrupts emoji and other non-ASCII characters. -EncodedCommand bypasses
-  // file I/O entirely and guarantees correct unicode handling.
-  const encoded = Buffer.from(script, 'utf16le').toString('base64');
+  // Write as UTF-16 LE with BOM so PowerShell 5 (Windows 10 default) reads it correctly.
+  // PS5 reads .ps1 files as system ANSI when there's no BOM, corrupting emoji.
+  // UTF-16 LE + BOM is the one encoding PS5 always handles correctly.
+  const scriptBuffer = Buffer.concat([
+    Buffer.from([0xFF, 0xFE]), // UTF-16 LE BOM
+    Buffer.from(script, 'utf16le'),
+  ]);
+  writeFileSync(tmpFile, scriptBuffer);
   try {
     execFileSync(
       'powershell',
-      ['-NonInteractive', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', encoded],
+      ['-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', tmpFile],
       { windowsHide: true, timeout: 60000, stdio: ['ignore', 'pipe', 'pipe'] }
     );
   } catch (err) {
     const detail = ((err.stderr || err.stdout || '').toString().trim());
     throw new Error(detail || err.message);
+  } finally {
+    try { unlinkSync(tmpFile); } catch (_) {}
   }
   return true;
 };
