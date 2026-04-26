@@ -18,16 +18,61 @@
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
       background: #f5f5f4;
-      display: flex; min-height: 100vh; align-items: center; justify-content: center;
+      min-height: 100vh;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
       padding: 20px;
     }
     .card {
       background: #fff; border: 1px solid #e5e5e4; border-radius: 12px;
-      padding: 36px 32px; width: 100%; max-width: 400px;
+      padding: 36px 32px; width: 100%;
     }
-    .logo { font-size: 20px; font-weight: 800; letter-spacing: -0.5px; margin-bottom: 4px; }
-    .tagline { font-size: 14px; color: #666; margin-bottom: 24px; }
-    .free-badge { display: inline-block; background: #dcfce7; color: #15803d; font-size: 12px; font-weight: 700; padding: 2px 10px; border-radius: 99px; margin-bottom: 20px; }
+    .logo-row { display: flex; align-items: center; gap: 8px; justify-content: center; margin-bottom: 4px; }
+    .logo-text { font-size: 20px; font-weight: 800; letter-spacing: -0.5px; }
+
+    /* ── Step 1: Plan picker ─────────────────────────────────── */
+    #step1 { max-width: 640px; }
+    .step1-heading { text-align: center; font-size: 22px; font-weight: 800; color: #1A1A1A; margin: 16px 0 4px; letter-spacing: -0.3px; }
+    .step1-sub { text-align: center; font-size: 14px; color: #6b7280; margin-bottom: 24px; }
+    .plan-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 20px; }
+    @media (max-width: 520px) { .plan-grid { grid-template-columns: 1fr; } }
+    .plan-card {
+      border: 2px solid #e5e5e4; border-radius: 10px; padding: 16px 14px;
+      cursor: pointer; transition: border-color 0.15s, box-shadow 0.15s;
+      position: relative;
+    }
+    .plan-card:hover { border-color: #C44A76; }
+    .plan-card.selected { border-color: #C44A76; box-shadow: 0 0 0 3px rgba(196,74,118,0.12); }
+    .plan-check {
+      width: 18px; height: 18px; border-radius: 50%; border: 2px solid #ddd;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 10px; font-weight: 700; color: transparent;
+      margin-bottom: 10px; transition: all 0.15s;
+    }
+    .plan-card.selected .plan-check { border-color: #C44A76; background: #C44A76; color: #fff; }
+    .plan-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: #6b7280; margin-bottom: 4px; }
+    .plan-card.selected .plan-label { color: #C44A76; }
+    .plan-name { font-size: 17px; font-weight: 800; color: #1A1A1A; margin-bottom: 2px; }
+    .plan-price { font-size: 22px; font-weight: 800; color: #1A1A1A; line-height: 1; margin-bottom: 10px; }
+    .plan-price .mo { font-size: 12px; font-weight: 500; color: #6b7280; }
+    .plan-feats { list-style: none; display: flex; flex-direction: column; gap: 4px; }
+    .plan-feats li { font-size: 12px; color: #374151; display: flex; gap: 5px; align-items: flex-start; }
+    .plan-feats li::before { content: '✓'; color: #16a34a; font-weight: 700; flex-shrink: 0; }
+    .btn-continue {
+      width: 100%; padding: 11px; background: #C44A76; color: #fff; border: none; border-radius: 7px;
+      font-size: 15px; font-weight: 600; cursor: pointer; font-family: inherit;
+      transition: opacity 0.15s; margin-bottom: 14px;
+    }
+    .btn-continue:hover { opacity: 0.88; }
+
+    /* ── Step 2: Account form ────────────────────────────────── */
+    #step2 { max-width: 400px; display: none; }
+    .tagline { font-size: 14px; color: #666; margin: 12px 0 8px; text-align: center; }
+    .plan-badge {
+      display: inline-block; font-size: 12px; font-weight: 700; padding: 3px 12px;
+      border-radius: 99px; margin-bottom: 20px;
+    }
+    .plan-badge.free { background: #dcfce7; color: #15803d; }
+    .plan-badge.paid { background: #dbeafe; color: #1d4ed8; }
     label { display: block; font-size: 12.5px; font-weight: 600; color: #555; margin-bottom: 5px; text-transform: uppercase; letter-spacing: 0.4px; }
     input[type="email"], input[type="password"], input[type="text"].pw-field {
       width: 100%; padding: 9px 12px; border: 1px solid #ddd; border-radius: 7px;
@@ -50,34 +95,80 @@
     .pw-hint.pw-error { color: #991b1b; }
     .pw-strength { display: flex; gap: 4px; margin-top: 5px; margin-bottom: 12px; }
     .pw-strength-bar { height: 3px; flex: 1; border-radius: 99px; background: #e5e5e4; transition: background 0.2s; }
-    .perks { list-style: none; margin-bottom: 20px; display: flex; flex-direction: column; gap: 7px; }
-    .perks li { font-size: 13.5px; color: #444; display: flex; gap: 8px; align-items: center; }
-    .perks li::before { content: '✓'; color: #16a34a; font-weight: 700; }
-    .footer-link { text-align: center; margin-top: 20px; font-size: 13.5px; color: #666; }
-    .footer-link a { color: #111; font-weight: 600; text-decoration: none; }
-    .footer-link a:hover { text-decoration: underline; }
-    .divider { border: none; border-top: 1px solid #eee; margin: 20px 0; }
+    .footer-link { text-align: center; margin-top: 16px; font-size: 13.5px; color: #666; }
+    .footer-link a, .back-link { color: #111; font-weight: 600; text-decoration: none; cursor: pointer; }
+    .footer-link a:hover, .back-link:hover { text-decoration: underline; }
+    .divider { border: none; border-top: 1px solid #eee; margin: 16px 0; }
   </style>
 </head>
 <body>
-<div class="card">
-  <div class="logo" style="display:flex;align-items:center;gap:8px;justify-content:center"><svg width="32" height="32" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg"><rect width="36" height="36" rx="10" fill="#C44A76"/><rect x="7" y="10" width="22" height="4" rx="2" fill="white"/><rect x="7" y="17" width="16" height="4" rx="2" fill="white" opacity="0.7"/><rect x="7" y="24" width="19" height="4" rx="2" fill="white" opacity="0.5"/><circle cx="27" cy="26" r="5" fill="#2C60A0"/><path d="M24.5 26L26.2 27.8L29.5 24.5" stroke="white" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg><span><span style="color:#1A1A1A">Text </span><span style="color:#C44A76">Your</span><span style="color:#1A1A1A"> List</span></span></div>
-  <div class="tagline">Create your free account</div>
-  <span class="free-badge">50 free texts/month — no credit card</span>
 
-  <ul class="perks">
-    <li>Texts come from your real iPhone number</li>
-    <li>Send one-off or bulk with CSV upload</li>
-    <li>Set up in under 5 minutes</li>
-  </ul>
+<!-- Step 1: Plan Selection -->
+<div id="step1" class="card">
+  <div class="logo-row">
+    <svg width="32" height="32" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg"><rect width="36" height="36" rx="10" fill="#C44A76"/><rect x="7" y="10" width="22" height="4" rx="2" fill="white"/><rect x="7" y="17" width="16" height="4" rx="2" fill="white" opacity="0.7"/><rect x="7" y="24" width="19" height="4" rx="2" fill="white" opacity="0.5"/><circle cx="27" cy="26" r="5" fill="#2C60A0"/><path d="M24.5 26L26.2 27.8L29.5 24.5" stroke="white" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    <span class="logo-text"><span style="color:#1A1A1A">Text </span><span style="color:#C44A76">Your</span><span style="color:#1A1A1A"> List</span></span>
+  </div>
+  <div class="step1-heading">Choose your plan</div>
+  <div class="step1-sub">Start free anytime. Upgrade or cancel whenever.</div>
 
-  <hr class="divider" />
+  <div class="plan-grid">
+    <div class="plan-card selected" id="pc-free" onclick="selectPlan('free')">
+      <div class="plan-check">✓</div>
+      <div class="plan-label">Free</div>
+      <div class="plan-name">Free</div>
+      <div class="plan-price">$0 <span class="mo">/mo</span></div>
+      <ul class="plan-feats">
+        <li>50 texts/month</li>
+        <li>CSV upload</li>
+        <li>Message history</li>
+      </ul>
+    </div>
+    <div class="plan-card" id="pc-starter" onclick="selectPlan('starter')">
+      <div class="plan-check">✓</div>
+      <div class="plan-label">Starter</div>
+      <div class="plan-name">Starter</div>
+      <div class="plan-price">$8 <span class="mo">/mo</span></div>
+      <ul class="plan-feats">
+        <li>500 texts/month</li>
+        <li>CSV upload</li>
+        <li>Message history</li>
+      </ul>
+    </div>
+    <div class="plan-card" id="pc-pro" onclick="selectPlan('pro')">
+      <div class="plan-check">✓</div>
+      <div class="plan-label">Pro</div>
+      <div class="plan-name">Pro</div>
+      <div class="plan-price">$16 <span class="mo">/mo</span></div>
+      <ul class="plan-feats">
+        <li>Unlimited texts</li>
+        <li>CSV upload</li>
+        <li>Message history</li>
+      </ul>
+    </div>
+  </div>
 
+  <button class="btn-continue" onclick="goToStep2()">Continue →</button>
+  <div class="footer-link">Already have an account? <a href="/login">Log in</a></div>
+</div>
+
+<!-- Step 2: Account Form -->
+<div id="step2" class="card">
+  <div class="logo-row">
+    <svg width="32" height="32" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg"><rect width="36" height="36" rx="10" fill="#C44A76"/><rect x="7" y="10" width="22" height="4" rx="2" fill="white"/><rect x="7" y="17" width="16" height="4" rx="2" fill="white" opacity="0.7"/><rect x="7" y="24" width="19" height="4" rx="2" fill="white" opacity="0.5"/><circle cx="27" cy="26" r="5" fill="#2C60A0"/><path d="M24.5 26L26.2 27.8L29.5 24.5" stroke="white" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    <span class="logo-text"><span style="color:#1A1A1A">Text </span><span style="color:#C44A76">Your</span><span style="color:#1A1A1A"> List</span></span>
+  </div>
+  <div class="tagline" id="step2-tagline">Create your account</div>
+  <div style="text-align:center">
+    <span class="plan-badge free" id="plan-badge">Free — 50 texts/month, no credit card</span>
+  </div>
+
+  <div class="divider"></div>
   <div class="error" id="err"></div>
   <form id="form">
     <label>Email</label>
     <input type="email" id="email" placeholder="you@example.com" autocomplete="email" required />
-    <label>Password</label>
+    <label style="margin-top:14px">Password</label>
     <div class="pw-wrap">
       <input type="password" id="password" class="pw-field" placeholder="8+ chars, letter, number, special" autocomplete="new-password" required />
       <button type="button" class="pw-toggle" tabindex="-1" onclick="var i=document.getElementById('password');i.type=i.type==='password'?'text':'password'" aria-label="Show password">
@@ -93,37 +184,58 @@
     <div class="pw-hint" id="pw-hint">8+ characters, one letter, one number, one special character (!@#$%^&amp;* etc.)</div>
     <button type="submit" class="btn" id="btn">Create free account</button>
   </form>
-  <div class="footer-link">Already have an account? <a href="/login">Log in</a></div>
+  <div class="footer-link" style="margin-top:12px">
+    <a class="back-link" onclick="goToStep1()">← Change plan</a>
+    &nbsp;·&nbsp;
+    <a href="/login">Log in</a>
+  </div>
 </div>
+
 <script>
-  // Read plan param from URL (e.g. /signup?plan=starter)
-  const _pendingPlan = new URLSearchParams(window.location.search).get('plan');
-  if (_pendingPlan && ['starter', 'pro'].includes(_pendingPlan)) {
-    localStorage.setItem('pending_plan', _pendingPlan);
-    // Update badge text to show plan context
-    const badge = document.querySelector('.free-badge');
-    if (badge) {
-      const label = _pendingPlan === 'starter' ? 'Starter' : 'Pro';
-      badge.textContent = `Signing up for ${label} — create your account first`;
-      badge.style.background = '#dbeafe';
-      badge.style.color = '#1d4ed8';
+  let selectedPlan = 'free';
+
+  function selectPlan(plan) {
+    selectedPlan = plan;
+    ['free', 'starter', 'pro'].forEach(p => {
+      document.getElementById('pc-' + p).classList.toggle('selected', p === plan);
+    });
+  }
+
+  function goToStep2() {
+    const labels = {
+      free: 'Free — 50 texts/month, no credit card',
+      starter: 'Starter — $8/mo, 500 texts/month',
+      pro: 'Pro — $16/mo, unlimited texts',
+    };
+    const badge = document.getElementById('plan-badge');
+    badge.textContent = labels[selectedPlan];
+    badge.className = 'plan-badge ' + (selectedPlan === 'free' ? 'free' : 'paid');
+
+    const btn = document.getElementById('btn');
+    if (selectedPlan === 'free') {
+      btn.textContent = 'Create free account';
+    } else {
+      btn.textContent = 'Create account and pay';
     }
-  } else {
-    localStorage.removeItem('pending_plan');
+
+    document.getElementById('step1').style.display = 'none';
+    document.getElementById('step2').style.display = 'block';
+    document.getElementById('email').focus();
+  }
+
+  function goToStep1() {
+    document.getElementById('step2').style.display = 'none';
+    document.getElementById('step1').style.display = 'block';
+  }
+
+  // If plan is pre-selected via URL param, skip straight to step 2
+  const urlPlan = new URLSearchParams(window.location.search).get('plan');
+  if (urlPlan && ['free', 'starter', 'pro'].includes(urlPlan)) {
+    selectPlan(urlPlan);
+    goToStep2();
   }
 
   // Password strength checker
-  function checkPasswordStrength(pw) {
-    const checks = {
-      length: pw.length >= 8,
-      letter: /[a-zA-Z]/.test(pw),
-      number: /[0-9]/.test(pw),
-      special: /[!@#$%^&*()\-_=+\[\]{};':"\\|,.<>\/?]/.test(pw),
-    };
-    const score = Object.values(checks).filter(Boolean).length;
-    return { score, checks };
-  }
-
   const pwInput = document.getElementById('password');
   const bars = [document.getElementById('ps1'), document.getElementById('ps2'), document.getElementById('ps3'), document.getElementById('ps4')];
   const pwHint = document.getElementById('pw-hint');
@@ -137,10 +249,14 @@
       pwHint.className = 'pw-hint';
       return;
     }
-    const { score, checks } = checkPasswordStrength(pw);
-    bars.forEach((b, i) => {
-      b.style.background = i < score ? colors[score - 1] : '#e5e5e4';
-    });
+    const checks = {
+      length: pw.length >= 8,
+      letter: /[a-zA-Z]/.test(pw),
+      number: /[0-9]/.test(pw),
+      special: /[!@#$%^&*()\-_=+\[\]{};':"\\|,.<>\/?]/.test(pw),
+    };
+    const score = Object.values(checks).filter(Boolean).length;
+    bars.forEach((b, i) => { b.style.background = i < score ? colors[score - 1] : '#e5e5e4'; });
     const missing = [];
     if (!checks.length) missing.push('8+ characters');
     if (!checks.letter) missing.push('a letter');
@@ -190,11 +306,8 @@
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Signup failed');
-      // If a plan was selected, redirect to billing checkout
-      const pendingPlan = localStorage.getItem('pending_plan');
-      if (pendingPlan && ['starter', 'pro'].includes(pendingPlan)) {
-        localStorage.removeItem('pending_plan');
-        window.location.href = '/billing/checkout?plan=' + encodeURIComponent(pendingPlan);
+      if (selectedPlan === 'starter' || selectedPlan === 'pro') {
+        window.location.href = '/billing/checkout?plan=' + encodeURIComponent(selectedPlan);
       } else {
         window.location.href = '/app?new=1';
       }
@@ -202,7 +315,7 @@
       err.textContent = ex.message;
       err.style.display = 'block';
       btn.disabled = false;
-      btn.textContent = 'Create free account';
+      btn.textContent = selectedPlan === 'free' ? 'Create free account' : 'Create account and pay';
     }
   });
 </script>

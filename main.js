@@ -296,7 +296,7 @@ ipcMain.handle('trigger-messages-permission', async () => {
   // Running any AppleScript against Messages triggers the macOS Automation permission prompt.
   try {
     const { execFileSync } = require('child_process');
-    execFileSync('osascript', ['-e', 'tell application "Messages" to get name'], { timeout: 30000 });
+    execFileSync('osascript', ['-e', 'tell application "Messages"\ncount every service\nend tell'], { timeout: 30000 });
     return true;
   } catch {
     return false;
