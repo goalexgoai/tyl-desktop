@@ -226,8 +226,8 @@
       const btn = document.getElementById('btn-messages');
       const msg = document.getElementById('msg-messages');
       btn.disabled = true;
-      btn.textContent = 'Authorizing…';
-      msg.textContent = '';
+      btn.textContent = 'Waiting for system dialog…';
+      msg.textContent = 'A system dialog should appear — click "Allow" when prompted. It may appear behind this window.';
       msg.className = 'status-msg';
       try {
         const ok = await api.triggerMessagesPermission();
