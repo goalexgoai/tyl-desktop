@@ -1,4 +1,13 @@
-const { execSync, execFileSync } = require('child_process');
+const { execSync, execFile } = require('child_process');
+
+function runOsascript(args, timeout = 30000) {
+  return new Promise((resolve, reject) => {
+    execFile('osascript', args, { timeout }, (err, stdout, stderr) => {
+      if (err) reject(err);
+      else resolve(stdout);
+    });
+  });
+}
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
@@ -138,12 +147,12 @@ end tell`;
 async function executeSend(serviceType, number, tmpFile, stagedImgPath) {
   const hasText = !!fs.readFileSync(tmpFile, 'utf8').trim();
   if (stagedImgPath && fs.existsSync(stagedImgPath)) {
-    execFileSync('osascript', ['-e', buildImageScript(serviceType, number, stagedImgPath)], { timeout: 30000 });
+    await runOsascript(['-e', buildImageScript(serviceType, number, stagedImgPath)]);
     // Pause so Messages queues the image before the text bubble arrives
     await new Promise(r => setTimeout(r, 800));
   }
   if (hasText) {
-    execFileSync('osascript', ['-e', buildScript(serviceType, number, tmpFile)], { timeout: 30000 });
+    await runOsascript(['-e', buildScript(serviceType, number, tmpFile)]);
   }
 }
 
@@ -241,14 +250,14 @@ module.exports = async function sendViaMac(number, message, imagePath) {
       // Send image first (if any) via iMessage — osascript doesn't throw for Android
       // numbers immediately; the error shows up in chat.db within a few seconds.
       if (stagedImg) {
-        execFileSync('osascript', ['-e', buildImageScript('iMessage', number, stagedImg)], { timeout: 30000 });
+        await runOsascript(['-e', buildImageScript('iMessage', number, stagedImg)]);
         await new Promise(r => setTimeout(r, 800));
       }
 
       if (hasText) {
         // Use text send to probe delivery and detect routing.
         const beforeRowId = getMaxMessageRowId();
-        execFileSync('osascript', ['-e', buildScript('iMessage', number, tmp)], { timeout: 30000 });
+        await runOsascript(['-e', buildScript('iMessage', number, tmp)]);
         const result = await pollForDelivery(number, beforeRowId);
 
         if (result === 'delivered') {
