@@ -273,6 +273,12 @@ try {
   db.exec(`ALTER TABLE users ADD COLUMN offline_hash TEXT`);
 } catch (_) {}
 
+// Web companion API key — used by webApiPollLoop to poll jobs from web server
+try { db.exec(`ALTER TABLE users ADD COLUMN web_companion_key TEXT`); } catch (_) {}
+
+// API send platform preference (synced from web — mac/windows/any)
+try { db.exec(`ALTER TABLE users ADD COLUMN api_send_platform TEXT NOT NULL DEFAULT 'mac'`); } catch (_) {}
+
 // Test send flag — test sends don't count against monthly send limit
 try {
   db.exec(`ALTER TABLE jobs ADD COLUMN is_test INTEGER NOT NULL DEFAULT 0`);

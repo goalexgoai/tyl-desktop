@@ -481,9 +481,9 @@ const apiSendLimiter = rateLimit({
   message: { error: 'API send rate limit exceeded. Max 120 requests per minute per API key.' },
 });
 
-// Desktop web API helper — POST JSON to a web endpoint with x-desktop-secret header.
-// Rejects with err.status for HTTP errors, no status for network failures.
-function desktopWebPost(path, bodyObj) {
+// Desktop web API helper — POST JSON to a web endpoint.
+// Pass apiKey to use Bearer token auth (for /api/poll, /api/ack); omit to use x-desktop-secret.
+function desktopWebPost(path, bodyObj, apiKey = null) {
   const webUrl = process.env.TYL_WEB_URL || 'https://app.textyourlist.com';
   const secret = process.env.DESKTOP_LICENSE_SECRET || '';
   const https = require('https');
@@ -493,16 +493,21 @@ function desktopWebPost(path, bodyObj) {
   const client = url.protocol === 'http:' ? http : https;
 
   return new Promise((resolve, reject) => {
+    const headers = {
+      'Content-Type': 'application/json',
+      'Content-Length': Buffer.byteLength(body),
+    };
+    if (apiKey) {
+      headers['Authorization'] = `Bearer ${apiKey}`;
+    } else {
+      headers['x-desktop-secret'] = secret;
+    }
     const req = client.request({
       hostname: url.hostname,
       port: url.port || (url.protocol === 'http:' ? 80 : 443),
       path: url.pathname,
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Content-Length': Buffer.byteLength(body),
-        'x-desktop-secret': secret,
-      },
+      headers,
       timeout: 10000,
     }, (res) => {
       let buf = '';
@@ -515,6 +520,36 @@ function desktopWebPost(path, bodyObj) {
     req.on('timeout', () => { req.destroy(); reject(new Error('Request timed out')); });
     req.on('error', reject);
     req.write(body);
+    req.end();
+  });
+}
+
+// Desktop web GET helper — authenticated with Bearer API key (for /api/poll).
+function desktopWebGet(urlPath, apiKey) {
+  const webUrl = process.env.TYL_WEB_URL || 'https://app.textyourlist.com';
+  const https = require('https');
+  const http = require('http');
+  const url = new URL(`${webUrl}${urlPath}`);
+  const client = url.protocol === 'http:' ? http : https;
+
+  return new Promise((resolve, reject) => {
+    const req = client.request({
+      hostname: url.hostname,
+      port: url.port || (url.protocol === 'http:' ? 80 : 443),
+      path: url.pathname + url.search,
+      method: 'GET',
+      headers: { 'Authorization': `Bearer ${apiKey}` },
+      timeout: 10000,
+    }, (res) => {
+      let buf = '';
+      res.on('data', d => buf += d);
+      res.on('end', () => {
+        try { resolve({ status: res.statusCode, body: JSON.parse(buf) }); }
+        catch (_) { resolve({ status: res.statusCode, body: {} }); }
+      });
+    });
+    req.on('timeout', () => { req.destroy(); reject(new Error('Request timed out')); });
+    req.on('error', reject);
     req.end();
   });
 }
@@ -557,7 +592,8 @@ async function upsertLocalUser(u, password) {
 
 // Web auth helper — authenticates against web server, upserts local user row.
 async function webAuthAndUpsertUser(email, password) {
-  const data = await desktopWebPost('/api/desktop-auth', { email, password });
+  const platform = process.platform === 'darwin' ? 'mac' : 'windows';
+  const data = await desktopWebPost('/api/desktop-auth', { email, password, platform });
 
   if (data.status === 401) throw Object.assign(new Error(data.body.error || 'Invalid email or password'), { status: 401 });
   if (data.status === 403) throw Object.assign(new Error('Desktop not authorized'), { status: 403 });
@@ -565,6 +601,11 @@ async function webAuthAndUpsertUser(email, password) {
   if (data.status !== 200) throw Object.assign(new Error(data.body.error || 'Auth service unavailable'), { status: data.status });
 
   const localId = await upsertLocalUser(data.body, password);
+  // Store web companion key and platform preference for the web poll loop
+  if (data.body.companion_key) {
+    db.prepare('UPDATE users SET web_companion_key = ?, api_send_platform = ? WHERE id = ?')
+      .run(data.body.companion_key, data.body.api_send_platform || 'mac', localId);
+  }
   return { ...data.body, localId };
 }
 
@@ -773,6 +814,7 @@ app.get('/api/auth/me', requireAuth, async (req, res) => {
     billing_interval: fresh.billing_interval || null,
     pending_api_count: db.prepare("SELECT COUNT(*) as c FROM jobs WHERE user_id = ? AND status = 'api_pending'").get(fresh.id).c,
     api_default_pace: fresh.api_default_pace != null ? fresh.api_default_pace : null,
+    api_send_platform: fresh.api_send_platform || 'mac',
     daily_sends: db.prepare(`
       SELECT COUNT(*) as c FROM send_logs sl
       JOIN messages m ON m.id = sl.message_id
@@ -784,24 +826,46 @@ app.get('/api/auth/me', requireAuth, async (req, res) => {
   });
 });
 
-// User settings — Pro users can set api_default_pace
-app.patch('/api/user/settings', requireAuth, (req, res) => {
-  const { api_default_pace } = req.body;
+// User settings — Pro users can set api_default_pace and api_send_platform
+app.patch('/api/user/settings', requireAuth, async (req, res) => {
+  const { api_default_pace, api_send_platform } = req.body;
   const isPrivileged = req.user.is_admin || req.user.manual_account;
   const isPro = req.user.plan === 'pro' || isPrivileged;
-  if (!isPro) return res.status(403).json({ error: 'Pro plan required to change API send default.' });
+  if (!isPro) return res.status(403).json({ error: 'Pro plan required to change API send settings.' });
 
-  // Validate: null (hold), 0 (fast), 20 (Smart Throttle ~20-27s randomized)
-  const PACE_ALLOWLIST = [0, 20];
-  let pace = null;
-  if (api_default_pace !== null && api_default_pace !== undefined) {
-    pace = parseInt(api_default_pace, 10);
-    if (isNaN(pace) || !PACE_ALLOWLIST.includes(pace)) {
-      return res.status(400).json({ error: 'api_default_pace must be null, 0, or 20' });
+  const updates = {};
+  const webPayload = {};
+
+  if (api_default_pace !== undefined) {
+    // -1 = hold until launch, 0 = instant, 1-60 = paced, null = smart mode
+    let pace = null;
+    if (api_default_pace !== null) {
+      pace = parseInt(api_default_pace, 10);
+      if (isNaN(pace) || pace < -1 || pace > 60) {
+        return res.status(400).json({ error: 'api_default_pace must be null, -1 (hold until launch), or 0–60' });
+      }
     }
+    db.prepare('UPDATE users SET api_default_pace = ? WHERE id = ?').run(pace, req.user.id);
+    updates.api_default_pace = pace;
+    webPayload.api_default_pace = pace;
   }
-  db.prepare('UPDATE users SET api_default_pace = ? WHERE id = ?').run(pace, req.user.id);
-  res.json({ ok: true, api_default_pace: pace });
+
+  if (api_send_platform !== undefined) {
+    if (!['mac', 'windows', 'any'].includes(api_send_platform)) {
+      return res.status(400).json({ error: 'api_send_platform must be mac, windows, or any' });
+    }
+    db.prepare('UPDATE users SET api_send_platform = ? WHERE id = ?').run(api_send_platform, req.user.id);
+    updates.api_send_platform = api_send_platform;
+    webPayload.api_send_platform = api_send_platform;
+  }
+
+  // Proxy settings to web server (fire-and-forget — local DB is already updated)
+  if (Object.keys(webPayload).length > 0 && req.user.web_user_id) {
+    desktopWebPost('/api/desktop-update-settings', { web_user_id: req.user.web_user_id, ...webPayload })
+      .catch(() => {}); // non-fatal if web is offline
+  }
+
+  res.json({ ok: true, ...updates });
 });
 
 // ─── CSV Upload ──────────────────────────────────────────────────────────────
@@ -2517,12 +2581,65 @@ if (process.env.TYL_DESKTOP) {
     }
   }
 
+  // Web API poll loop — handles jobs created via Make.com/API on the web server.
+  // Polls web /api/poll using the stored companion key, sends locally, acks back to web.
+  async function webApiPollLoop() {
+    const platform = process.platform === 'darwin' ? 'mac' : 'windows';
+    try {
+      // Fetch companion key for any logged-in users who don't have one yet (e.g. pre-existing sessions)
+      const usersNeedingKey = db.prepare('SELECT id, web_user_id FROM users WHERE web_user_id IS NOT NULL AND (web_companion_key IS NULL OR web_companion_key = \'\')').all();
+      for (const u of usersNeedingKey) {
+        try {
+          const r = await desktopWebPost('/api/desktop-companion-key', { web_user_id: u.web_user_id, platform });
+          if (r.status === 200 && r.body.companion_key) {
+            db.prepare('UPDATE users SET web_companion_key = ? WHERE id = ?').run(r.body.companion_key, u.id);
+          }
+        } catch (_) {}
+      }
+
+      const users = db.prepare('SELECT id, web_companion_key, web_user_id FROM users WHERE web_companion_key IS NOT NULL AND web_companion_key != \'\'').all();
+      for (const user of users) {
+        let pollResult;
+        try {
+          pollResult = await desktopWebGet(`/api/poll?platform=${platform}`, user.web_companion_key);
+        } catch (_) { continue; }
+        if (pollResult.status !== 200) continue;
+        const { message, pace_wait } = pollResult.body;
+        if (pace_wait || !message) continue;
+
+        console.log(`[web-poll] got message ${message.id} for ${message.phone}`);
+        process.stdout.write('__TRAY:green__\n');
+
+        try {
+          await sendFn(message.phone, message.body, null);
+          await desktopWebPost('/api/ack', { message_id: message.id, status: 'sent' }, user.web_companion_key);
+          console.log(`[web-poll] sent → ${message.phone}`);
+        } catch (err) {
+          const errorMsg = err.message || 'Send failed';
+          const isAppClosed = /connection is invalid|application isn't running|phone link not found|phonelink.*not found|execution error.*messages|phone link window|could not find phone link/i.test(errorMsg);
+          await desktopWebPost('/api/ack', { message_id: message.id, status: 'failed', error: errorMsg }, user.web_companion_key)
+            .catch(() => {});
+          if (isAppClosed) {
+            console.warn(`[web-poll] messaging app closed — ${errorMsg}`);
+          } else {
+            console.error(`[web-poll] failed → ${message.phone}: ${errorMsg}`);
+          }
+        }
+      }
+    } catch (err) {
+      console.error('[web-poll] loop error:', err.message);
+    }
+    process.stdout.write('__TRAY:gray__\n');
+  }
+
   // Recover any messages left in 'sending' state from a previous crash
   db.prepare("UPDATE messages SET status='pending', picked_at=NULL WHERE status='sending'").run();
 
-  // Poll every 5 seconds for pending messages
+  // Poll every 5 seconds for pending messages (local) and web API jobs
   setInterval(desktopSendLoop, 5000);
+  setInterval(webApiPollLoop, 5000);
   console.log('[desktop-sender] embedded sender active');
+  console.log('[web-poll] web API poll loop active');
 }
 
 // ─── Start ───────────────────────────────────────────────────────────────────

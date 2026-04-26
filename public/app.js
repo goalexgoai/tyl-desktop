@@ -262,6 +262,26 @@ async function init() {
     return;
   }
 
+  // Heartbeat — tells server the desktop is active so API sends auto-route
+  post('/api/desktop-ping').catch(() => {});
+  setInterval(() => post('/api/desktop-ping').catch(() => {}), 60000);
+
+  // On open: if messages are waiting, ask user what to do — never auto-send
+  if ((currentUser.pending_api_count || 0) > 0) {
+    setTimeout(() => showPendingApiPrompt(currentUser.pending_api_count), 800);
+  }
+
+  // API pending poller — refreshes the dashboard banner without a full re-render
+  setInterval(async () => {
+    try {
+      const fresh = await get('/api/auth/me');
+      const prev = currentUser?.pending_api_count || 0;
+      currentUser = fresh;
+      updateUserBadge();
+      if (fresh.pending_api_count !== prev && currentView === 'send') render();
+    } catch (_) {}
+  }, 30000);
+
   // Nav
   document.querySelectorAll('.nav-item[data-view]').forEach(el => {
     el.addEventListener('click', () => navigate(el.dataset.view));
@@ -311,6 +331,48 @@ async function releaseApiMessages(paceSeconds) {
   } catch (err) {
     showToast('Could not release messages: ' + err.message);
   }
+}
+
+function showPendingApiPrompt(count) {
+  const overlay = document.createElement('div');
+  overlay.id = 'pending-api-overlay';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.45);display:flex;align-items:center;justify-content:center;z-index:9999';
+
+  overlay.innerHTML = `
+    <div style="background:var(--bg,#fff);border-radius:14px;padding:28px 32px;max-width:400px;width:90%;box-shadow:0 20px 60px rgba(0,0,0,0.25)">
+      <div style="font-size:22px;margin-bottom:10px">&#128274;</div>
+      <h3 style="font-size:17px;font-weight:700;margin-bottom:8px;text-transform:none">${count} message${count===1?'':'s'} waiting</h3>
+      <p style="font-size:13.5px;color:var(--text-muted,#666);margin-bottom:22px;line-height:1.6">
+        You have held messages from Make / Zapier / API that have not been sent yet. What would you like to do?
+      </p>
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <button id="pending-send-now" class="btn btn-primary" style="font-size:14px;padding:10px">Send now</button>
+        <button id="pending-keep-holding" class="btn btn-ghost" style="font-size:14px;padding:10px">Keep holding — I'll decide later</button>
+        <button id="pending-cancel" style="font-size:13px;color:var(--text-muted,#888);background:none;border:none;cursor:pointer;padding:6px;text-align:center">Cancel all ${count} message${count===1?'':'s'}</button>
+      </div>
+    </div>`;
+
+  document.body.appendChild(overlay);
+
+  const pace = currentUser?.api_default_pace >= 0 ? currentUser.api_default_pace : 7;
+
+  document.getElementById('pending-send-now').addEventListener('click', async () => {
+    overlay.remove();
+    await releaseApiMessages(pace);
+  });
+  document.getElementById('pending-keep-holding').addEventListener('click', () => overlay.remove());
+  document.getElementById('pending-cancel').addEventListener('click', async () => {
+    try {
+      const r = await post('/api/jobs/cancel-api');
+      overlay.remove();
+      currentUser = await get('/api/auth/me');
+      updateUserBadge();
+      render();
+      if (r.cancelled > 0) showToast(`${r.cancelled} pending message${r.cancelled===1?'':'s'} cancelled.`);
+    } catch (err) {
+      showToast('Could not cancel: ' + err.message);
+    }
+  });
 }
 
 async function cancelApiMessages() {
@@ -3567,27 +3629,46 @@ function renderAccount(main) {
 
       ${(u.plan === 'pro' || u.is_admin || u.manual_account) ? `
       <div class="card" style="max-width:560px;margin-bottom:20px">
-        <div class="card-header"><h3>API Send Behavior <span style="font-size:11px;font-weight:500;background:var(--accent-light,#e8f0ff);color:var(--accent);padding:2px 7px;border-radius:10px;margin-left:6px">Pro</span></h3></div>
+        <div class="card-header"><h3 style="text-transform:none">Api send behavior <span style="font-size:11px;font-weight:500;background:var(--accent-light,#e8f0ff);color:var(--accent);padding:2px 7px;border-radius:10px;margin-left:6px">Pro</span></h3></div>
         <div class="card-body">
-          <p style="font-size:13px;color:var(--text-muted);margin-bottom:12px">When the app is closed, incoming API messages are held until you open it. When open, choose:</p>
           <div id="api-pace-alert"></div>
-          <div style="display:flex;flex-direction:column;gap:10px">
+          <p style="font-size:13px;color:var(--text-muted);margin-bottom:6px;font-weight:600">When app is open, send:</p>
+          <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:18px">
             <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;text-transform:none;letter-spacing:0;font-weight:normal">
               <input type="radio" name="api_pace" value="0" style="margin-top:3px" ${u.api_default_pace === 0 ? 'checked' : ''}>
               <span>
                 <strong style="font-size:13.5px">Fast</strong>
-                <div style="font-size:12.5px;color:var(--text-muted)">Send immediately when the app opens</div>
+                <div style="font-size:12.5px;color:var(--text-muted)">Send immediately as API messages arrive</div>
               </span>
             </label>
             <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;text-transform:none;letter-spacing:0;font-weight:normal">
               <input type="radio" name="api_pace" value="7" style="margin-top:3px" ${(u.api_default_pace === 7 || u.api_default_pace === 20 || u.api_default_pace == null) ? 'checked' : ''}>
               <span>
-                <strong style="font-size:13.5px">Smart Throttle (recommended)</strong>
+                <strong style="font-size:13.5px">Smart throttle (recommended)</strong>
                 <div style="font-size:12.5px;color:var(--text-muted)">Randomized 7-14s delay between sends</div>
               </span>
             </label>
+            <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;text-transform:none;letter-spacing:0;font-weight:normal">
+              <input type="radio" name="api_pace" value="-1" style="margin-top:3px" ${u.api_default_pace === -1 ? 'checked' : ''}>
+              <span>
+                <strong style="font-size:13.5px">Hold for review</strong>
+                <div style="font-size:12.5px;color:var(--text-muted)">API messages are always held. When you open the app you choose whether to send, keep holding, or cancel — nothing goes out without your say-so</div>
+              </span>
+            </label>
           </div>
-          <button class="btn btn-ghost btn-sm" id="save-api-pace" style="margin-top:14px">Save</button>
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">
+            <p style="font-size:13px;color:var(--text-muted);font-weight:600;margin:0">Send platform:</p>
+            <span title="Only matters if you have Text Your List installed on both Mac and Windows. Most users have one machine and can leave this on Mac (default)." style="display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:50%;background:var(--text-muted,#888);color:#fff;font-size:10px;font-weight:700;cursor:help;flex-shrink:0">i</span>
+          </div>
+          <div style="margin-bottom:14px">
+            <select name="api_send_platform" style="padding:6px 10px;border:1px solid var(--border);border-radius:6px;font-size:13.5px;background:var(--bg);color:var(--text);text-transform:none">
+              <option value="mac" ${(u.api_send_platform === 'mac' || !u.api_send_platform) ? 'selected' : ''}>Mac (default)</option>
+              <option value="windows" ${u.api_send_platform === 'windows' ? 'selected' : ''}>Windows</option>
+              <option value="any" ${u.api_send_platform === 'any' ? 'selected' : ''}>Any (first available)</option>
+            </select>
+            <div id="windows-platform-warning" style="margin-top:8px;padding:8px 10px;background:#fffbeb;border:1px solid #fcd34d;border-radius:6px;font-size:12px;color:#92400e;${(u.api_send_platform === 'windows') ? '' : 'display:none'}">⚠ Windows sends go through Phone Link. If you are actively using your Windows machine when sends come in, Phone Link may disrupt your work. Consider using <strong>Hold until launch</strong> above to control when sends happen.</div>
+          </div>
+          <button class="btn btn-ghost btn-sm" id="save-api-pace">Save</button>
         </div>
       </div>` : ''}
 
@@ -3622,16 +3703,30 @@ function renderAccount(main) {
 
   const saveApiPaceBtn = document.getElementById('save-api-pace');
   if (saveApiPaceBtn) {
+    const platformSelect = document.querySelector('select[name="api_send_platform"]');
+    if (platformSelect) {
+      platformSelect.addEventListener('change', () => {
+        const warnEl = document.getElementById('windows-platform-warning');
+        if (warnEl) warnEl.style.display = platformSelect.value === 'windows' ? '' : 'none';
+      });
+    }
+
     saveApiPaceBtn.addEventListener('click', async () => {
       const selected = document.querySelector('input[name="api_pace"]:checked');
+      const platformEl = document.querySelector('select[name="api_send_platform"]');
       if (!selected) return;
       const alertEl = document.getElementById('api-pace-alert');
       alertEl.innerHTML = '';
       const pace = parseInt(selected.value, 10);
+      const platform = platformEl ? platformEl.value : 'mac';
       try {
-        await patch('/api/user/settings', { api_default_pace: pace });
+        await patch('/api/user/settings', { api_default_pace: pace, api_send_platform: platform });
         alertEl.innerHTML = '<div class="alert alert-success">Saved.</div>';
         currentUser.api_default_pace = pace;
+        currentUser.api_send_platform = platform;
+        // Update Windows warning visibility without full re-render
+        const warnEl = document.getElementById('windows-platform-warning');
+        if (warnEl) warnEl.style.display = platform === 'windows' ? '' : 'none';
       } catch (err) {
         alertEl.innerHTML = `<div class="alert alert-error">${escHtml(err.message)}</div>`;
       }
