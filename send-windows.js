@@ -1,7 +1,4 @@
 const { execFileSync } = require('child_process');
-const { writeFileSync, unlinkSync } = require('fs');
-const { join } = require('path');
-const os = require('os');
 
 function escapeSendKeys(value) {
   // Escape SendKeys special characters
@@ -18,7 +15,6 @@ module.exports = async function sendViaPhoneLink(number, message) {
   // Message goes via clipboard, not SendKeys — clipboard preserves emoji and unicode.
   // Only PowerShell single-quote escaping is needed here.
   const safeMessage = escapePowerShell(message || '');
-  const tmpFile = join(os.tmpdir(), `textyourlist-${Date.now()}.ps1`);
 
   const processNames = ['PhoneLink', 'PhoneLinkHost', 'PhoneExperienceHost', 'PhoneExperience', 'PhoneLinkInfrastructureHost', 'YourPhone', 'YourPhoneServiceHost'];
 
@@ -99,9 +95,8 @@ Start-Sleep -Milliseconds 300
 [System.Windows.Forms.SendKeys]::SendWait('${safeNumber}')
 Start-Sleep -Milliseconds 700
 [System.Windows.Forms.SendKeys]::SendWait('{ENTER}')
-# Wait for Phone Link to redraw the conversation view — no need to re-scan from root,
-# the existing $window reference stays valid through UWP UI tree refreshes
-Start-Sleep -Milliseconds 1200
+# Wait for Phone Link to redraw the conversation view — iPhone contacts may take longer to resolve
+Start-Sleep -Milliseconds 2000
 
 $edits2 = $window.FindAll([System.Windows.Automation.TreeScope]::Descendants, $editCond)
 $msgField = $edits2 | Where-Object { $_.Current.Name -match 'Type a message|Aa|Message|Continue' } | Select-Object -First 1
@@ -128,18 +123,20 @@ if ($sendBtn) {
 Start-Sleep -Milliseconds 500
 `;
 
-  writeFileSync(tmpFile, script, 'utf8');
+  // Encode as UTF-16 LE Base64 for PowerShell -EncodedCommand.
+  // PS5 (Windows 10 default) reads .ps1 files as system ANSI when there's no BOM,
+  // which corrupts emoji and other non-ASCII characters. -EncodedCommand bypasses
+  // file I/O entirely and guarantees correct unicode handling.
+  const encoded = Buffer.from(script, 'utf16le').toString('base64');
   try {
     execFileSync(
       'powershell',
-      ['-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', tmpFile],
+      ['-NonInteractive', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', encoded],
       { windowsHide: true, timeout: 60000, stdio: ['ignore', 'pipe', 'pipe'] }
     );
   } catch (err) {
     const detail = ((err.stderr || err.stdout || '').toString().trim());
     throw new Error(detail || err.message);
-  } finally {
-    try { unlinkSync(tmpFile); } catch (_) {}
   }
   return true;
 };

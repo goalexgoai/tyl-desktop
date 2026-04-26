@@ -692,6 +692,9 @@ function showSendConfirmModal(previewContact, previewMessage, count, onConfirm, 
               <a href="#" id="phonelink-help-link" style="color:var(--primary,#C44A76);margin-left:4px">Need help?</a>
             </span>
           </label>
+          <div style="font-size:12px;color:var(--text-muted);margin-top:10px;padding-top:10px;border-top:1px solid var(--border,#e5e7eb);line-height:1.5">
+            While sending, keep Phone Link in the foreground and avoid touching your keyboard, mouse, or the Phone Link window.
+          </div>
          </div>`}
     <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px">
       <button class="btn btn-ghost" id="confirm-cancel">Cancel</button>
@@ -2271,7 +2274,12 @@ async function renderHistoryTab(body) {
     </div>
     <div id="campaigns-card"><div style="color:var(--text-muted);padding:20px 0">Loading...</div></div>`;
 
-  document.getElementById('hist-refresh').addEventListener('click', loadCampaignHistory);
+  document.getElementById('hist-refresh').addEventListener('click', async () => {
+    const btn = document.getElementById('hist-refresh');
+    if (btn) { btn.textContent = 'Refreshing…'; btn.disabled = true; }
+    await loadCampaignHistory();
+    if (btn) { btn.textContent = 'Refresh'; btn.disabled = false; }
+  });
   loadCampaignHistory();
 
   // Auto-refresh if any job is active

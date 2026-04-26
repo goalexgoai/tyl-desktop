@@ -15,8 +15,12 @@ app.isQuitting = false;
 
 function setTrayStatus(status) {
   if (!tray) return; // No tray on macOS
-  const icons = { gray: 'icon-gray.png', green: 'icon-green.png', yellow: 'icon-yellow.png' };
-  const iconFile = icons[status] || 'icon-gray.png';
+  const icons = {
+    gray:   process.platform === 'win32' ? 'icon.ico' : 'icon-gray.png',
+    green:  'icon-green.png',
+    yellow: 'icon-yellow.png',
+  };
+  const iconFile = icons[status] || icons.gray;
   tray.setImage(nativeImage.createFromPath(path.join(__dirname, 'assets', iconFile)));
 }
 
@@ -162,7 +166,7 @@ function createWindow(port) {
 function createTray() {
   if (process.platform === 'darwin') return; // macOS uses dock, no tray needed
 
-  const iconPath = path.join(__dirname, 'assets', 'icon-gray.png');
+  const iconPath = path.join(__dirname, 'assets', process.platform === 'win32' ? 'icon.ico' : 'icon-gray.png');
   tray = new Tray(nativeImage.createFromPath(iconPath));
   tray.setToolTip('Text Your List');
   setTrayStatus('gray');

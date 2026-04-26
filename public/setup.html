@@ -233,17 +233,20 @@
         const ok = await api.triggerMessagesPermission();
         if (ok) {
           messagesGranted = true;
+          localStorage.setItem('tyl_messages_granted', '1');
           btn.textContent = 'Authorized ✓';
           setStepDone(document.getElementById('step1'));
           msg.textContent = 'Access granted.';
           msg.className = 'status-msg ok';
         } else {
+          localStorage.removeItem('tyl_messages_granted');
           btn.disabled = false;
           btn.textContent = 'Authorize access';
           msg.innerHTML = 'Access was not granted. Go to <strong>System Settings → Privacy &amp; Security → Automation → Text Your List</strong> and enable Messages, then try again.';
           msg.className = 'status-msg err';
         }
       } catch {
+        localStorage.removeItem('tyl_messages_granted');
         btn.disabled = false;
         btn.textContent = 'Authorize access';
         msg.textContent = 'Something went wrong. Try again.';
@@ -299,9 +302,13 @@
       window.location.href = '/app';
     }
 
-    // Auto-check FDA on load in case it was already granted
+    // Auto-check both permissions on load — avoids requiring re-authorization on every wizard visit.
+    // triggerMessagesPermission() is only called if localStorage indicates it was previously granted,
+    // so we don't pop a TCC dialog on first-time visitors.
     window.addEventListener('load', async () => {
       if (!api) return;
+
+      // Step 2: FDA check (no dialog risk — fs.open either works or throws silently)
       try {
         const fda = await api.checkChatDbAccess();
         if (fda) {
@@ -311,7 +318,30 @@
           document.getElementById('msg-fda').className = 'status-msg ok';
           updateContinue();
         }
-      } catch { /* not granted, leave as-is */ }
+      } catch { /* not granted */ }
+
+      // Step 1: Messages permission — only silently verify if previously granted.
+      // If permission was revoked, triggerMessagesPermission() returns false (no dialog since
+      // macOS only shows the dialog when first requesting, not when re-checking a denied state).
+      if (localStorage.getItem('tyl_messages_granted') === '1') {
+        try {
+          const ok = await api.triggerMessagesPermission();
+          if (ok) {
+            messagesGranted = true;
+            const btn = document.getElementById('btn-messages');
+            btn.textContent = 'Authorized ✓';
+            btn.disabled = true;
+            setStepDone(document.getElementById('step1'));
+            document.getElementById('msg-messages').textContent = 'Access already granted.';
+            document.getElementById('msg-messages').className = 'status-msg ok';
+            updateContinue();
+          } else {
+            localStorage.removeItem('tyl_messages_granted');
+          }
+        } catch {
+          localStorage.removeItem('tyl_messages_granted');
+        }
+      }
     });
   </script>
 </body>
