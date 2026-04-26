@@ -69,8 +69,8 @@ const imageUpload = multer({
 // Pro ($30/mo or $288/yr): 6,000 sends, unlimited API keys, all features, API webhook sends
 const PLANS = {
   free:    { label: 'Free',    monthly_limit: 50,   bulk_max_contacts: 10,   api_keys: 1,        companion: true, csv: true,  templates: false, api_send: false, price: 0  },
-  starter: { label: 'Starter', monthly_limit: 2000, bulk_max_contacts: Infinity, api_keys: 1,        companion: true, csv: true,  templates: true,  api_send: false, price: 8  },
-  pro:     { label: 'Pro',     monthly_limit: 6000, bulk_max_contacts: Infinity, api_keys: Infinity, companion: true, csv: true,  templates: true,  api_send: true,  price: 16 },
+  starter: { label: 'Starter', monthly_limit: 2000, bulk_max_contacts: 100,  api_keys: 1,        companion: true, csv: true,  templates: true,  api_send: false, price: 8  },
+  pro:     { label: 'Pro',     monthly_limit: 6000, bulk_max_contacts: 1000, api_keys: Infinity, companion: true, csv: true,  templates: true,  api_send: true,  price: 16 },
 };
 
 // ─── Session ──────────────────────────────────────────────────────────────────
