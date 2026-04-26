@@ -344,7 +344,7 @@ function showPendingApiPrompt(count) {
       <div style="font-size:22px;margin-bottom:10px">&#128274;</div>
       <h3 style="font-size:17px;font-weight:700;margin-bottom:8px;text-transform:none">${count} message${count===1?'':'s'} waiting</h3>
       <p style="font-size:13.5px;color:var(--text-muted,#666);margin-bottom:22px;line-height:1.6">
-        You have held messages from Make / Zapier / API that have not been sent yet. What would you like to do?
+        You have held messages via API that have not been sent yet. What would you like to do?
       </p>
       <div style="display:flex;flex-direction:column;gap:10px">
         <button id="pending-send-now" class="btn btn-primary" style="font-size:14px;padding:10px">Send now</button>
@@ -471,7 +471,7 @@ function renderSend(main) {
     </div>
     <div id="companion-status-banner"></div>
     ${(u.pending_api_count || 0) > 0 ? `<div id="api-pending-banner" style="background:#eff6ff;border:1px solid #93c5fd;border-radius:8px;padding:12px 16px;margin:0 0 12px;font-size:13.5px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
-      <span>&#128274; <strong>${u.pending_api_count} message${u.pending_api_count===1?'':'s'} waiting</strong> from Make / Zapier / API — held for your approval.</span>
+      <span>&#128274; <strong>${u.pending_api_count} message${u.pending_api_count===1?'':'s'} waiting</strong> via API — held for your approval.</span>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         <button class="btn btn-primary btn-sm" onclick="releaseApiMessages(0)">Send now (fast)</button>
         <button class="btn btn-ghost btn-sm" onclick="releaseApiMessages(7)">Send with Smart Throttle</button>
@@ -2363,15 +2363,16 @@ async function renderHistoryTab(body) {
 
 function statusBadge(status) {
   const map = {
-    draft:     'background:#e5e7eb;color:#374151',
-    queued:    'background:#dbeafe;color:#1d4ed8',
-    completed: 'background:#dcfce7;color:#15803d',
-    failed:    'background:#fee2e2;color:#dc2626',
-    paused:    'background:#fef9c3;color:#a16207',
-    cancelled: 'background:#e5e7eb;color:#6b7280',
+    draft:       'background:#e5e7eb;color:#374151',
+    queued:      'background:#dbeafe;color:#1d4ed8',
+    completed:   'background:#dcfce7;color:#15803d',
+    failed:      'background:#fee2e2;color:#dc2626',
+    paused:      'background:#fef9c3;color:#a16207',
+    cancelled:   'background:#e5e7eb;color:#6b7280',
+    api_pending: 'background:#fff7ed;color:#c2410c',
   };
   const style = map[status] || map.draft;
-  const label = status === 'queued' ? '⟳ Sending' : status.charAt(0).toUpperCase() + status.slice(1);
+  const label = status === 'queued' ? '⟳ Sending' : status === 'api_pending' ? '⏸ Held' : status.charAt(0).toUpperCase() + status.slice(1);
   return `<span style="display:inline-flex;align-items:center;padding:3px 10px;border-radius:99px;font-size:12px;font-weight:600;${style}">${label}</span>`;
 }
 
@@ -2388,6 +2389,12 @@ async function loadCampaignHistory() {
       const pct = j.total ? Math.round(j.sent / j.total * 100) : 0;
       const isActive = j.status === 'queued';
       const isDraft = j.status === 'draft';
+      const isHeld = j.status === 'api_pending';
+      const isWebJob = j._source === 'web';
+      let actionBtn = '';
+      if (isDraft) actionBtn = `<button class="btn btn-primary btn-sm" onclick="openJobDetail('${j.id}')">Edit &amp; Send</button>`;
+      else if (isHeld) actionBtn = `<button class="btn btn-primary btn-sm" onclick="showPendingApiPrompt(${j.total || 1})">Review</button>`;
+      else if (!isWebJob) actionBtn = `<button class="btn btn-ghost btn-sm" onclick="openJobDetail('${j.id}')">View</button>`;
       return `
         <div class="card" style="margin-bottom:12px;padding:16px 20px">
           <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:10px">
@@ -2399,7 +2406,7 @@ async function loadCampaignHistory() {
               </div>
             </div>
             <div style="display:flex;gap:6px;flex-shrink:0">
-              ${isDraft ? `<button class="btn btn-primary btn-sm" onclick="openJobDetail('${j.id}')">Edit &amp; Send</button>` : `<button class="btn btn-ghost btn-sm" onclick="openJobDetail('${j.id}')">View</button>`}
+              ${actionBtn}
             </div>
           </div>
           ${j.total > 0 ? `
