@@ -2322,6 +2322,7 @@ async function loadCampaignHistory() {
 // ── Job detail / monitor ──────────────────────────────────────────────────
 
 async function openJobDetail(jobId) {
+  if (monitorInterval) { clearInterval(monitorInterval); monitorInterval = null; }
   const main = document.getElementById('main');
   main.innerHTML = `<div class="main-body" style="padding-top:24px">
     <button class="btn btn-ghost btn-sm" id="btn-back" style="margin-bottom:16px">&#8592; Send History</button>
@@ -2403,6 +2404,11 @@ async function refreshJobDetail(jobId) {
         </table>
         ${total > 50 ? `<div style="padding:12px 16px;font-size:12.5px;color:var(--text-muted)">Showing first 50 of ${total}</div>` : ''}
       </div>`;
+
+    // Stop polling once job reaches a terminal state
+    if (['completed', 'cancelled', 'failed'].includes(job.status)) {
+      if (monitorInterval) { clearInterval(monitorInterval); monitorInterval = null; }
+    }
 
     // Dead-phones suppression banner — shown once on completion, dismissed after suppressing or manually
     if (job.status === 'completed' && job.failed > 0) {
