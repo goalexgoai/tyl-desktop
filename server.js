@@ -955,7 +955,7 @@ app.get('/job-image/:filename', requireAuth, (req, res) => {
 
 app.get('/api/jobs', requireAuth, async (req, res) => {
   const jobs = db.prepare('SELECT * FROM jobs WHERE user_id = ? ORDER BY created_at DESC').all(req.user.id);
-  if (req.user.web_user_id && (req.user.web_pending_count || 0) > 0) {
+  if (req.user.web_user_id) {
     try {
       const r = await desktopWebPost('/api/desktop-web-pending', { web_user_id: req.user.web_user_id, action: 'list' });
       if (r.status === 200 && Array.isArray(r.body.jobs) && r.body.jobs.length) {

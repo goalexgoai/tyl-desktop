@@ -2429,6 +2429,44 @@ function statusBadge(status) {
   return `<span style="display:inline-flex;align-items:center;padding:3px 10px;border-radius:99px;font-size:12px;font-weight:600;${style}">${label}</span>`;
 }
 
+function renderJobCard(j) {
+  const pct = j.total ? Math.round(j.sent / j.total * 100) : 0;
+  const isActive = j.status === 'queued';
+  const isDraft = j.status === 'draft';
+  const isHeld = j.status === 'api_pending';
+  const isWebJob = j._source === 'web';
+  let actionBtn = '';
+  if (isDraft) actionBtn = `<button class="btn btn-primary btn-sm" onclick="openJobDetail('${j.id}')">Edit &amp; Send</button>`;
+  else if (isHeld) actionBtn = `<button class="btn btn-primary btn-sm" onclick="showJobReviewPrompt('${j.id}')">Review</button>`;
+  else if (!isWebJob) actionBtn = `<button class="btn btn-ghost btn-sm" onclick="openJobDetail('${j.id}')">View</button>`;
+  return `
+    <div class="card" style="margin-bottom:12px;padding:16px 20px">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:10px">
+        <div>
+          <div style="font-weight:700;font-size:14.5px;margin-bottom:4px">${escHtml(j.name)}</div>
+          <div style="display:flex;align-items:center;gap:10px">
+            ${statusBadge(j.status)}
+            <span style="font-size:12.5px;color:var(--text-muted)">${j.sent} / ${j.total} sent${j.failed>0?` · <span style="color:var(--danger)">${j.failed} failed</span>`:''}</span>
+          </div>
+        </div>
+        <div style="display:flex;gap:6px;flex-shrink:0">${actionBtn}</div>
+      </div>
+      ${j.total > 0 ? `
+        <div>
+          <div style="display:flex;justify-content:space-between;font-size:11.5px;color:var(--text-muted);margin-bottom:4px">
+            <span>Progress</span><span>${pct}%</span>
+          </div>
+          <div class="progress-bar"><div class="progress-fill" style="width:${pct}%${isActive?';animation:none':''}"></div></div>
+        </div>` : ''}
+      <div style="font-size:12px;color:var(--text-muted);margin-top:8px">
+        ${isWebJob ? '<span style="background:#f3f4f6;color:#6b7280;font-size:11px;font-weight:600;padding:1px 6px;border-radius:4px;margin-right:4px">API</span>' : ''}
+        Started ${fmt(j.created_at)}
+        ${j.updated_at && j.updated_at !== j.created_at ? ` · Updated ${fmt(j.updated_at)}` : ''}
+        ${!isHeld && j.pace_seconds > 0 ? ` · Smart Throttle (~${j.pace_seconds}-${j.pace_seconds + 7}s)` : ''}
+      </div>
+    </div>`;
+}
+
 async function loadCampaignHistory() {
   const card = document.getElementById('campaigns-card');
   if (!card) return;
@@ -2439,45 +2477,37 @@ async function loadCampaignHistory() {
       return;
     }
     const displayed = jobs.slice(0, 50);
-    displayed.forEach(j => { if (j.status === 'api_pending') window._heldJobCache[j.id] = j; });
-    card.innerHTML = displayed.map(j => {
-      const pct = j.total ? Math.round(j.sent / j.total * 100) : 0;
-      const isActive = j.status === 'queued';
-      const isDraft = j.status === 'draft';
-      const isHeld = j.status === 'api_pending';
-      const isWebJob = j._source === 'web';
-      let actionBtn = '';
-      if (isDraft) actionBtn = `<button class="btn btn-primary btn-sm" onclick="openJobDetail('${j.id}')">Edit &amp; Send</button>`;
-      else if (isHeld) actionBtn = `<button class="btn btn-primary btn-sm" onclick="showJobReviewPrompt('${j.id}')">Review</button>`;
-      else if (!isWebJob) actionBtn = `<button class="btn btn-ghost btn-sm" onclick="openJobDetail('${j.id}')">View</button>`;
-      return `
-        <div class="card" style="margin-bottom:12px;padding:16px 20px">
-          <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:10px">
+    const heldJobs = displayed.filter(j => j.status === 'api_pending');
+    const otherJobs = displayed.filter(j => j.status !== 'api_pending');
+    heldJobs.forEach(j => { window._heldJobCache[j.id] = j; });
+
+    let html = '';
+
+    if (heldJobs.length > 0) {
+      const pace = currentUser?.api_default_pace >= 0 ? currentUser.api_default_pace : 7;
+      const totalMsgs = heldJobs.reduce((s, j) => s + (j.total || 1), 0);
+      html += `
+        <div style="background:#fff7ed;border:1px solid #fb923c;border-radius:10px;padding:14px 16px;margin-bottom:8px">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
             <div>
-              <div style="font-weight:700;font-size:14.5px;margin-bottom:4px">${escHtml(j.name)}</div>
-              <div style="display:flex;align-items:center;gap:10px">
-                ${statusBadge(j.status)}
-                <span style="font-size:12.5px;color:var(--text-muted)">${j.sent} / ${j.total} sent${j.failed>0?` · <span style="color:var(--danger)">${j.failed} failed</span>`:''}</span>
-              </div>
+              <div style="font-weight:700;font-size:14px;color:#9a3412">&#9208; ${heldJobs.length} job${heldJobs.length===1?'':'s'} held via API</div>
+              <div style="font-size:12px;color:#c2410c;margin-top:2px">${totalMsgs} message${totalMsgs===1?'':'s'} waiting for your approval</div>
             </div>
-            <div style="display:flex;gap:6px;flex-shrink:0">
-              ${actionBtn}
+            <div style="display:flex;gap:8px;flex-wrap:wrap">
+              <button class="btn btn-primary btn-sm" onclick="releaseApiMessages(0)">Release all (fast)</button>
+              <button class="btn btn-ghost btn-sm" onclick="releaseApiMessages(${pace})">Smart Throttle</button>
+              <button class="btn btn-ghost btn-sm" style="color:var(--danger)" onclick="cancelApiMessages()">Cancel all</button>
             </div>
-          </div>
-          ${j.total > 0 ? `
-            <div>
-              <div style="display:flex;justify-content:space-between;font-size:11.5px;color:var(--text-muted);margin-bottom:4px">
-                <span>Progress</span><span>${pct}%</span>
-              </div>
-              <div class="progress-bar"><div class="progress-fill" style="width:${pct}%${isActive?';animation:none':''}"></div></div>
-            </div>` : ''}
-          <div style="font-size:12px;color:var(--text-muted);margin-top:8px">
-            Started ${fmt(j.created_at)}
-            ${j.updated_at && j.updated_at !== j.created_at ? ` · Updated ${fmt(j.updated_at)}` : ''}
-            ${j.pace_seconds > 0 ? ` · Smart Throttle (~${j.pace_seconds}-${j.pace_seconds + 7}s)` : ''}
           </div>
         </div>`;
-    }).join('');
+      heldJobs.forEach(j => { html += renderJobCard(j); });
+      if (otherJobs.length > 0) {
+        html += `<div style="margin:14px 0 8px;font-size:11px;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:0.5px">Send history</div>`;
+      }
+    }
+
+    otherJobs.forEach(j => { html += renderJobCard(j); });
+    card.innerHTML = html;
   } catch (err) {
     if (card) card.innerHTML = `<div class="alert alert-error">${escHtml(err.message)}</div>`;
   }
