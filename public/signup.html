@@ -57,6 +57,14 @@
     .plan-feats { list-style: none; display: flex; flex-direction: column; gap: 4px; }
     .plan-feats li { font-size: 12px; color: #374151; display: flex; gap: 5px; align-items: flex-start; }
     .plan-feats li::before { content: '✓'; color: #16a34a; font-weight: 700; flex-shrink: 0; }
+    .billing-toggle-wrap { display:flex; align-items:center; justify-content:center; gap:8px; margin-bottom:16px; }
+    .billing-btn { padding:5px 14px; border-radius:99px; border:2px solid #e5e5e4; background:#fff; font-size:12.5px; font-weight:600; color:#6b7280; cursor:pointer; font-family:inherit; transition:all 0.15s; }
+    .billing-btn.active { border-color:#C44A76; background:#C44A76; color:#fff; }
+    .savings-chip { font-size:10px; font-weight:700; background:#f0fdf4; color:#15803d; border:1px solid #86efac; border-radius:99px; padding:1px 5px; margin-left:3px; }
+    .price-monthly { display:inline; }
+    .price-annual { display:none; }
+    .plan-grid.billing-annual .price-monthly { display:none; }
+    .plan-grid.billing-annual .price-annual { display:inline; }
     .btn-continue {
       width: 100%; padding: 11px; background: #C44A76; color: #fff; border: none; border-radius: 7px;
       font-size: 15px; font-weight: 600; cursor: pointer; font-family: inherit;
@@ -81,7 +89,7 @@
     }
     .pw-wrap { position: relative; margin-bottom: 0; }
     .pw-wrap input { padding-right: 38px; }
-    .pw-toggle { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer; color: #9ca3af; padding: 4px; line-height: 0; }
+    .pw-toggle { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer; color: #9ca3af; padding: 4px; line-height: 0; display:flex; align-items:center; justify-content:center; }
     input:focus { border-color: #111; }
     .btn {
       width: 100%; padding: 11px; background: #111; color: #fff; border: none; border-radius: 7px;
@@ -112,7 +120,12 @@
   <div class="step1-heading">Choose your plan</div>
   <div class="step1-sub">Start free anytime. Upgrade or cancel whenever.</div>
 
-  <div class="plan-grid">
+  <div class="billing-toggle-wrap">
+    <button class="billing-btn active" id="bb-monthly" onclick="setBilling('monthly')">Monthly</button>
+    <button class="billing-btn" id="bb-annual" onclick="setBilling('annual')">Annual <span class="savings-chip">2 months free</span></button>
+  </div>
+
+  <div class="plan-grid" id="plan-grid">
     <div class="plan-card selected" id="pc-free" onclick="selectPlan('free')">
       <div class="plan-check">✓</div>
       <div class="plan-label">Free</div>
@@ -120,30 +133,35 @@
       <div class="plan-price">$0 <span class="mo">/mo</span></div>
       <ul class="plan-feats">
         <li>50 texts/month</li>
-        <li>CSV upload</li>
-        <li>Message history</li>
+        <li>CSV up to 10 contacts</li>
       </ul>
     </div>
     <div class="plan-card" id="pc-starter" onclick="selectPlan('starter')">
       <div class="plan-check">✓</div>
       <div class="plan-label">Starter</div>
       <div class="plan-name">Starter</div>
-      <div class="plan-price">$8 <span class="mo">/mo</span></div>
+      <div class="plan-price">
+        <span class="price-monthly">$8 <span class="mo">/mo</span></span>
+        <span class="price-annual">$80 <span class="mo">/yr</span></span>
+      </div>
       <ul class="plan-feats">
-        <li>500 texts/month</li>
-        <li>CSV upload</li>
-        <li>Message history</li>
+        <li>2,000 texts/month</li>
+        <li>Unlimited bulk sends</li>
+        <li>Saved templates</li>
       </ul>
     </div>
     <div class="plan-card" id="pc-pro" onclick="selectPlan('pro')">
       <div class="plan-check">✓</div>
       <div class="plan-label">Pro</div>
       <div class="plan-name">Pro</div>
-      <div class="plan-price">$16 <span class="mo">/mo</span></div>
+      <div class="plan-price">
+        <span class="price-monthly">$16 <span class="mo">/mo</span></span>
+        <span class="price-annual">$160 <span class="mo">/yr</span></span>
+      </div>
       <ul class="plan-feats">
-        <li>Unlimited texts</li>
-        <li>CSV upload</li>
-        <li>Message history</li>
+        <li>6,000 texts/month</li>
+        <li>Image sending (Mac only)</li>
+        <li>API access</li>
       </ul>
     </div>
   </div>
@@ -193,6 +211,21 @@
 
 <script>
   let selectedPlan = 'free';
+  let billingCycle = 'monthly';
+
+  function setBilling(cycle) {
+    billingCycle = cycle;
+    const grid = document.getElementById('plan-grid');
+    if (cycle === 'annual') {
+      grid.classList.add('billing-annual');
+      document.getElementById('bb-annual').classList.add('active');
+      document.getElementById('bb-monthly').classList.remove('active');
+    } else {
+      grid.classList.remove('billing-annual');
+      document.getElementById('bb-monthly').classList.add('active');
+      document.getElementById('bb-annual').classList.remove('active');
+    }
+  }
 
   function selectPlan(plan) {
     selectedPlan = plan;
@@ -204,8 +237,8 @@
   function goToStep2() {
     const labels = {
       free: 'Free — 50 texts/month, no credit card',
-      starter: 'Starter — $8/mo, 500 texts/month',
-      pro: 'Pro — $16/mo, unlimited texts',
+      starter: billingCycle === 'annual' ? 'Starter — $80/yr (2 months free)' : 'Starter — $8/mo',
+      pro: billingCycle === 'annual' ? 'Pro — $160/yr (2 months free)' : 'Pro — $16/mo',
     };
     const badge = document.getElementById('plan-badge');
     badge.textContent = labels[selectedPlan];
@@ -307,7 +340,8 @@
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Signup failed');
       if (selectedPlan === 'starter' || selectedPlan === 'pro') {
-        window.location.href = '/billing/checkout?plan=' + encodeURIComponent(selectedPlan);
+        const checkoutUrl = '/billing/checkout?plan=' + encodeURIComponent(selectedPlan) + (billingCycle === 'annual' ? '&billing=annual' : '');
+        window.location.href = checkoutUrl;
       } else {
         window.location.href = '/app?new=1';
       }

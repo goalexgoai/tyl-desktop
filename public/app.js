@@ -2673,7 +2673,7 @@ function renderGettingStarted(main) {
         <div class="card" style="padding:24px;margin-bottom:16px">
           <h3 style="font-size:15px;font-weight:700;margin-bottom:10px">macOS Permissions</h3>
           <p style="font-size:13.5px;color:var(--text-muted);line-height:1.7">
-            macOS requires two permissions: Automation (to send via Messages) and Full Disk Access (for smart iMessage vs SMS routing). If you skipped Full Disk Access, go to <strong>Help → Manage Permissions</strong> to enable it.
+            macOS requires two permissions: Automation (to send via Messages) and Full Disk Access (for smart iMessage vs SMS routing). If you skipped Full Disk Access, go to <strong>Account Settings → Manage Permissions</strong> to enable it.
           </p>
         </div>` : `
         <div class="card" style="padding:24px;margin-bottom:16px">
@@ -3555,6 +3555,16 @@ function renderAccount(main) {
         </div>
       </div>
 
+      ${window.electronAPI?.platform === 'darwin' ? `
+      <div class="card" style="max-width:560px;margin-bottom:20px">
+        <div class="card-header"><h3>macOS Permissions</h3></div>
+        <div class="card-body" style="font-size:13.5px;line-height:1.6">
+          <p style="margin-bottom:10px">Text Your List needs two permissions: <strong>Automation</strong> (to send via Messages) and <strong>Full Disk Access</strong> (to detect iPhone vs Android and route to iMessage or SMS).</p>
+          <p style="margin-bottom:14px;color:var(--text-muted)">If sending isn't working or smart routing is off, click below to re-run the permissions setup.</p>
+          <button class="btn btn-primary btn-sm" id="btn-manage-permissions">Manage Permissions</button>
+        </div>
+      </div>` : ''}
+
       ${(u.plan === 'pro' || u.is_admin || u.manual_account) ? `
       <div class="card" style="max-width:560px;margin-bottom:20px">
         <div class="card-header"><h3>API Send Behavior <span style="font-size:11px;font-weight:500;background:var(--accent-light,#e8f0ff);color:var(--accent);padding:2px 7px;border-radius:10px;margin-left:6px">Pro</span></h3></div>
@@ -3562,14 +3572,14 @@ function renderAccount(main) {
           <p style="font-size:13px;color:var(--text-muted);margin-bottom:12px">When the app is closed, incoming API messages are held until you open it. When open, choose:</p>
           <div id="api-pace-alert"></div>
           <div style="display:flex;flex-direction:column;gap:10px">
-            <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer">
+            <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;text-transform:none;letter-spacing:0;font-weight:normal">
               <input type="radio" name="api_pace" value="0" style="margin-top:3px" ${u.api_default_pace === 0 ? 'checked' : ''}>
               <span>
                 <strong style="font-size:13.5px">Fast</strong>
                 <div style="font-size:12.5px;color:var(--text-muted)">Send immediately when the app opens</div>
               </span>
             </label>
-            <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer">
+            <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;text-transform:none;letter-spacing:0;font-weight:normal">
               <input type="radio" name="api_pace" value="7" style="margin-top:3px" ${(u.api_default_pace === 7 || u.api_default_pace === 20 || u.api_default_pace == null) ? 'checked' : ''}>
               <span>
                 <strong style="font-size:13.5px">Smart Throttle (recommended)</strong>
@@ -3582,6 +3592,9 @@ function renderAccount(main) {
       </div>` : ''}
 
     </div>`;
+
+  const managePermBtn = document.getElementById('btn-manage-permissions');
+  if (managePermBtn) managePermBtn.addEventListener('click', () => { window.location.href = '/setup'; });
 
   const upgBtn = document.getElementById('acct-upgrade-btn');
   if (upgBtn) upgBtn.addEventListener('click', openBillingPage);
@@ -3641,15 +3654,6 @@ function renderHelp(main) {
           <div><strong>Test Send</strong><br>Use Test Send to send a one-off test message to a single number before doing a bulk send.</div>
         </div>
       </div>
-      ${window.electronAPI?.platform === 'darwin' ? `
-      <div class="card" style="max-width:560px;margin-bottom:20px">
-        <div class="card-header"><h3>macOS Permissions</h3></div>
-        <div class="card-body" style="font-size:13.5px;line-height:1.6">
-          <p style="margin-bottom:10px">Text Your List needs two permissions to work on Mac: <strong>Automation</strong> (to send via Messages) and <strong>Full Disk Access</strong> (to detect iPhone vs Android and route to iMessage or SMS).</p>
-          <p style="margin-bottom:14px;color:var(--text-muted)">If you skipped Full Disk Access on install, or if smart routing isn't working, use the button below to re-run the setup.</p>
-          <button class="btn btn-primary btn-sm" id="btn-manage-permissions">Manage Permissions</button>
-        </div>
-      </div>` : ''}
       <div class="card" style="max-width:560px;margin-bottom:20px">
         <div class="card-header"><h3>Your data</h3></div>
         <div class="card-body" style="font-size:13.5px;line-height:1.6;color:var(--text-muted)">
@@ -3680,15 +3684,8 @@ function renderHelp(main) {
       </div>
     </div>`;
 
-  const managePermBtn = document.getElementById('btn-manage-permissions');
-  if (managePermBtn) {
-    managePermBtn.addEventListener('click', () => {
-      window.location.href = '/setup';
-    });
-  }
-
   document.getElementById('help-docs-btn').addEventListener('click', () => {
-    const url = 'https://textyourlist.com';
+    const url = 'https://textyourlist.com/help';
     if (window.electronAPI?.openExternal) window.electronAPI.openExternal(url);
     else window.open(url, '_blank');
   });
