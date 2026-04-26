@@ -389,6 +389,55 @@ async function cancelApiMessages() {
   }
 }
 
+// Per-job review prompt — shown when clicking Review on a single held job in history
+window._heldJobCache = {};
+
+function showJobReviewPrompt(jobId) {
+  const job = window._heldJobCache[jobId];
+  if (!job) return;
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.45);display:flex;align-items:center;justify-content:center;z-index:9999';
+  const count = job.total || 1;
+  overlay.innerHTML = `
+    <div style="background:var(--bg,#fff);border-radius:14px;padding:28px 32px;max-width:420px;width:90%;box-shadow:0 20px 60px rgba(0,0,0,0.25)">
+      <div style="font-size:22px;margin-bottom:10px">&#9208;</div>
+      <h3 style="font-size:17px;font-weight:700;margin-bottom:4px;text-transform:none">${escHtml(job.name)}</h3>
+      <p style="font-size:13px;color:var(--text-muted,#666);margin-bottom:20px">${count} message${count===1?'':'s'} held via API</p>
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <button id="jrp-fast" class="btn btn-primary" style="font-size:14px;padding:10px">Send now (fast)</button>
+        <button id="jrp-throttle" class="btn btn-ghost" style="font-size:14px;padding:10px">Send with Smart Throttle</button>
+        <button id="jrp-hold" class="btn btn-ghost" style="font-size:14px;padding:10px">Keep holding</button>
+        <button id="jrp-cancel" style="font-size:13px;color:var(--text-muted,#888);background:none;border:none;cursor:pointer;padding:6px;text-align:center">Cancel this job</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  const pace = currentUser?.api_default_pace >= 0 ? currentUser.api_default_pace : 7;
+  overlay.querySelector('#jrp-fast').addEventListener('click', async () => { overlay.remove(); await releaseApiJob(job.id, 0); });
+  overlay.querySelector('#jrp-throttle').addEventListener('click', async () => { overlay.remove(); await releaseApiJob(job.id, pace); });
+  overlay.querySelector('#jrp-hold').addEventListener('click', () => overlay.remove());
+  overlay.querySelector('#jrp-cancel').addEventListener('click', async () => { overlay.remove(); await cancelApiJob(job.id); });
+}
+
+async function releaseApiJob(jobId, paceSeconds) {
+  try {
+    await post('/api/jobs/release-api', { paceSeconds, job_id: jobId });
+    currentUser = await get('/api/auth/me');
+    updateUserBadge();
+    render();
+    showToast('Job released — sending now.');
+  } catch (err) { showToast('Could not release job: ' + err.message); }
+}
+
+async function cancelApiJob(jobId) {
+  try {
+    await post('/api/jobs/cancel-api', { job_id: jobId });
+    currentUser = await get('/api/auth/me');
+    updateUserBadge();
+    render();
+    showToast('Job cancelled.');
+  } catch (err) { showToast('Could not cancel job: ' + err.message); }
+}
+
 function updateSetupCheckmark() {
   const done = localStorage.getItem('setup_complete') === '1';
   const el = document.getElementById('setup-checkmark');
@@ -480,7 +529,7 @@ function renderSend(main) {
           <button class="btn btn-ghost btn-sm" style="color:var(--danger)" onclick="cancelApiMessages()">Cancel all</button>
         </div>
       </div>
-      <div style="font-size:12px;color:#c2410c;margin-top:6px">To act on these later, go to the <strong>Jobs</strong> tab — they appear at the top of your history.</div>
+      <div style="font-size:12px;color:#c2410c;margin-top:6px">To act on these later, check <strong>Send History</strong> — they appear at the top with a Review button.</div>
     </div>` : ''}
     <div class="main-body"><div id="send-body"></div></div>`;
 
@@ -2389,7 +2438,9 @@ async function loadCampaignHistory() {
       card.innerHTML = `<div class="empty-state"><div class="empty-icon">&#9636;</div><p>No campaigns yet. Click "New campaign" to get started.</p></div>`;
       return;
     }
-    card.innerHTML = jobs.slice(0, 50).map(j => {
+    const displayed = jobs.slice(0, 50);
+    displayed.forEach(j => { if (j.status === 'api_pending') window._heldJobCache[j.id] = j; });
+    card.innerHTML = displayed.map(j => {
       const pct = j.total ? Math.round(j.sent / j.total * 100) : 0;
       const isActive = j.status === 'queued';
       const isDraft = j.status === 'draft';
@@ -2397,7 +2448,7 @@ async function loadCampaignHistory() {
       const isWebJob = j._source === 'web';
       let actionBtn = '';
       if (isDraft) actionBtn = `<button class="btn btn-primary btn-sm" onclick="openJobDetail('${j.id}')">Edit &amp; Send</button>`;
-      else if (isHeld) actionBtn = `<button class="btn btn-primary btn-sm" onclick="showPendingApiPrompt(${j.total || 1})">Review</button>`;
+      else if (isHeld) actionBtn = `<button class="btn btn-primary btn-sm" onclick="showJobReviewPrompt('${j.id}')">Review</button>`;
       else if (!isWebJob) actionBtn = `<button class="btn btn-ghost btn-sm" onclick="openJobDetail('${j.id}')">View</button>`;
       return `
         <div class="card" style="margin-bottom:12px;padding:16px 20px">

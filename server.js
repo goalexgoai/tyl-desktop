@@ -967,39 +967,62 @@ app.get('/api/jobs', requireAuth, async (req, res) => {
 });
 
 // Release API-pending jobs: set to 'queued' — handles both local DB and web DB jobs
-app.post('/api/jobs/release-api', requireAuth, (req, res) => {
-  const { paceSeconds = 0 } = req.body;
+app.post('/api/jobs/release-api', requireAuth, async (req, res) => {
+  const { paceSeconds = 0, job_id } = req.body;
   const pace = Math.max(0, parseInt(paceSeconds, 10) || 0);
-  const jobs = db.prepare("SELECT id FROM jobs WHERE user_id = ? AND status = 'api_pending'").all(req.user.id);
+  const localJobs = job_id
+    ? db.prepare("SELECT id FROM jobs WHERE id = ? AND user_id = ? AND status = 'api_pending'").all(job_id, req.user.id)
+    : db.prepare("SELECT id FROM jobs WHERE user_id = ? AND status = 'api_pending'").all(req.user.id);
   const update = db.prepare("UPDATE jobs SET status='queued', pace_seconds=?, updated_at=datetime('now') WHERE id=?");
-  if (jobs.length) { db.transaction(() => { jobs.forEach(j => update.run(pace, j.id)); })(); }
-  // Also release web-server pending jobs (fire-and-forget)
+  if (localJobs.length) { db.transaction(() => { localJobs.forEach(j => update.run(pace, j.id)); })(); }
+  let webReleased = 0;
   if (req.user.web_user_id) {
-    desktopWebPost('/api/desktop-web-pending', { web_user_id: req.user.web_user_id, action: 'release', pace_seconds: pace })
-      .then(() => { db.prepare('UPDATE users SET web_pending_count = 0 WHERE id = ?').run(req.user.id); })
-      .catch(() => {});
+    try {
+      const payload = { web_user_id: req.user.web_user_id, action: 'release', pace_seconds: pace };
+      if (job_id) payload.job_id = job_id;
+      const r = await desktopWebPost('/api/desktop-web-pending', payload);
+      if (r.status === 200) {
+        webReleased = r.body.released || 0;
+        const newCount = job_id
+          ? Math.max(0, (req.user.web_pending_count || 0) - webReleased)
+          : 0;
+        db.prepare('UPDATE users SET web_pending_count = ? WHERE id = ?').run(newCount, req.user.id);
+      }
+    } catch (_) {}
   }
-  res.json({ released: jobs.length });
+  res.json({ released: localJobs.length + webReleased });
 });
 
 // Cancel API-pending jobs — handles both local DB and web DB jobs
-app.post('/api/jobs/cancel-api', requireAuth, (req, res) => {
-  const jobs = db.prepare("SELECT id FROM jobs WHERE user_id = ? AND status = 'api_pending'").all(req.user.id);
-  if (jobs.length) {
+app.post('/api/jobs/cancel-api', requireAuth, async (req, res) => {
+  const { job_id } = req.body;
+  const localJobs = job_id
+    ? db.prepare("SELECT id FROM jobs WHERE id = ? AND user_id = ? AND status = 'api_pending'").all(job_id, req.user.id)
+    : db.prepare("SELECT id FROM jobs WHERE user_id = ? AND status = 'api_pending'").all(req.user.id);
+  if (localJobs.length) {
     db.transaction(() => {
-      jobs.forEach(j => {
+      localJobs.forEach(j => {
         db.prepare("UPDATE messages SET status='cancelled', updated_at=datetime('now') WHERE job_id=?").run(j.id);
         db.prepare("UPDATE jobs SET status='cancelled', updated_at=datetime('now') WHERE id=?").run(j.id);
       });
     })();
   }
-  // Also cancel web-server pending jobs (fire-and-forget)
+  let webCancelled = 0;
   if (req.user.web_user_id) {
-    desktopWebPost('/api/desktop-web-pending', { web_user_id: req.user.web_user_id, action: 'cancel' })
-      .then(() => { db.prepare('UPDATE users SET web_pending_count = 0 WHERE id = ?').run(req.user.id); })
-      .catch(() => {});
+    try {
+      const payload = { web_user_id: req.user.web_user_id, action: 'cancel' };
+      if (job_id) payload.job_id = job_id;
+      const r = await desktopWebPost('/api/desktop-web-pending', payload);
+      if (r.status === 200) {
+        webCancelled = r.body.cancelled || 0;
+        const newCount = job_id
+          ? Math.max(0, (req.user.web_pending_count || 0) - webCancelled)
+          : 0;
+        db.prepare('UPDATE users SET web_pending_count = ? WHERE id = ?').run(newCount, req.user.id);
+      }
+    } catch (_) {}
   }
-  res.json({ cancelled: jobs.length });
+  res.json({ cancelled: localJobs.length + webCancelled });
 });
 
 app.get('/api/jobs/:id', requireAuth, (req, res) => {
