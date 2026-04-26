@@ -470,13 +470,17 @@ function renderSend(main) {
       <div style="font-size:12px;color:var(--text-muted);margin-top:4px">&#128161; Tip: We recommend sending no more than 200 texts per day to protect your number from spam filters.</div>
     </div>
     <div id="companion-status-banner"></div>
-    ${(u.pending_api_count || 0) > 0 ? `<div id="api-pending-banner" style="background:#eff6ff;border:1px solid #93c5fd;border-radius:8px;padding:12px 16px;margin:0 0 12px;font-size:13.5px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
-      <span>&#128274; <strong>${u.pending_api_count} message${u.pending_api_count===1?'':'s'} waiting</strong> via API — held for your approval.</span>
-      <div style="display:flex;gap:8px;flex-wrap:wrap">
-        <button class="btn btn-primary btn-sm" onclick="releaseApiMessages(0)">Send now (fast)</button>
-        <button class="btn btn-ghost btn-sm" onclick="releaseApiMessages(7)">Send with Smart Throttle</button>
-        <button class="btn btn-ghost btn-sm" style="color:var(--danger)" onclick="cancelApiMessages()">Cancel all</button>
+    ${(u.pending_api_count || 0) > 0 ? `<div id="api-pending-banner" style="background:#fff7ed;border:1px solid #fb923c;border-radius:8px;padding:14px 16px;margin:0 0 14px;font-size:13.5px">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
+        <span style="font-weight:600;color:#9a3412">⏸ ${u.pending_api_count} message${u.pending_api_count===1?'':'s'} held via API — waiting for your approval</span>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn btn-primary btn-sm" onclick="releaseApiMessages(0)">Send now (fast)</button>
+          <button class="btn btn-ghost btn-sm" onclick="releaseApiMessages(${u.api_default_pace >= 0 ? u.api_default_pace : 7})">Smart Throttle</button>
+          <button class="btn btn-ghost btn-sm" onclick="document.getElementById('api-pending-banner').style.display='none'">Keep holding</button>
+          <button class="btn btn-ghost btn-sm" style="color:var(--danger)" onclick="cancelApiMessages()">Cancel all</button>
+        </div>
       </div>
+      <div style="font-size:12px;color:#c2410c;margin-top:6px">To act on these later, go to the <strong>Jobs</strong> tab — they appear at the top of your history.</div>
     </div>` : ''}
     <div class="main-body"><div id="send-body"></div></div>`;
 
