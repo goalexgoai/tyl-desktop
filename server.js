@@ -63,14 +63,13 @@ const imageUpload = multer({
 
 // ─── Plan config ─────────────────────────────────────────────────────────────
 
-// Updated plan definitions (Build 5)
-// Free: 50 sends/mo, 1 API key, bulk send up to 10 contacts, companion included
-// Starter ($10/mo or $96/yr): 2,000 sends, 1 API key, CSV/bulk unlimited, templates, companion
-// Pro ($30/mo or $288/yr): 6,000 sends, unlimited API keys, all features, API webhook sends
+// Free: $0/mo — 50 sends, bulk up to 10 contacts, no templates, no API
+// Starter: $8/mo ($80/yr) — 2,000 sends, unlimited bulk contacts, templates, no API
+// Pro: $16/mo ($160/yr) — 6,000 sends, unlimited bulk contacts, templates, API (unlimited keys), images (Mac)
 const PLANS = {
-  free:    { label: 'Free',    monthly_limit: 50,   bulk_max_contacts: 10,   api_keys: 1,        companion: true, csv: true,  templates: false, api_send: false, price: 0  },
-  starter: { label: 'Starter', monthly_limit: 2000, bulk_max_contacts: Infinity, api_keys: 1,        companion: true, csv: true,  templates: true,  api_send: false, price: 8  },
-  pro:     { label: 'Pro',     monthly_limit: 6000, bulk_max_contacts: Infinity, api_keys: Infinity, companion: true, csv: true,  templates: true,  api_send: true,  price: 16 },
+  free:    { label: 'Free',    monthly_limit: 50,   bulk_max_contacts: 10,        api_keys: 0,        companion: true, csv: true,  templates: false, api_send: false, price: 0  },
+  starter: { label: 'Starter', monthly_limit: 2000, bulk_max_contacts: Infinity,  api_keys: 0,        companion: true, csv: true,  templates: true,  api_send: false, price: 8  },
+  pro:     { label: 'Pro',     monthly_limit: 6000, bulk_max_contacts: Infinity,  api_keys: Infinity, companion: true, csv: true,  templates: true,  api_send: true,  price: 16 },
 };
 
 // ─── Session ──────────────────────────────────────────────────────────────────

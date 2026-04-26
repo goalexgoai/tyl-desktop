@@ -2657,7 +2657,7 @@ async function setJobStatus(jobId, status) {
 async function renderDeveloper(main) {
   const u = currentUser;
   const isProOrAdmin = u.is_admin || u.manual_account || u.plan === 'pro';
-  const canCreateKey = isProOrAdmin || u.plan === 'starter' || u.plan === 'free';
+  const canCreateKey = isProOrAdmin;
 
   main.innerHTML = `
     <div class="main-header"><h2>Developer</h2></div>
