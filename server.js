@@ -2668,6 +2668,28 @@ if (process.env.TYL_DESKTOP) {
   }
 
   // Web API poll loop — handles jobs created via Make.com/API on the web server.
+  // Download an external image URL to a local temp file; returns the local path.
+  async function downloadImageUrl(imageUrl) {
+    const https = require('https');
+    const http = require('http');
+    const { URL } = require('url');
+    const parsed = new URL(imageUrl);
+    const ext = path.extname(parsed.pathname).replace(/[^a-z0-9.]/gi, '') || '.jpg';
+    const tmpPath = path.join(os.tmpdir(), `tyl-api-img-${uuidv4()}${ext}`);
+    return new Promise((resolve, reject) => {
+      const proto = parsed.protocol === 'https:' ? https : http;
+      const req = proto.get(imageUrl, { timeout: 10000 }, (res) => {
+        if (res.statusCode !== 200) { reject(new Error(`HTTP ${res.statusCode}`)); return; }
+        const file = fs.createWriteStream(tmpPath);
+        res.pipe(file);
+        file.on('finish', () => { file.close(); resolve(tmpPath); });
+        file.on('error', reject);
+      });
+      req.on('error', reject);
+      req.on('timeout', () => { req.destroy(); reject(new Error('Image download timed out')); });
+    });
+  }
+
   // Polls web /api/poll using the stored companion key, sends locally, acks back to web.
   async function webApiPollLoop() {
     const platform = process.platform === 'darwin' ? 'mac' : 'windows';
@@ -2696,11 +2718,23 @@ if (process.env.TYL_DESKTOP) {
         console.log(`[web-poll] got message ${message.id} for ${message.phone}`);
         process.stdout.write('__TRAY:green__\n');
 
+        // Download image to a local temp file if the job includes one
+        let localImagePath = null;
+        if (message.image_url) {
+          try {
+            localImagePath = await downloadImageUrl(message.image_url);
+          } catch (dlErr) {
+            console.warn(`[web-poll] image download failed (${message.image_url}): ${dlErr.message}`);
+          }
+        }
+
         try {
-          await sendFn(message.phone, message.body, null);
+          await sendFn(message.phone, message.body, localImagePath);
+          if (localImagePath) { try { fs.unlinkSync(localImagePath); } catch (_) {} }
           await desktopWebPost('/api/ack', { message_id: message.id, status: 'sent' }, user.web_companion_key);
           console.log(`[web-poll] sent → ${message.phone}`);
         } catch (err) {
+          if (localImagePath) { try { fs.unlinkSync(localImagePath); } catch (_) {} }
           const errorMsg = err.message || 'Send failed';
           const isAppClosed = /connection is invalid|application isn't running|phone link not found|phonelink.*not found|execution error.*messages|phone link window|could not find phone link/i.test(errorMsg);
           await desktopWebPost('/api/ack', { message_id: message.id, status: 'failed', error: errorMsg }, user.web_companion_key)
