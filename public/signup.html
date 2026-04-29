@@ -57,6 +57,7 @@
     .plan-feats { list-style: none; display: flex; flex-direction: column; gap: 4px; }
     .plan-feats li { font-size: 12px; color: #374151; display: flex; gap: 5px; align-items: flex-start; }
     .plan-feats li::before { content: '✓'; color: #16a34a; font-weight: 700; flex-shrink: 0; }
+    .plan-feats li.plan-feats-label::before { content: ''; }
     .billing-toggle-wrap { display:flex; align-items:center; justify-content:center; gap:8px; margin-bottom:16px; }
     .billing-btn { padding:5px 14px; border-radius:99px; border:2px solid #e5e5e4; background:#fff; font-size:12.5px; font-weight:600; color:#6b7280; cursor:pointer; font-family:inherit; transition:all 0.15s; }
     .billing-btn.active { border-color:#C44A76; background:#C44A76; color:#fff; }
@@ -121,11 +122,11 @@
   <div class="step1-sub">Start free anytime. Upgrade or cancel whenever.</div>
 
   <div class="billing-toggle-wrap">
-    <button class="billing-btn active" id="bb-monthly" onclick="setBilling('monthly')">Monthly</button>
-    <button class="billing-btn" id="bb-annual" onclick="setBilling('annual')">Annual <span class="savings-chip">2 months free</span></button>
+    <button class="billing-btn" id="bb-monthly" onclick="setBilling('monthly')">Monthly</button>
+    <button class="billing-btn active" id="bb-annual" onclick="setBilling('annual')">Annual <span class="savings-chip">2 months free</span></button>
   </div>
 
-  <div class="plan-grid" id="plan-grid">
+  <div class="plan-grid billing-annual" id="plan-grid">
     <div class="plan-card selected" id="pc-free" onclick="selectPlan('free')">
       <div class="plan-check">✓</div>
       <div class="plan-label">Free</div>
@@ -159,6 +160,7 @@
         <span class="price-annual">$160 <span class="mo">/yr</span></span>
       </div>
       <ul class="plan-feats">
+        <li class="plan-feats-label" style="color:#6b7280;font-style:italic">Everything in Starter, plus:</li>
         <li>6,000 texts/month</li>
         <li>Image sending (Mac only)</li>
         <li>API access</li>
@@ -211,7 +213,7 @@
 
 <script>
   let selectedPlan = 'free';
-  let billingCycle = 'monthly';
+  let billingCycle = 'annual';
 
   function setBilling(cycle) {
     billingCycle = cycle;

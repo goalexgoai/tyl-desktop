@@ -1,6 +1,6 @@
 {
   "name": "textyourlist",
-  "version": "1.0.54",
+  "version": "1.0.58",
   "description": "Text Your List — Send personal texts to your list",
   "main": "main.js",
   "scripts": {
@@ -73,13 +73,14 @@
     "win": {
       "target": [
         {
-          "target": "nsis",
+          "target": "portable",
           "arch": [
             "x64"
           ]
         }
       ],
-      "icon": "assets/icon.ico"
+      "icon": "assets/icon.ico",
+      "signAndEditExecutable": false
     },
     "publish": {
       "provider": "github",

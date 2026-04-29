@@ -2148,9 +2148,9 @@ app.get('/api/lists/:id/view', requireAuth, (req, res) => {
 
 // ─── Billing ─────────────────────────────────────────────────────────────────
 
-// GET /billing/checkout — redirect from signup with plan param (Change 1)
+// GET /billing/checkout — redirect from signup with plan+billing params
 app.get('/billing/checkout', requireAuth, async (req, res) => {
-  const { plan } = req.query;
+  const { plan, billing } = req.query;
   if (!['starter', 'pro'].includes(plan)) return res.redirect('/app');
 
   if (!stripe) {
@@ -2158,10 +2158,14 @@ app.get('/billing/checkout', requireAuth, async (req, res) => {
     return res.redirect('/app?billing_flash=not_configured&plan=' + encodeURIComponent(plan));
   }
 
-  // Derive monthly price ID by default
+  const isAnnual = billing === 'annual';
   const priceId = plan === 'starter'
-    ? (process.env.STRIPE_STARTER_MONTHLY_PRICE_ID || process.env.STRIPE_STARTER_PRICE_ID)
-    : (process.env.STRIPE_PRO_MONTHLY_PRICE_ID || process.env.STRIPE_PRO_PRICE_ID);
+    ? (isAnnual
+        ? (process.env.STRIPE_STARTER_ANNUAL_PRICE_ID || process.env.STRIPE_STARTER_PRICE_ID)
+        : (process.env.STRIPE_STARTER_MONTHLY_PRICE_ID || process.env.STRIPE_STARTER_PRICE_ID))
+    : (isAnnual
+        ? (process.env.STRIPE_PRO_ANNUAL_PRICE_ID || process.env.STRIPE_PRO_PRICE_ID)
+        : (process.env.STRIPE_PRO_MONTHLY_PRICE_ID || process.env.STRIPE_PRO_PRICE_ID));
 
   const validPriceIds = [
     process.env.STRIPE_STARTER_MONTHLY_PRICE_ID,
@@ -2177,19 +2181,20 @@ app.get('/billing/checkout', requireAuth, async (req, res) => {
   }
 
   try {
-    const appUrl = process.env.APP_URL || `${req.protocol}://${req.get('host')}`;
+    const localUrl = `${req.protocol}://${req.get('host')}`;
     const session = await stripe.checkout.sessions.create({
       mode: 'subscription',
       payment_method_types: ['card'],
       line_items: [{ price: priceId, quantity: 1 }],
-      success_url: `${appUrl}/app?billing=success`,
-      cancel_url: `${appUrl}/app?billing=cancelled`,
+      success_url: `${localUrl}/app?billing=success`,
+      cancel_url: `${localUrl}/app?billing=cancelled`,
       customer_email: req.user.email,
-      metadata: { user_id: String(req.user.id), plan },
+      metadata: { user_id: String(req.user.web_user_id || req.user.id), plan },
     });
     return res.redirect(session.url);
   } catch (err) {
-    return res.redirect('/app?billing_flash=error');
+    console.error('[billing/checkout GET] Stripe error:', err.message);
+    return res.redirect('/app?billing_flash=error&msg=' + encodeURIComponent(err.message || 'Checkout failed'));
   }
 });
 
@@ -2234,15 +2239,15 @@ app.post('/billing/checkout', requireAuth, async (req, res) => {
   }
 
   try {
-    const appUrl = process.env.APP_URL || `${req.protocol}://${req.get('host')}`;
+    const localUrl = `${req.protocol}://${req.get('host')}`;
     const session = await stripe.checkout.sessions.create({
       mode: 'subscription',
       payment_method_types: ['card'],
       line_items: [{ price: priceId, quantity: 1 }],
-      success_url: `${appUrl}/app?billing=success`,
-      cancel_url: `${appUrl}/app?billing=cancelled`,
+      success_url: `${localUrl}/app?billing=success`,
+      cancel_url: `${localUrl}/app?billing=cancelled`,
       customer_email: req.user.email,
-      metadata: { user_id: String(req.user.id), plan },
+      metadata: { user_id: String(req.user.web_user_id || req.user.id), plan },
     });
     res.json({ url: session.url });
   } catch (err) {

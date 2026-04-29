@@ -255,6 +255,12 @@ async function init() {
       // Show flash after render
       setTimeout(() => showToast(`Billing not configured yet — you've been set up on the free plan. (Wanted: ${plan})`, 6000), 500);
       history.replaceState({}, '', '/app');
+    } else if (params.get('billing_flash') === 'error') {
+      setTimeout(() => showToast('Payment setup failed. Please try upgrading from your account page or contact support.', 7000), 500);
+      history.replaceState({}, '', '/app');
+    } else if (params.get('billing') === 'cancelled') {
+      setTimeout(() => showToast('Checkout cancelled — you can upgrade anytime from your account page.', 5000), 500);
+      history.replaceState({}, '', '/app');
     }
 
   } catch (e) {
@@ -599,7 +605,8 @@ async function checkCompanionBanner() {
       el.innerHTML = `<div style="background:#fef3c7;border:1px solid #fbbf24;border-radius:8px;padding:10px 16px;margin:0 0 12px;font-size:13.5px;display:flex;align-items:center;gap:10px">
         <span style="font-size:16px">&#9888;</span>
         <span><strong>Companion app not connected.</strong> Your messages are queued but won't send until your companion app is open and running.
-        <a href="#" onclick="navigate('help');return false" style="color:var(--accent);text-decoration:underline">Go to Help</a> to download it.</span>
+        <a href="#" onclick="navigate('help');return false" style="color:var(--accent);text-decoration:underline">Go to Help</a> to download it.
+        First time? <a href="#" onclick="navigate('account');return false" style="color:var(--accent);text-decoration:underline">Test your setup</a> from Account Settings after installing.</span>
       </div>`;
     }
   } catch (e) { /* ignore */ }
@@ -620,7 +627,7 @@ function renderQuickSend(body) {
     ${!isBlocked && remaining <= 0 ? upgradePrompt(`You've used all ${u.monthly_limit} sends this month.`) : ''}
 
     <div class="card" style="max-width:640px">
-      <div class="card-header"><h3>Test Send</h3></div>
+      <div class="card-header"><h3>Test Send <span title="Single sends here don't count toward your monthly limit" style="display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:50%;background:#e5e7eb;color:#6b7280;font-size:10px;font-weight:700;cursor:help;vertical-align:middle;margin-left:4px;line-height:1">i</span></h3></div>
       <div class="card-body">
         <div class="form-row">
           <label>Phone number</label>
@@ -3719,6 +3726,22 @@ function renderAccount(main) {
         </div>
       </div>` : ''}
 
+      <div class="card" style="max-width:560px;margin-bottom:20px">
+        <div class="card-header"><h3>Test Send <span title="Test sends verify your setup is working — they don't count toward your monthly send limit." style="display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:50%;background:var(--border,#e5e7eb);color:var(--text-muted,#6b7280);font-size:10px;font-weight:700;cursor:help;vertical-align:middle;margin-left:4px;line-height:1">i</span></h3></div>
+        <div class="card-body">
+          <div id="test-send-alert"></div>
+          <div class="form-row">
+            <label>Phone number</label>
+            <input type="tel" id="test-send-phone" placeholder="+1 801 555 0100" style="max-width:280px" />
+          </div>
+          <div class="form-row">
+            <label>Message</label>
+            <textarea id="test-send-msg" rows="3" placeholder="Type a short test message..." style="max-width:400px;resize:vertical"></textarea>
+          </div>
+          <button class="btn btn-primary btn-sm" id="test-send-btn">Send Test</button>
+        </div>
+      </div>
+
       ${(u.plan === 'pro' || u.is_admin || u.manual_account) ? `
       <div class="card" style="max-width:560px;margin-bottom:20px">
         <div class="card-header"><h3 style="text-transform:none">Api send behavior <span style="font-size:11px;font-weight:500;background:var(--accent-light,#e8f0ff);color:var(--accent);padding:2px 7px;border-radius:10px;margin-left:6px">Pro</span></h3></div>
@@ -3765,6 +3788,30 @@ function renderAccount(main) {
       </div>` : ''}
 
     </div>`;
+
+  const testSendBtn = document.getElementById('test-send-btn');
+  if (testSendBtn) {
+    testSendBtn.addEventListener('click', async () => {
+      const phone = document.getElementById('test-send-phone').value.trim();
+      const message = document.getElementById('test-send-msg').value.trim();
+      const alertEl = document.getElementById('test-send-alert');
+      alertEl.innerHTML = '';
+      if (!phone || !message) { alertEl.innerHTML = '<div class="alert alert-error">Enter a phone number and message.</div>'; return; }
+      testSendBtn.disabled = true;
+      testSendBtn.textContent = 'Sending…';
+      try {
+        await post('/api/send-one', { phone, message, test: true });
+        alertEl.innerHTML = '<div class="alert alert-success">Test sent! Check your phone.</div>';
+        document.getElementById('test-send-phone').value = '';
+        document.getElementById('test-send-msg').value = '';
+      } catch (err) {
+        alertEl.innerHTML = `<div class="alert alert-error">${escHtml(err.message)}</div>`;
+      } finally {
+        testSendBtn.disabled = false;
+        testSendBtn.textContent = 'Send Test';
+      }
+    });
+  }
 
   const managePermBtn = document.getElementById('btn-manage-permissions');
   if (managePermBtn) managePermBtn.addEventListener('click', () => { window.location.href = '/setup'; });

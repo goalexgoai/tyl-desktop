@@ -62,7 +62,7 @@ Start-Sleep -Milliseconds 500
 
 # Open new message via Ctrl+N — skipping button search avoids slow FindAll on WebView2 UI tree
 [System.Windows.Forms.SendKeys]::SendWait('^n')
-Start-Sleep -Milliseconds 800
+Start-Sleep -Milliseconds 1500
 
 # Find edit fields using only ControlType (no compound conditions — faster on WebView2)
 $editTypeCond = New-Object System.Windows.Automation.PropertyCondition(
@@ -72,8 +72,7 @@ $editTypeCond = New-Object System.Windows.Automation.PropertyCondition(
 
 $edits = $window.FindAll([System.Windows.Automation.TreeScope]::Descendants, $editTypeCond)
 $recipient = $edits | Where-Object { $_.Current.Name -match 'Type a name|Type a number|To:' } | Select-Object -First 1
-if (-not $recipient) { $recipient = $edits | Select-Object -First 1 }
-if (-not $recipient) { throw 'Recipient field not found' }
+if (-not $recipient) { throw 'Recipient field not found — new message dialog may not have opened. Make sure Phone Link is on the home screen, not inside an existing conversation.' }
 
 $recipient.SetFocus()
 Start-Sleep -Milliseconds 300
@@ -85,8 +84,7 @@ Start-Sleep -Milliseconds 2000
 
 $edits2 = $window.FindAll([System.Windows.Automation.TreeScope]::Descendants, $editTypeCond)
 $msgField = $edits2 | Where-Object { $_.Current.Name -match 'Type a message|Aa|Message|Continue' } | Select-Object -First 1
-if (-not $msgField) { $msgField = $edits2 | Select-Object -Last 1 }
-if (-not $msgField) { throw 'Message field not found' }
+if (-not $msgField) { throw 'Message field not found — phone number may not have resolved to a contact yet. Try increasing the wait time or check that the contact exists in Phone Link.' }
 
 $msgField.SetFocus()
 Start-Sleep -Milliseconds 300
