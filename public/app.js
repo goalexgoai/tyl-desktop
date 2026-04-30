@@ -523,6 +523,7 @@ function renderSend(main) {
         ${u.monthly_sends} / ${u.monthly_limit} sends &nbsp;&middot;&nbsp; resets in ${daysUntilReset} day${daysUntilReset===1?'':'s'}
       </div>
       <div style="font-size:12px;color:var(--text-muted);margin-top:4px">&#128161; Tip: We recommend sending no more than 200 texts per day to protect your number from spam filters.</div>
+      <div style="margin-top:8px"><a href="#" onclick="navigate('quick-send');return false" style="font-size:12.5px;color:var(--accent);text-decoration:none">&#9656; Test your setup first</a></div>
     </div>
     <div id="companion-status-banner"></div>
     ${(u.pending_api_count || 0) > 0 ? `<div id="api-pending-banner" style="background:#fff7ed;border:1px solid #fb923c;border-radius:8px;padding:14px 16px;margin:0 0 14px;font-size:13.5px">
@@ -3727,18 +3728,10 @@ function renderAccount(main) {
       </div>` : ''}
 
       <div class="card" style="max-width:560px;margin-bottom:20px">
-        <div class="card-header"><h3>Test Send <span title="Test sends verify your setup is working — they don't count toward your monthly send limit." style="display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:50%;background:var(--border,#e5e7eb);color:var(--text-muted,#6b7280);font-size:10px;font-weight:700;cursor:help;vertical-align:middle;margin-left:4px;line-height:1">i</span></h3></div>
+        <div class="card-header"><h3>Test Send</h3></div>
         <div class="card-body">
-          <div id="test-send-alert"></div>
-          <div class="form-row">
-            <label>Phone number</label>
-            <input type="tel" id="test-send-phone" placeholder="+1 801 555 0100" style="max-width:280px" />
-          </div>
-          <div class="form-row">
-            <label>Message</label>
-            <textarea id="test-send-msg" rows="3" placeholder="Type a short test message..." style="max-width:400px;resize:vertical"></textarea>
-          </div>
-          <button class="btn btn-primary btn-sm" id="test-send-btn">Send Test</button>
+          <p style="font-size:13.5px;color:var(--text-muted);margin-bottom:14px">Send a single text to verify your setup is working. Test sends don't count toward your monthly limit.</p>
+          <button class="btn btn-primary btn-sm" id="test-send-btn">Go to Test Send</button>
         </div>
       </div>
 
@@ -3790,28 +3783,7 @@ function renderAccount(main) {
     </div>`;
 
   const testSendBtn = document.getElementById('test-send-btn');
-  if (testSendBtn) {
-    testSendBtn.addEventListener('click', async () => {
-      const phone = document.getElementById('test-send-phone').value.trim();
-      const message = document.getElementById('test-send-msg').value.trim();
-      const alertEl = document.getElementById('test-send-alert');
-      alertEl.innerHTML = '';
-      if (!phone || !message) { alertEl.innerHTML = '<div class="alert alert-error">Enter a phone number and message.</div>'; return; }
-      testSendBtn.disabled = true;
-      testSendBtn.textContent = 'Sending…';
-      try {
-        await post('/api/send-one', { phone, message, test: true });
-        alertEl.innerHTML = '<div class="alert alert-success">Test sent! Check your phone.</div>';
-        document.getElementById('test-send-phone').value = '';
-        document.getElementById('test-send-msg').value = '';
-      } catch (err) {
-        alertEl.innerHTML = `<div class="alert alert-error">${escHtml(err.message)}</div>`;
-      } finally {
-        testSendBtn.disabled = false;
-        testSendBtn.textContent = 'Send Test';
-      }
-    });
-  }
+  if (testSendBtn) testSendBtn.addEventListener('click', () => navigate('quick-send'));
 
   const managePermBtn = document.getElementById('btn-manage-permissions');
   if (managePermBtn) managePermBtn.addEventListener('click', () => { window.location.href = '/setup'; });
