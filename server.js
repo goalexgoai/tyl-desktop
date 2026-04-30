@@ -1406,6 +1406,160 @@ app.post('/api/make/send', apiSendLimiter, requireApiKey, (req, res) => {
   res.status(201).json(result);
 });
 
+// ─── Make/Agent API — list & template discovery ───────────────────────────────
+
+// GET /api/make/lists — list all saved contact lists (id, name, row_count)
+app.get('/api/make/lists', requireApiKey, (req, res) => {
+  const isPrivileged = req.user.is_admin || req.user.manual_account;
+  if (!isPrivileged) {
+    const plan = PLANS[req.user.plan] || PLANS.free;
+    if (!plan.api_send) return res.status(403).json({ error: 'Pro plan required to use the Agent API.' });
+  }
+  const lists = db.prepare('SELECT id, name, row_count, created_at FROM contact_lists WHERE user_id = ? ORDER BY created_at DESC').all(req.user.id);
+  res.json(lists);
+});
+
+// GET /api/make/templates — list all saved templates (id, name, body preview)
+app.get('/api/make/templates', requireApiKey, (req, res) => {
+  const isPrivileged = req.user.is_admin || req.user.manual_account;
+  if (!isPrivileged) {
+    const plan = PLANS[req.user.plan] || PLANS.free;
+    if (!plan.api_send) return res.status(403).json({ error: 'Pro plan required to use the Agent API.' });
+  }
+  const templates = db.prepare('SELECT id, name, body FROM templates WHERE user_id = ? ORDER BY created_at DESC').all(req.user.id);
+  res.json(templates.map(t => ({ id: t.id, name: t.name, preview: t.body.slice(0, 80) + (t.body.length > 80 ? '…' : '') })));
+});
+
+// POST /api/make/send-to-list — bulk send to a saved contact list via API key
+// Body: { list_id|list_name, template|template_id|template_name, campaign_name?, pace_seconds? }
+app.post('/api/make/send-to-list', apiSendLimiter, requireApiKey, (req, res) => {
+  const isPrivileged = req.user.is_admin || req.user.manual_account;
+  if (!isPrivileged) {
+    const plan = PLANS[req.user.plan] || PLANS.free;
+    if (!plan.api_send) return res.status(403).json({ error: 'Pro plan required to use the Agent API.', upgrade: true });
+  }
+
+  const { list_id, list_name, template, template_id, template_name, campaign_name, pace_seconds } = req.body;
+
+  // ── Resolve contact list ──────────────────────────────────────────────────
+  if (!list_id && !list_name) return res.status(400).json({ error: 'list_id or list_name is required' });
+  const list = list_id
+    ? db.prepare('SELECT * FROM contact_lists WHERE id = ? AND user_id = ?').get(list_id, req.user.id)
+    : db.prepare('SELECT * FROM contact_lists WHERE user_id = ? AND name = ? COLLATE NOCASE').get(req.user.id, list_name);
+  if (!list) return res.status(404).json({ error: list_id ? `List id "${list_id}" not found.` : `No list named "${list_name}". Use GET /api/make/lists to see available lists.` });
+
+  // ── Resolve template text ─────────────────────────────────────────────────
+  if (!template && !template_id && !template_name) return res.status(400).json({ error: 'template, template_id, or template_name is required' });
+  let templateBody = template || null;
+  if (!templateBody) {
+    const tRow = template_id
+      ? db.prepare('SELECT body FROM templates WHERE id = ? AND user_id = ?').get(template_id, req.user.id)
+      : db.prepare('SELECT body FROM templates WHERE user_id = ? AND name = ? COLLATE NOCASE').get(req.user.id, template_name);
+    if (!tRow) return res.status(404).json({ error: template_id ? `Template id "${template_id}" not found.` : `No template named "${template_name}". Use GET /api/make/templates to see available templates.` });
+    templateBody = tRow.body;
+  }
+  const templateError = validateMaxLength(templateBody, 1600, 'Message template');
+  if (templateError) return res.status(400).json({ error: templateError });
+
+  // ── Parse CSV and auto-detect column map ──────────────────────────────────
+  let parsedRows;
+  try {
+    parsedRows = parse(list.csv_data, { columns: true, skip_empty_lines: true, trim: true });
+  } catch (err) {
+    return res.status(500).json({ error: 'Failed to parse list CSV: ' + err.message });
+  }
+  if (!parsedRows.length) return res.status(400).json({ error: 'Contact list is empty.' });
+
+  const columns = Object.keys(parsedRows[0]);
+  const phoneCol = columns.find(c => /phone|mobile|cell|number/i.test(c)) || columns[0] || '';
+  if (!phoneCol) return res.status(400).json({ error: 'Could not detect a phone column in the list.' });
+  const columnMap = { phone: phoneCol };
+  for (const col of columns) {
+    if (col === phoneCol) continue;
+    const token = col.replace(/[^a-zA-Z0-9_]/g, '_').replace(/^_+|_+$/g, '').toLowerCase();
+    if (token) columnMap[token] = col;
+  }
+
+  // ── Plan limits ───────────────────────────────────────────────────────────
+  if (!isPrivileged) {
+    const plan = PLANS[req.user.plan] || PLANS.free;
+    const bulkMax = plan.bulk_max_contacts || Infinity;
+    if (isFinite(bulkMax) && parsedRows.length > bulkMax) parsedRows = parsedRows.slice(0, bulkMax);
+  }
+  const limitCheck = checkSendLimit(req.user, parsedRows.length);
+  if (!limitCheck.allowed) {
+    return res.status(402).json({
+      error: `Send limit reached. ${limitCheck.remaining} sends remaining this month on the ${PLANS[limitCheck.plan]?.label || req.user.plan} plan.`,
+      upgrade: true, remaining: limitCheck.remaining, limit: limitCheck.limit,
+    });
+  }
+
+  // ── Determine pace and job status ─────────────────────────────────────────
+  const resolvedPace = pace_seconds !== undefined ? Number(pace_seconds) : (req.user.api_default_pace ?? 7);
+  const jobStatus = resolvedPace === -1 ? 'api_pending' : 'queued';
+
+  // ── Build and queue job ───────────────────────────────────────────────────
+  const suppressed = db.prepare('SELECT phone FROM suppression_list WHERE user_id = ? OR user_id IS NULL').all(req.user.id).map(r => r.phone);
+  const suppressedSet = new Set(suppressed);
+
+  const jobId = uuidv4();
+  const jobName = campaign_name || `API: ${list.name}`;
+  const insertJob = db.prepare('INSERT INTO jobs (id, user_id, name, template, pace_seconds, status) VALUES (?, ?, ?, ?, ?, ?)');
+  const insertMsg = db.prepare('INSERT INTO messages (id, job_id, phone, first_name, last_name, link, body, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
+
+  let queued = 0, skippedSuppress = 0, skippedInvalid = 0, skippedDuplicate = 0;
+
+  const doInserts = db.transaction(() => {
+    if (!isPrivileged) {
+      const fresh = db.prepare('SELECT monthly_sends, plan FROM users WHERE id = ?').get(req.user.id);
+      const planObj = PLANS[fresh.plan] || PLANS.free;
+      const freshRemaining = planObj.monthly_limit - fresh.monthly_sends;
+      if (freshRemaining < parsedRows.length) {
+        const err = new Error('LIMIT_EXCEEDED');
+        err.remaining = freshRemaining;
+        throw err;
+      }
+    }
+    insertJob.run(jobId, req.user.id, jobName, templateBody, Math.max(0, resolvedPace), jobStatus);
+    const seenPhones = new Set();
+    for (const row of parsedRows) {
+      const rawPhone = row[columnMap.phone];
+      const phone = normalizePhone(rawPhone);
+      if (!phone) { skippedInvalid++; continue; }
+      if (seenPhones.has(phone)) { skippedDuplicate++; continue; }
+      seenPhones.add(phone);
+      if (suppressedSet.has(phone)) { skippedSuppress++; continue; }
+      const body = renderDynamicTemplate(templateBody, row, columnMap);
+      insertMsg.run(uuidv4(), jobId, phone, columnMap.first_name ? (row[columnMap.first_name] || '') : '', columnMap.last_name ? (row[columnMap.last_name] || '') : '', columnMap.link ? (row[columnMap.link] || '') : '', body, 'pending');
+      queued++;
+    }
+    db.prepare("UPDATE jobs SET total=?, updated_at=datetime('now') WHERE id=?").run(queued, jobId);
+  });
+
+  try {
+    doInserts();
+  } catch (err) {
+    if (err.message === 'LIMIT_EXCEEDED') {
+      return res.status(402).json({ error: `Send limit reached. ${err.remaining} sends remaining this month.`, upgrade: true });
+    }
+    throw err;
+  }
+
+  res.status(201).json({
+    job_id: jobId,
+    campaign_name: jobName,
+    list: list.name,
+    status: jobStatus,
+    queued,
+    skipped_suppressed: skippedSuppress,
+    skipped_invalid: skippedInvalid,
+    skipped_duplicate: skippedDuplicate,
+    note: jobStatus === 'api_pending'
+      ? 'Job is held for review. Open the app → Jobs tab to release it.'
+      : 'Job is queued and will send when the desktop app is open.',
+  });
+});
+
 // Web UI route — requires session auth
 app.post('/api/send-one', requireAuth, (req, res) => {
   const { phone, message, imageName } = req.body;
