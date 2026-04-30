@@ -22,5 +22,10 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Rebuild native modules for Node.js
+        # electron-builder install-app-deps (postinstall) replaces better-sqlite3
+        # with an Electron-compiled binary; rebuild it for plain Node so tests work.
+        run: npm rebuild better-sqlite3
+
       - name: Run tests
         run: ./node_modules/.bin/jest --forceExit
