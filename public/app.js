@@ -2484,6 +2484,7 @@ async function loadCampaignHistory() {
       card.innerHTML = `<div class="empty-state"><div class="empty-icon">&#9636;</div><p>No campaigns yet. Click "New campaign" to get started.</p></div>`;
       return;
     }
+    jobs.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
     const displayed = jobs.slice(0, 50);
     const heldJobs = displayed.filter(j => j.status === 'api_pending');
     const otherJobs = displayed.filter(j => j.status !== 'api_pending');
