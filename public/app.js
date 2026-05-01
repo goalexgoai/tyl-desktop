@@ -522,8 +522,7 @@ function renderSend(main) {
       <div style="font-size:12.5px;color:var(--text-muted)">
         ${u.monthly_sends} / ${u.monthly_limit} sends &nbsp;&middot;&nbsp; resets in ${daysUntilReset} day${daysUntilReset===1?'':'s'}
       </div>
-      <div style="font-size:12px;color:var(--text-muted);margin-top:4px">&#128161; Tip: We recommend sending no more than 200 texts per day to protect your number from spam filters.</div>
-      <div style="margin-top:8px"><a href="#" onclick="navigate('quick-send');return false" style="font-size:12.5px;color:var(--accent);text-decoration:none">&#9656; Test your setup first</a></div>
+      <a href="#" onclick="navigate('quick-send');return false" style="font-size:12.5px;color:var(--accent);font-weight:600;text-decoration:underline;margin-top:4px">Send a test message</a>
     </div>
     <div id="companion-status-banner"></div>
     ${(u.pending_api_count || 0) > 0 ? `<div id="api-pending-banner" style="background:#fff7ed;border:1px solid #fb923c;border-radius:8px;padding:14px 16px;margin:0 0 14px;font-size:13.5px">
