@@ -3,7 +3,8 @@ const path = require('path');
 const fs = require('fs');
 const http = require('http');
 const crypto = require('crypto');
-const { autoUpdater } = require('electron-updater');
+let autoUpdater = null;
+try { autoUpdater = require('electron-updater').autoUpdater; } catch (_) {}
 
 app.setAppUserModelId('com.textyourlist.app');
 
@@ -228,7 +229,7 @@ if (!gotLock) {
         mainWindow.loadURL(`http://127.0.0.1:${port}/setup`);
       }
 
-      if (app.isPackaged) autoUpdater.checkForUpdatesAndNotify().catch(() => {});
+      if (app.isPackaged && autoUpdater) autoUpdater.checkForUpdatesAndNotify().catch(() => {});
     } catch (err) {
       console.error('Startup failed:', err);
       const { dialog } = require('electron');
