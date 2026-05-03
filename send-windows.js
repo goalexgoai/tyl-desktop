@@ -4,19 +4,16 @@ const { join } = require('path');
 const os = require('os');
 
 function escapeSendKeys(value) {
-  // Escape SendKeys special characters
   return value.replace(/([+^%~{}\[\]()])/g, '{$1}');
 }
 
 function escapePowerShell(value) {
-  // Escape single quotes for PowerShell single-quoted strings
   return value.replace(/'/g, "''");
 }
 
 module.exports = async function sendViaPhoneLink(number, message) {
   const safeNumber = escapeSendKeys(escapePowerShell(number));
-  // Message goes via clipboard, not SendKeys — clipboard preserves emoji and unicode.
-  // Only PowerShell single-quote escaping is needed here.
+  // Message goes via clipboard — preserves emoji and unicode without SendKeys escaping.
   const safeMessage = escapePowerShell(message || '');
   const tmpFile = join(os.tmpdir(), `textyourlist-${Date.now()}.ps1`);
 
@@ -27,7 +24,7 @@ Add-Type -AssemblyName UIAutomationClient
 Add-Type -AssemblyName UIAutomationTypes
 Add-Type -AssemblyName System.Windows.Forms
 
-# Find Phone Link across all known process names — never filter by MainWindowHandle (UWP = 0)
+# Find Phone Link across all known process names
 $proc = $null
 foreach ($name in @(${processNames.map(n => `'${n}'`).join(',')})) {
   $found = Get-Process -Name $name -ErrorAction SilentlyContinue | Select-Object -First 1
@@ -56,22 +53,41 @@ function Wait-Element($start, $cond, $timeout = 10) {
 $window = Wait-Element $root $pidCond 5
 if (-not $window) { throw 'Could not find Phone Link window via UIAutomation' }
 
-# Bring Phone Link to front
 $window.SetFocus()
 Start-Sleep -Milliseconds 500
 
-# Open new message via Ctrl+N — skipping button search avoids slow FindAll on WebView2 UI tree
-[System.Windows.Forms.SendKeys]::SendWait('^n')
+# Try to find and click the compose button first; fall back to Ctrl+N
+$btnTypeCond = New-Object System.Windows.Automation.PropertyCondition(
+  [System.Windows.Automation.AutomationElement]::ControlTypeProperty,
+  [System.Windows.Automation.ControlType]::Button
+)
+$invokableCond = New-Object System.Windows.Automation.PropertyCondition(
+  [System.Windows.Automation.AutomationElement]::IsInvokePatternAvailableProperty, $true
+)
+$btnCond = New-Object System.Windows.Automation.AndCondition($btnTypeCond, $invokableCond)
+$compose = $window.FindAll([System.Windows.Automation.TreeScope]::Descendants, $btnCond) |
+  Where-Object { $_.Current.Name -match 'New message|Compose|New conversation' } |
+  Select-Object -First 1
+if ($compose) {
+  $compose.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke()
+} else {
+  [System.Windows.Forms.SendKeys]::SendWait('^n')
+}
 Start-Sleep -Milliseconds 1500
 
-# Find edit fields using only ControlType (no compound conditions — faster on WebView2)
+# Find edit fields (type + enabled)
 $editTypeCond = New-Object System.Windows.Automation.PropertyCondition(
   [System.Windows.Automation.AutomationElement]::ControlTypeProperty,
   [System.Windows.Automation.ControlType]::Edit
 )
+$enabledCond = New-Object System.Windows.Automation.PropertyCondition(
+  [System.Windows.Automation.AutomationElement]::IsEnabledProperty, $true
+)
+$editCond = New-Object System.Windows.Automation.AndCondition($editTypeCond, $enabledCond)
 
-$edits = $window.FindAll([System.Windows.Automation.TreeScope]::Descendants, $editTypeCond)
+$edits = $window.FindAll([System.Windows.Automation.TreeScope]::Descendants, $editCond)
 $recipient = $edits | Where-Object { $_.Current.Name -match 'Type a name|Type a number|To:' } | Select-Object -First 1
+if (-not $recipient) { $recipient = $edits | Select-Object -First 1 }
 if (-not $recipient) { throw 'Recipient field not found — new message dialog may not have opened. Make sure Phone Link is on the home screen, not inside an existing conversation.' }
 
 $recipient.SetFocus()
@@ -79,30 +95,38 @@ Start-Sleep -Milliseconds 300
 [System.Windows.Forms.SendKeys]::SendWait('${safeNumber}')
 Start-Sleep -Milliseconds 700
 [System.Windows.Forms.SendKeys]::SendWait('{ENTER}')
-# Wait for Phone Link to redraw the conversation view — iPhone contacts may take longer to resolve
-Start-Sleep -Milliseconds 2000
+Start-Sleep -Milliseconds 1500
 
-$edits2 = $window.FindAll([System.Windows.Automation.TreeScope]::Descendants, $editTypeCond)
+$edits2 = $window.FindAll([System.Windows.Automation.TreeScope]::Descendants, $editCond)
 $msgField = $edits2 | Where-Object { $_.Current.Name -match 'Type a message|Aa|Message|Continue' } | Select-Object -First 1
-if (-not $msgField) { throw 'Message field not found — phone number may not have resolved to a contact yet. Try increasing the wait time or check that the contact exists in Phone Link.' }
+if (-not $msgField) { $msgField = $edits2 | Select-Object -Last 1 }
+if (-not $msgField) { throw 'Message field not found — phone number may not have resolved. Check that the contact exists in Phone Link.' }
 
 $msgField.SetFocus()
 Start-Sleep -Milliseconds 300
-# Use clipboard paste so emoji and unicode characters are preserved
+
+# Use clipboard paste so emoji and unicode are preserved
 [System.Windows.Forms.Clipboard]::SetText('${safeMessage}')
 Start-Sleep -Milliseconds 150
 [System.Windows.Forms.SendKeys]::SendWait('^v')
 Start-Sleep -Milliseconds 500
-# Send via Enter key — avoids slow FindAll for send button on WebView2 UI tree
-[System.Windows.Forms.SendKeys]::SendWait('{ENTER}')
+
+# Try to find and invoke the Send button; fall back to Enter
+$sendBtn = $window.FindAll([System.Windows.Automation.TreeScope]::Descendants, $btnCond) |
+  Where-Object { $_.Current.Name -match '^Send$|^Send message$' } |
+  Select-Object -First 1
+if ($sendBtn) {
+  $sendBtn.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke()
+} else {
+  [System.Windows.Forms.SendKeys]::SendWait('{ENTER}')
+}
 Start-Sleep -Milliseconds 500
 `;
 
-  // Write as UTF-16 LE with BOM so PowerShell 5 (Windows 10 default) reads it correctly.
-  // PS5 reads .ps1 files as system ANSI when there's no BOM, corrupting emoji.
-  // UTF-16 LE + BOM is the one encoding PS5 always handles correctly.
+  // Write as UTF-16 LE with BOM — PS5 (Windows 10 default) reads .ps1 as system ANSI
+  // without a BOM, which corrupts special characters. UTF-16 LE BOM is always safe.
   const scriptBuffer = Buffer.concat([
-    Buffer.from([0xFF, 0xFE]), // UTF-16 LE BOM
+    Buffer.from([0xFF, 0xFE]),
     Buffer.from(script, 'utf16le'),
   ]);
   writeFileSync(tmpFile, scriptBuffer);
@@ -112,11 +136,10 @@ Start-Sleep -Milliseconds 500
       execFile(
         'powershell',
         ['-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', tmpFile],
-        { windowsHide: true, timeout: 25000 },
+        { windowsHide: true, timeout: 30000 },
         (err, stdout, stderr) => {
           if (err) {
-            const detail = ((stderr || stdout || '').toString().trim());
-            // Treat a timeout as "Phone Link not responding" so the job pauses
+            const detail = (stderr || stdout || '').toString().trim();
             if (!detail && (err.killed || err.code === 'ETIMEDOUT' || err.signal)) {
               return reject(new Error('Could not find Phone Link window via UIAutomation (timed out)'));
             }

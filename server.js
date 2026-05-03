@@ -1,4 +1,4 @@
-require('dotenv').config();
+try { require('dotenv').config(); } catch (_) {}
 const express = require('express');
 const helmet = require('helmet');
 const { rateLimit } = require('express-rate-limit');
@@ -324,6 +324,14 @@ function log(userId, messageId, jobId, phone, status, error = null) {
     .run(userId || null, messageId, jobId, phone, status, error);
 }
 
+function notifyDesktop(title, body) {
+  if (!process.env.TYL_DESKTOP) return;
+  try {
+    const { Notification } = require('electron');
+    if (Notification.isSupported()) new Notification({ title, body }).show();
+  } catch (_) {}
+}
+
 function recountJob(jobId) {
   const counts = db.prepare(`
     SELECT
@@ -339,6 +347,12 @@ function recountJob(jobId) {
     const pending = db.prepare("SELECT COUNT(*) as c FROM messages WHERE job_id = ? AND status IN ('pending','sending')").get(jobId);
     if (pending.c === 0) {
       db.prepare("UPDATE jobs SET status='completed', updated_at=datetime('now') WHERE id=?").run(jobId);
+      if (counts.failed > 0) {
+        notifyDesktop(
+          'Send finished with errors',
+          `${counts.sent} sent, ${counts.failed} failed. Open the History tab for details.`
+        );
+      }
     }
   }
 }
