@@ -56,6 +56,16 @@ if (-not $window) { throw 'Could not find Phone Link window via UIAutomation' }
 $window.SetFocus()
 Start-Sleep -Milliseconds 500
 
+# Press Escape several times to dismiss any open conversation/dialog and return Phone Link to the home screen.
+# This is critical for group sends — after the first message Phone Link stays in the conversation view,
+# so the second call would attempt to compose from the wrong state without this reset.
+[System.Windows.Forms.SendKeys]::SendWait('{ESC}')
+Start-Sleep -Milliseconds 300
+[System.Windows.Forms.SendKeys]::SendWait('{ESC}')
+Start-Sleep -Milliseconds 300
+[System.Windows.Forms.SendKeys]::SendWait('{ESC}')
+Start-Sleep -Milliseconds 500
+
 # Try to find and click the compose button first; fall back to Ctrl+N
 $btnTypeCond = New-Object System.Windows.Automation.PropertyCondition(
   [System.Windows.Automation.AutomationElement]::ControlTypeProperty,
@@ -120,7 +130,23 @@ if ($sendBtn) {
 } else {
   [System.Windows.Forms.SendKeys]::SendWait('{ENTER}')
 }
-Start-Sleep -Milliseconds 500
+Start-Sleep -Milliseconds 1200
+
+# Verify the message was sent by checking that the message field is now empty.
+# If it still contains text the send did not go through — throw so the caller marks it failed
+# rather than silently recording a false success.
+$edits3 = $window.FindAll([System.Windows.Automation.TreeScope]::Descendants, $editCond)
+$verifyField = $edits3 | Where-Object { $_.Current.Name -match 'Type a message|Aa|Message|Continue' } | Select-Object -First 1
+if ($verifyField) {
+  $remaining = ''
+  try {
+    $vp = $verifyField.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern)
+    $remaining = $vp.Current.Value
+  } catch {}
+  if ($remaining -and $remaining.Trim() -ne '') {
+    throw "Message send may have failed — message field still contains text after send attempt. Phone Link may not have sent the message."
+  }
+}
 `;
 
   // Write as UTF-16 LE with BOM — PS5 (Windows 10 default) reads .ps1 as system ANSI

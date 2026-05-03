@@ -14,6 +14,62 @@ let serverPort = null;
 let serverReady = false;
 app.isQuitting = false;
 
+// ── Send progress / completion ──────────────────────────────────────────────
+const { EventEmitter } = require('events');
+global.tylEvents = new EventEmitter();
+
+let progressWindow = null;
+
+function openProgressWindow() {
+  if (progressWindow && !progressWindow.isDestroyed()) return;
+  progressWindow = new BrowserWindow({
+    width: 420,
+    height: process.platform === 'win32' ? 260 : 180,
+    resizable: false,
+    minimizable: false,
+    maximizable: false,
+    closable: false,
+    alwaysOnTop: true,
+    title: 'Sending…',
+    webPreferences: { nodeIntegration: false, contextIsolation: true },
+  });
+  progressWindow.setMenuBarVisibility(false);
+  progressWindow.loadURL(`http://127.0.0.1:${serverPort}/send-progress-page`);
+}
+
+function closeProgressWindow() {
+  if (progressWindow && !progressWindow.isDestroyed()) {
+    progressWindow.destroy();
+  }
+  progressWindow = null;
+}
+
+global.tylEvents.on('send-start', () => {
+  openProgressWindow();
+});
+
+global.tylEvents.on('send-complete', ({ sent, failed, failures }) => {
+  closeProgressWindow();
+  const { dialog } = require('electron');
+  const parent = mainWindow && !mainWindow.isDestroyed() ? mainWindow : null;
+  if (failed === 0) {
+    dialog.showMessageBox(parent, {
+      type: 'info',
+      title: 'Send complete',
+      message: `✓ All ${sent} message${sent !== 1 ? 's' : ''} sent successfully.`,
+      buttons: ['OK'],
+    });
+  } else {
+    const failLines = failures.map(f => `• ${f.phone}: ${f.error || 'unknown error'}`).join('\n');
+    dialog.showMessageBox(parent, {
+      type: 'warning',
+      title: 'Send complete — some failures',
+      message: `${sent} sent, ${failed} failed.\n\nFailed messages:\n${failLines}\n\nCheck the History tab for full details.`,
+      buttons: ['OK'],
+    });
+  }
+});
+
 function setTrayStatus(status) {
   if (!tray) return; // No tray on macOS
   const icons = {

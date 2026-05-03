@@ -324,6 +324,9 @@ function log(userId, messageId, jobId, phone, status, error = null) {
     .run(userId || null, messageId, jobId, phone, status, error);
 }
 
+// In-memory progress tracker for the desktop progress window
+let _sendProgress = null; // { jobId, total, current, phone, done, sent, failed }
+
 function notifyDesktop(title, body) {
   if (!process.env.TYL_DESKTOP) return;
   try {
@@ -347,11 +350,15 @@ function recountJob(jobId) {
     const pending = db.prepare("SELECT COUNT(*) as c FROM messages WHERE job_id = ? AND status IN ('pending','sending')").get(jobId);
     if (pending.c === 0) {
       db.prepare("UPDATE jobs SET status='completed', updated_at=datetime('now') WHERE id=?").run(jobId);
-      if (counts.failed > 0) {
-        notifyDesktop(
-          'Send finished with errors',
-          `${counts.sent} sent, ${counts.failed} failed. Open the History tab for details.`
-        );
+      // Collect failure details for completion report
+      const failures = db.prepare(
+        "SELECT phone, error FROM messages WHERE job_id = ? AND status IN ('failed','dead') ORDER BY created_at"
+      ).all(jobId);
+      if (_sendProgress && _sendProgress.jobId === jobId) {
+        _sendProgress = { ..._sendProgress, done: true, sent: counts.sent, failed: counts.failed };
+      }
+      if (global.tylEvents) {
+        global.tylEvents.emit('send-complete', { sent: counts.sent, failed: counts.failed, failures });
       }
     }
   }
@@ -2736,6 +2743,51 @@ app.get('/robots.txt', (req, res) => {
 
 app.use('/companion', express.static(path.join(__dirname, 'companion')));
 
+// ─── Desktop send progress page (no auth — localhost only) ───────────────────
+app.get('/send-progress-page', (req, res) => {
+  const isWin = process.platform === 'win32';
+  const warning = isWin
+    ? `<div class="warning">⚠️ Do not touch your keyboard or mouse until sending is complete.<br>Moving the mouse or typing can interrupt Phone Link and cause messages to fail.</div>`
+    : '';
+  res.send(`<!DOCTYPE html><html><head><meta charset="UTF-8"/>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#111;color:#fff;
+       display:flex;flex-direction:column;align-items:center;justify-content:center;
+       height:100vh;text-align:center;padding:28px;gap:0}
+  .spinner{width:36px;height:36px;border:3px solid #333;border-top-color:#C44A76;
+           border-radius:50%;animation:spin .8s linear infinite;margin-bottom:18px}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  h1{font-size:17px;font-weight:700;margin-bottom:6px}
+  #prog{font-size:13px;color:#C44A76;margin-bottom:4px;min-height:18px}
+  #phone{font-size:12px;color:#666;margin-bottom:16px;min-height:16px}
+  .warning{background:#431010;border:1px solid #dc2626;border-radius:8px;
+           padding:12px 16px;font-size:12.5px;color:#fca5a5;line-height:1.5;max-width:340px}
+</style></head><body>
+<div class="spinner"></div>
+<h1>Sending in progress…</h1>
+<div id="prog">Starting…</div>
+<div id="phone"></div>
+${warning}
+<script>
+async function poll(){
+  try{
+    const d=await(await fetch('/api/send-progress-status')).json();
+    if(d.idle){document.getElementById('prog').textContent='Idle';return;}
+    if(d.done){document.getElementById('prog').textContent='Complete — you can close this window.';return;}
+    document.getElementById('prog').textContent='Message '+d.current+' of '+d.total;
+    document.getElementById('phone').textContent=d.phone||'';
+  }catch(e){}
+  setTimeout(poll,600);
+}
+poll();
+</script></body></html>`);
+});
+
+app.get('/api/send-progress-status', (req, res) => {
+  res.json(_sendProgress || { idle: true });
+});
+
 // ─── Desktop embedded sender ─────────────────────────────────────────────────
 // When running as a desktop app (TYL_DESKTOP=1), send messages directly from
 // the server process instead of relying on an external companion process.
@@ -2768,6 +2820,17 @@ if (process.env.TYL_DESKTOP) {
       `).get();
 
       if (!message) return;
+
+      // Track progress and emit start event on first message of a job
+      if (!_sendProgress || _sendProgress.jobId !== message.job_id) {
+        const jobTotal = db.prepare(
+          "SELECT COUNT(*) as c FROM messages WHERE job_id = ?"
+        ).get(message.job_id)?.c || 1;
+        _sendProgress = { jobId: message.job_id, total: jobTotal, current: 0, phone: '', done: false, sent: 0, failed: 0 };
+        if (global.tylEvents) global.tylEvents.emit('send-start', { total: jobTotal, jobId: message.job_id });
+      }
+      _sendProgress.current = (_sendProgress.current || 0) + 1;
+      _sendProgress.phone = message.phone;
 
       // Pace enforcement with jitter — carriers flag perfectly rhythmic sends
       if (message.pace_seconds > 0) {
