@@ -1,6 +1,6 @@
 {
   "name": "textyourlist",
-  "version": "1.0.67",
+  "version": "1.0.68",
   "description": "Text Your List — Send personal texts to your list",
   "main": "main.js",
   "scripts": {
@@ -73,7 +73,7 @@
     "win": {
       "target": [
         {
-          "target": "portable",
+          "target": "nsis",
           "arch": [
             "x64"
           ]

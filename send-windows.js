@@ -30,7 +30,7 @@ public class Win32 {
     [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);
     [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
     [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
-    [DllImport("user32.dll")] public static extern int GetWindowThreadProcessId(IntPtr hWnd, out int lpdwProcessId);
+    [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
 }
 "@ -Language CSharp
 
@@ -47,7 +47,6 @@ if (-not $proc) {
 }
 
 # ── 2. Find Phone Link window via UIAutomation ──────────────────────────────
-# Modern Phone Link (MSIX/UWP) has MainWindowHandle = 0, so we must use UIAutomation.
 $root = [System.Windows.Automation.AutomationElement]::RootElement
 $pidCond = New-Object System.Windows.Automation.PropertyCondition(
   [System.Windows.Automation.AutomationElement]::ProcessIdProperty, $proc.Id
@@ -63,26 +62,48 @@ function Wait-Element($start, $cond, $timeoutSec = 10) {
   return $null
 }
 
+function Is-PhoneLinkForeground {
+  $fgHwnd = [Win32]::GetForegroundWindow()
+  $fgPid = [uint32]0
+  [Win32]::GetWindowThreadProcessId($fgHwnd, [ref]$fgPid) | Out-Null
+  return ($fgPid -eq [uint32]$proc.Id)
+}
+
 $window = Wait-Element $root $pidCond 6
 if (-not $window) { throw 'Could not find Phone Link window via UIAutomation' }
 
-# ── 3. Bring Phone Link to foreground ───────────────────────────────────────
-# Three-layer approach: UIAutomation SetFocus, Win32 SetForegroundWindow (if HWND exists),
-# and WScript.Shell AppActivate by PID (works even for packaged apps with no classic HWND).
+# ── 3. Bring Phone Link to foreground — verify it worked ───────────────────
+# Layer 1: UIAutomation SetFocus (accessibility-level, bypasses some restrictions)
 $window.SetFocus()
+Start-Sleep -Milliseconds 200
+
+# Layer 2: Win32 ShowWindow + SetForegroundWindow if we have an HWND
 $hwnd = [IntPtr]$window.Current.NativeWindowHandle
 if ($hwnd -ne [IntPtr]::Zero) {
   [Win32]::ShowWindow($hwnd, 9) | Out-Null   # SW_RESTORE
   [Win32]::SetForegroundWindow($hwnd) | Out-Null
+  Start-Sleep -Milliseconds 200
 }
+
+# Layer 3: WScript.Shell AppActivate — special Shell privilege, bypasses foreground lock
 $shell = New-Object -ComObject WScript.Shell
-# Try by PID, then by known window titles as fallback
 if (-not $shell.AppActivate($proc.Id)) {
   if (-not $shell.AppActivate('Phone Link')) {
     $shell.AppActivate('Link to Windows') | Out-Null
   }
 }
-Start-Sleep -Milliseconds 800
+Start-Sleep -Milliseconds 300
+
+# ── Verify foreground before sending any keys ───────────────────────────────
+# If Phone Link is not the foreground window, Ctrl+N would go to the wrong app.
+if (-not (Is-PhoneLinkForeground)) {
+  # One more SetFocus attempt — UIAutomation can succeed even when Win32 API is blocked
+  $window.SetFocus()
+  Start-Sleep -Milliseconds 400
+  if (-not (Is-PhoneLinkForeground)) {
+    throw 'Could not bring Phone Link to the foreground. Click on the Phone Link window and try again.'
+  }
+}
 
 # ── 4. Open compose view via Ctrl+N ─────────────────────────────────────────
 $editTypeCond = New-Object System.Windows.Automation.PropertyCondition(
@@ -91,10 +112,12 @@ $editTypeCond = New-Object System.Windows.Automation.PropertyCondition(
 )
 $editsBefore = $window.FindAll([System.Windows.Automation.TreeScope]::Descendants, $editTypeCond).Count
 
+# SetFocus immediately before SendKeys — no gap for another window to steal focus
+$window.SetFocus()
 [System.Windows.Forms.SendKeys]::SendWait('^n')
 
-# Wait up to 4s for compose to open — we know it opened when a new Edit field appears.
-$composeDeadline = [datetime]::Now.AddSeconds(4)
+# Wait up to 5s for a new Edit field to appear (compose dialog opened)
+$composeDeadline = [datetime]::Now.AddSeconds(5)
 $composeOpened = $false
 while ([datetime]::Now -lt $composeDeadline) {
   if ($window.FindAll([System.Windows.Automation.TreeScope]::Descendants, $editTypeCond).Count -gt $editsBefore) {
@@ -104,71 +127,70 @@ while ([datetime]::Now -lt $composeDeadline) {
   Start-Sleep -Milliseconds 200
 }
 if (-not $composeOpened) {
-  throw 'Phone Link compose view did not open — Phone Link may not be in the foreground. Make sure Phone Link is the active window and try again.'
+  throw 'Phone Link compose view did not open after Ctrl+N. Make sure Phone Link is open on the Messages tab and try again.'
 }
-Start-Sleep -Milliseconds 400
+Start-Sleep -Milliseconds 300
 
-# ── 5. Type recipient — no silent fallback ───────────────────────────────────
+# ── 5. Type recipient ────────────────────────────────────────────────────────
 $edits = $window.FindAll([System.Windows.Automation.TreeScope]::Descendants, $editTypeCond)
 $recipient = $edits | Where-Object {
   $_.Current.Name -match 'Type a name|Type a number|To:|Search|recipient|Enter name|name, number|number or email'
 } | Select-Object -First 1
 
 if (-not $recipient) {
-  # If field names don't match — could be a newer Phone Link version.
-  # Only proceed with the first field if there is exactly one new field compared to before,
-  # which strongly implies it's the compose To: field.
   $allEdits = @($edits)
   $newFieldCount = $allEdits.Count - $editsBefore
   if ($newFieldCount -eq 1) {
     $recipient = $allEdits | Select-Object -Last 1
   } else {
-    throw "Recipient (To:) field not found in Phone Link. Edit fields visible: $($edits.Count), field names: $(($edits | ForEach-Object { $_.Current.Name }) -join ', ')"
+    throw "Recipient field not found. Fields visible ($($edits.Count)): $(($edits | ForEach-Object { """$($_.Current.Name)""" }) -join ', ')"
   }
 }
 
 $recipient.SetFocus()
-Start-Sleep -Milliseconds 400
+Start-Sleep -Milliseconds 300
 [System.Windows.Forms.SendKeys]::SendWait('${safeNumber}')
-Start-Sleep -Milliseconds 900
+Start-Sleep -Milliseconds 800
 [System.Windows.Forms.SendKeys]::SendWait('{ENTER}')
 
-# ── 6. Wait for conversation view to load ────────────────────────────────────
-# iPhone contacts take up to 3s to resolve; Android is faster.
-Start-Sleep -Milliseconds 3000
+# ── 6. Wait for conversation / message field to appear ──────────────────────
+# Poll for the message field instead of sleeping a fixed 3s — faster and reliable.
+$msgTypeCond = New-Object System.Windows.Automation.PropertyCondition(
+  [System.Windows.Automation.AutomationElement]::ControlTypeProperty,
+  [System.Windows.Automation.ControlType]::Edit
+)
+$msgField = $null
+$msgDeadline = [datetime]::Now.AddSeconds(6)
+while ([datetime]::Now -lt $msgDeadline) {
+  $candidates = $window.FindAll([System.Windows.Automation.TreeScope]::Descendants, $msgTypeCond) |
+    Where-Object {
+      $n = $_.Current.Name
+      ($n -match 'Type a message|Aa|Message|Continue|Text message|iMessage|SMS|message') -and
+      ($n -notmatch 'Type a name|Type a number|To:|recipient|Enter name|name, number')
+    }
+  if ($candidates) { $msgField = @($candidates)[0]; break }
+  Start-Sleep -Milliseconds 300
+}
 
-# ── 7. Find message field ────────────────────────────────────────────────────
-$edits2 = $window.FindAll([System.Windows.Automation.TreeScope]::Descendants, $editTypeCond)
-$msgField = $edits2 | Where-Object {
-  $n = $_.Current.Name
-  ($n -match 'Type a message|Aa|Message|Continue|Text message|iMessage|SMS') -and
-  ($n -notmatch 'Type a name|Type a number|To:|recipient|Enter name|name, number')
-} | Select-Object -First 1
-
-if (-not $msgField) {
-  # TAB from current focus — Phone Link moves keyboard focus to message field
-  # after the recipient resolves. More reliable across versions than UIAutomation name matching.
-  [System.Windows.Forms.SendKeys]::SendWait('{TAB}')
-  Start-Sleep -Milliseconds 500
-  # Re-query; the message field should now have focus.
-  # We don't need the element reference — we can paste + Enter directly.
-} else {
+if ($msgField) {
   $msgField.SetFocus()
+  Start-Sleep -Milliseconds 300
+} else {
+  # TAB fallback — Phone Link puts focus near the message input after recipient Enter.
+  # Try up to 3 TABs to reach the message field.
+  [System.Windows.Forms.SendKeys]::SendWait('{TAB}')
   Start-Sleep -Milliseconds 400
 }
 
-# ── 8. Paste message and send ─────────────────────────────────────────────────
-# Clipboard preserves emoji and unicode; SendKeys would corrupt them.
+# ── 7. Paste message and send ─────────────────────────────────────────────────
 [System.Windows.Forms.Clipboard]::SetText('${safeMessage}')
 Start-Sleep -Milliseconds 200
 [System.Windows.Forms.SendKeys]::SendWait('^v')
-Start-Sleep -Milliseconds 600
+Start-Sleep -Milliseconds 500
 [System.Windows.Forms.SendKeys]::SendWait('{ENTER}')
-Start-Sleep -Milliseconds 600
+Start-Sleep -Milliseconds 500
 `;
 
-  // UTF-16 LE with BOM — required for PowerShell 5 (Windows 10 default) to handle emoji correctly.
-  // PS5 reads .ps1 as system ANSI without a BOM, corrupting non-ASCII.
   const scriptBuffer = Buffer.concat([
     Buffer.from([0xFF, 0xFE]),
     Buffer.from(script, 'utf16le'),
