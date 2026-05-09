@@ -326,6 +326,8 @@ function log(userId, messageId, jobId, phone, status, error = null) {
 
 // In-memory progress tracker for the desktop progress window
 let _sendProgress = null; // { jobId, total, current, phone, done, sent, failed }
+let _cancelSend = false;  // set true to abort the active desktop send job
+let _currentSendProc = null; // child_process handle for the active send script
 
 function notifyDesktop(title, body) {
   if (!process.env.TYL_DESKTOP) return;
@@ -2763,18 +2765,37 @@ app.get('/send-progress-page', (req, res) => {
   #phone{font-size:12px;color:#666;margin-bottom:16px;min-height:16px}
   .warning{background:#431010;border:1px solid #dc2626;border-radius:8px;
            padding:12px 16px;font-size:12.5px;color:#fca5a5;line-height:1.5;max-width:340px}
+  .btn-cancel{margin-top:18px;padding:8px 22px;border-radius:8px;border:1px solid #444;
+              background:transparent;color:#aaa;font-size:13px;cursor:pointer;font-family:inherit}
+  .btn-cancel:hover{background:#1e1e1e;color:#fff;border-color:#666}
+  .btn-cancel:disabled{opacity:0.4;cursor:not-allowed}
 </style></head><body>
 <div class="spinner"></div>
 <h1>Sending in progress…</h1>
 <div id="prog">Starting…</div>
 <div id="phone"></div>
 ${warning}
+<button class="btn-cancel" id="cancel-btn" onclick="cancelSend()">Cancel</button>
 <script>
+async function cancelSend(){
+  const btn=document.getElementById('cancel-btn');
+  btn.disabled=true; btn.textContent='Cancelling…';
+  try{ await fetch('/api/cancel-desktop-send',{method:'POST'}); }catch(e){}
+}
 async function poll(){
   try{
     const d=await(await fetch('/api/send-progress-status')).json();
     if(d.idle){document.getElementById('prog').textContent='Idle';return;}
-    if(d.done){document.getElementById('prog').textContent='Complete — you can close this window.';return;}
+    if(d.cancelled){
+      document.getElementById('prog').textContent='Cancelled.';
+      document.getElementById('cancel-btn').style.display='none';
+      return;
+    }
+    if(d.done){
+      document.getElementById('prog').textContent='Complete — you can close this window.';
+      document.getElementById('cancel-btn').style.display='none';
+      return;
+    }
     document.getElementById('prog').textContent='Message '+d.current+' of '+d.total;
     document.getElementById('phone').textContent=d.phone||'';
   }catch(e){}
@@ -2786,6 +2807,28 @@ poll();
 
 app.get('/api/send-progress-status', (req, res) => {
   res.json(_sendProgress || { idle: true });
+});
+
+// Cancel the active desktop send — callable from the progress window (localhost only, no session needed)
+app.post('/api/cancel-desktop-send', (req, res) => {
+  const ip = req.ip || req.connection.remoteAddress || '';
+  if (!ip.includes('127.0.0.1') && !ip.includes('::1') && ip !== '::ffff:127.0.0.1') {
+    return res.status(403).json({ error: 'localhost only' });
+  }
+  _cancelSend = true;
+  // Kill the in-flight PowerShell/osascript process immediately if one is running
+  if (_currentSendProc) {
+    try { _currentSendProc.kill(); } catch (_) {}
+    _currentSendProc = null;
+  }
+  // Mark remaining pending messages + the job as cancelled in the DB
+  if (_sendProgress && _sendProgress.jobId) {
+    const jobId = _sendProgress.jobId;
+    db.prepare("UPDATE messages SET status='cancelled', updated_at=datetime('now') WHERE job_id=? AND status IN ('pending','sending')").run(jobId);
+    db.prepare("UPDATE jobs SET status='cancelled', updated_at=datetime('now') WHERE id=?").run(jobId);
+    _sendProgress = { ..._sendProgress, done: true, cancelled: true };
+  }
+  res.json({ cancelled: true });
 });
 
 // ─── Desktop embedded sender ─────────────────────────────────────────────────
@@ -2821,6 +2864,9 @@ if (process.env.TYL_DESKTOP) {
 
       if (!message) return;
 
+      // Respect cancel request — reset flag and bail out
+      if (_cancelSend) { _cancelSend = false; return; }
+
       // Track progress and emit start event on first message of a job
       if (!_sendProgress || _sendProgress.jobId !== message.job_id) {
         const jobTotal = db.prepare(
@@ -2853,7 +2899,10 @@ if (process.env.TYL_DESKTOP) {
       if (process.env.TYL_DESKTOP) process.stdout.write('__TRAY:green__\n');
 
       try {
+        // Expose process handle so cancel endpoint can kill it mid-send
+        global.__registerSendProc = (proc) => { _currentSendProc = proc; };
         await sendFn(message.phone, message.body, message.image_path || null);
+        _currentSendProc = null;
         db.prepare("UPDATE messages SET status='sent', sent_at=datetime('now'), error=NULL WHERE id=?").run(message.id);
         const jobRow = db.prepare("SELECT is_test FROM jobs WHERE id = ?").get(message.job_id);
         const isTest = jobRow && jobRow.is_test;

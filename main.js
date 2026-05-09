@@ -24,7 +24,7 @@ function openProgressWindow() {
   if (progressWindow && !progressWindow.isDestroyed()) return;
   progressWindow = new BrowserWindow({
     width: 420,
-    height: process.platform === 'win32' ? 260 : 180,
+    height: process.platform === 'win32' ? 300 : 220,
     resizable: false,
     minimizable: false,
     maximizable: false,

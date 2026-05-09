@@ -199,14 +199,17 @@ Start-Sleep -Milliseconds 500
 
   try {
     await new Promise((resolve, reject) => {
-      execFile(
+      const proc = execFile(
         'powershell',
         ['-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', tmpFile],
         { windowsHide: true, timeout: 35000 },
         (err, stdout, stderr) => {
           if (err) {
+            if (err.killed || err.signal === 'SIGTERM') {
+              return reject(new Error('Send cancelled by user'));
+            }
             const detail = (stderr || stdout || '').toString().trim();
-            if (!detail && (err.killed || err.code === 'ETIMEDOUT' || err.signal)) {
+            if (!detail && (err.code === 'ETIMEDOUT')) {
               return reject(new Error('Phone Link automation timed out — make sure Phone Link is open and responsive'));
             }
             return reject(new Error(detail || err.message));
@@ -214,6 +217,7 @@ Start-Sleep -Milliseconds 500
           resolve();
         }
       );
+      if (typeof global.__registerSendProc === 'function') global.__registerSendProc(proc);
     });
   } finally {
     try { unlinkSync(tmpFile); } catch (_) {}
