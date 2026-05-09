@@ -130,7 +130,7 @@ Start-Sleep -Milliseconds 1500
 Start-Sleep -Milliseconds 400
 
 # ── 7. Paste message and send ─────────────────────────────────────────────────
-[System.Windows.Forms.Clipboard]::SetText('${safeMessage}')
+Set-Clipboard -Value '${safeMessage}'
 Start-Sleep -Milliseconds 200
 [System.Windows.Forms.SendKeys]::SendWait('^v')
 Start-Sleep -Milliseconds 500
@@ -149,7 +149,7 @@ Start-Sleep -Milliseconds 500
       const proc = execFile(
         'powershell',
         ['-NonInteractive', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-File', tmpFile],
-        { timeout: 35000 },
+        { windowsHide: true, timeout: 35000 },
         (err, stdout, stderr) => {
           if (err) {
             if (err.killed || err.signal === 'SIGTERM') {
