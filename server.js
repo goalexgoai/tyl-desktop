@@ -2869,7 +2869,7 @@ if (process.env.TYL_DESKTOP) {
       } catch (err) {
         // Detect messaging-app errors that should pause the job vs. hard failures.
         const isAuthError = /not authorized to send apple events/i.test(err.message);
-        const isAppClosed = !isAuthError && /connection is invalid|application isn't running|phone link not found|phonelink.*not found|execution error.*messages|phone link window|could not find phone link/i.test(err.message);
+        const isAppClosed = !isAuthError && /connection is invalid|application isn't running|phone link not found|phonelink.*not found|execution error.*messages|phone link window|could not find phone link|compose view did not open|automation timed out/i.test(err.message);
         if (isAuthError) {
           // macOS Automation permission not granted — pause with actionable message.
           const pauseReason = 'macOS permission needed. Go to Help → Manage Permissions to grant access, then click Resume.';
@@ -2972,7 +2972,7 @@ if (process.env.TYL_DESKTOP) {
         } catch (err) {
           if (localImagePath) { try { fs.unlinkSync(localImagePath); } catch (_) {} }
           const errorMsg = err.message || 'Send failed';
-          const isAppClosed = /connection is invalid|application isn't running|phone link not found|phonelink.*not found|execution error.*messages|phone link window|could not find phone link/i.test(errorMsg);
+          const isAppClosed = /connection is invalid|application isn't running|phone link not found|phonelink.*not found|execution error.*messages|phone link window|could not find phone link|compose view did not open|automation timed out/i.test(errorMsg);
           await desktopWebPost('/api/ack', { message_id: message.id, status: 'failed', error: errorMsg }, user.web_companion_key)
             .catch(() => {});
           if (isAppClosed) {
