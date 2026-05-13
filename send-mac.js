@@ -108,7 +108,7 @@ function pollForDelivery(phone, beforeRowId) {
 
 async function ensureMessagesRunning() {
   try {
-    const procs = execSync('pgrep -x Messages', { encoding: 'utf8' }).trim();
+    const procs = execSync(`pgrep -u ${process.getuid()} -x Messages`, { encoding: 'utf8' }).trim();
     if (!procs) throw new Error('not running');
     messagesLaunched = true;
   } catch (_) {
