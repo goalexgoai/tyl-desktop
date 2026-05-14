@@ -306,8 +306,14 @@ module.exports = async function sendViaMac(number, message, imagePath) {
       }
     }
 
-    // ── Fallback: no Full Disk Access — use SMS relay ────────────────────────
-    await executeSend('SMS', number, tmp, stagedImg);
+    // ── Fallback: no Full Disk Access — try iMessage first, SMS on error ────
+    // Prefer iMessage since it works without SMS relay. Fall back to SMS only
+    // if iMessage throws (e.g. no iMessage service configured on this profile).
+    try {
+      await executeSend('iMessage', number, tmp, stagedImg);
+    } catch {
+      await executeSend('SMS', number, tmp, stagedImg);
+    }
     return true;
 
   } finally {
