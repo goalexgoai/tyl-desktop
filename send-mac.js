@@ -112,7 +112,8 @@ async function ensureMessagesRunning() {
     if (!procs) throw new Error('not running');
     messagesLaunched = true;
   } catch (_) {
-    execSync('open -a Messages', { timeout: 5000 });
+    // -n forces a new instance for the current user even if another user has Messages open
+    execSync('open -n -a Messages', { timeout: 5000 });
     if (!messagesLaunched) {
       await new Promise(r => setTimeout(r, 3000));
       messagesLaunched = true;
