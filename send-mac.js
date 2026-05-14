@@ -107,17 +107,28 @@ function pollForDelivery(phone, beforeRowId) {
 }
 
 async function ensureMessagesRunning() {
+  let currentUserHasMessages = false;
   try {
-    const procs = execSync(`pgrep -u ${process.getuid()} -x Messages`, { encoding: 'utf8' }).trim();
-    if (!procs) throw new Error('not running');
-    messagesLaunched = true;
-  } catch (_) {
-    execSync('open -a Messages', { timeout: 5000 });
+    const out = execSync(`pgrep -u ${process.getuid()} -x Messages`, { encoding: 'utf8' }).trim();
+    currentUserHasMessages = !!out;
+  } catch (_) {}
+
+  if (!currentUserHasMessages) {
+    // If another user has Messages open (Fast User Switching), plain 'open -a Messages'
+    // just activates their instance instead of launching one for the current user.
+    // Use -n to force a new instance scoped to this user's session.
+    let otherUserHasMessages = false;
+    try {
+      const out = execSync('pgrep -x Messages', { encoding: 'utf8' }).trim();
+      otherUserHasMessages = !!out;
+    } catch (_) {}
+    const openCmd = otherUserHasMessages ? 'open -n -a Messages' : 'open -a Messages';
+    execSync(openCmd, { timeout: 5000 });
     if (!messagesLaunched) {
       await new Promise(r => setTimeout(r, 3000));
-      messagesLaunched = true;
     }
   }
+  messagesLaunched = true;
 }
 
 function buildScript(serviceType, number, tmpFile) {
