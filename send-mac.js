@@ -136,7 +136,11 @@ function buildScript(serviceType, number, tmpFile) {
   return `
 set msgBody to (do shell script "cat " & quoted form of "${tmpFile}")
 tell application "Messages"
-  set svc to first service whose service type = ${serviceType}
+  try
+    set svc to first service whose service type = ${serviceType}
+  on error
+    set svc to first service
+  end try
   set p to participant "${safeNum}" of svc
   send msgBody to p
 end tell
@@ -147,7 +151,11 @@ function buildImageScript(serviceType, number, imagePath) {
   const safeNum = number.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
   const safePath = imagePath.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
   return `tell application "Messages"
-  set svc to first service whose service type = ${serviceType}
+  try
+    set svc to first service whose service type = ${serviceType}
+  on error
+    set svc to first service
+  end try
   set p to participant "${safeNum}" of svc
   send POSIX file "${safePath}" to p
 end tell`;
