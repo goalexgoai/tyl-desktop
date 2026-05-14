@@ -2840,7 +2840,38 @@ if (process.env.TYL_DESKTOP) {
     ? require('./send-mac.js')
     : require('./send-windows.js');
 
+  // ── Startup gate: hold the send loop until user confirms any queued messages ──
+  let _startupCheckDone = false;
+
+  app.get('/api/startup-pending', requireAuth, (req, res) => {
+    if (_startupCheckDone) return res.json({ count: 0 });
+    const row = db.prepare(`
+      SELECT COUNT(*) as c FROM messages m
+      JOIN jobs j ON j.id = m.job_id
+      WHERE j.status = 'queued' AND m.status = 'pending' AND j.user_id = ?
+    `).get(req.user.id);
+    res.json({ count: row.c });
+  });
+
+  app.post('/api/startup-resume', requireAuth, (req, res) => {
+    _startupCheckDone = true;
+    res.json({ ok: true });
+  });
+
+  app.post('/api/startup-cancel', requireAuth, (req, res) => {
+    const jobs = db.prepare("SELECT id FROM jobs WHERE user_id = ? AND status = 'queued'").all(req.user.id);
+    db.transaction(() => {
+      jobs.forEach(j => {
+        db.prepare("UPDATE messages SET status='cancelled' WHERE job_id = ? AND status = 'pending'").run(j.id);
+        db.prepare("UPDATE jobs SET status='cancelled' WHERE id = ?").run(j.id);
+      });
+    })();
+    _startupCheckDone = true;
+    res.json({ cancelled: jobs.length });
+  });
+
   async function desktopSendLoop() {
+    if (!_startupCheckDone) return;
     try {
       // Find the next pending message across all users — skip jobs whose owner has an expired/cancelled subscription
       const message = db.prepare(`
@@ -3039,6 +3070,12 @@ if (process.env.TYL_DESKTOP) {
 
   // Recover any messages left in 'sending' state from a previous crash
   db.prepare("UPDATE messages SET status='pending', picked_at=NULL WHERE status='sending'").run();
+
+  // If no queued messages exist at startup, skip the gate entirely
+  const _startupPending = db.prepare(
+    "SELECT COUNT(*) as c FROM messages m JOIN jobs j ON j.id = m.job_id WHERE j.status = 'queued' AND m.status = 'pending'"
+  ).get().c;
+  if (_startupPending === 0) _startupCheckDone = true;
 
   // Poll every 5 seconds for pending messages (local) and web API jobs
   setInterval(desktopSendLoop, 5000);

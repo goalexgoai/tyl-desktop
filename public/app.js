@@ -152,10 +152,15 @@ function showToast(msg, duration = 2500) {
   setTimeout(() => { t.style.display = 'none'; }, duration);
 }
 
-async function openBillingPage() {
+async function openBillingPage(plan, cycle) {
   try {
     const r = await get('/api/billing-link');
-    window.location.href = r.url;
+    let url = r.url;
+    if (plan && ['starter', 'pro'].includes(plan)) {
+      const sep = url.includes('?') ? '&' : '?';
+      url += sep + 'upgrade=' + plan + (cycle ? '&billing=' + cycle : '');
+    }
+    window.location.href = url;
   } catch (_) {
     window.location.href = 'https://textyourlist.com/account';
   }
@@ -269,13 +274,20 @@ async function init() {
   }
 
   // Heartbeat — tells server the desktop is active so API sends auto-route.
-  // On startup: wait for ping to update web_pending_count before checking for prompt.
+  // On startup: wait for ping to update web_pending_count before checking for prompts.
   post('/api/desktop-ping').then(async () => {
     const fresh = await get('/api/auth/me').catch(() => null);
     if (fresh) { currentUser = fresh; updateUserBadge(); }
     const pending = currentUser.pending_api_count || 0;
     if (pending > 0) setTimeout(() => showPendingApiPrompt(pending), 400);
   }).catch(() => {});
+
+  // Startup queued-messages gate — prompt before auto-resuming any in-progress jobs
+  if (window.electronAPI?.isDesktop) {
+    get('/api/startup-pending').then(data => {
+      if (data.count > 0) setTimeout(() => showStartupPendingPrompt(data.count), 600);
+    }).catch(() => {});
+  }
   setInterval(() => post('/api/desktop-ping').catch(() => {}), 60000);
 
   // API pending poller — refreshes the dashboard banner without a full re-render
@@ -376,6 +388,40 @@ function showPendingApiPrompt(count) {
       updateUserBadge();
       render();
       if (r.cancelled > 0) showToast(`${r.cancelled} pending message${r.cancelled===1?'':'s'} cancelled.`);
+    } catch (err) {
+      showToast('Could not cancel: ' + err.message);
+    }
+  });
+}
+
+function showStartupPendingPrompt(count) {
+  const overlay = document.createElement('div');
+  overlay.id = 'startup-pending-overlay';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.45);display:flex;align-items:center;justify-content:center;z-index:9999';
+  overlay.innerHTML = `
+    <div style="background:var(--bg,#fff);border-radius:14px;padding:28px 32px;max-width:400px;width:90%;box-shadow:0 20px 60px rgba(0,0,0,0.25)">
+      <div style="font-size:22px;margin-bottom:10px">&#9208;</div>
+      <h3 style="font-size:17px;font-weight:700;margin-bottom:8px;text-transform:none">${count} unsent message${count===1?'':'s'} from last session</h3>
+      <p style="font-size:13.5px;color:var(--text-muted,#666);margin-bottom:22px;line-height:1.6">
+        These messages were queued when the app was last closed. Resume sending or cancel them?
+      </p>
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <button id="startup-resume" class="btn btn-primary" style="font-size:14px;padding:10px">Resume sending</button>
+        <button id="startup-cancel" style="font-size:13px;color:var(--text-muted,#888);background:none;border:none;cursor:pointer;padding:6px;text-align:center">Cancel all ${count} message${count===1?'':'s'}</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+
+  document.getElementById('startup-resume').addEventListener('click', async () => {
+    await post('/api/startup-resume').catch(() => {});
+    overlay.remove();
+  });
+  document.getElementById('startup-cancel').addEventListener('click', async () => {
+    try {
+      const r = await post('/api/startup-cancel');
+      overlay.remove();
+      render();
+      if (r.cancelled > 0) showToast(`${r.cancelled} job${r.cancelled===1?'':'s'} cancelled.`);
     } catch (err) {
       showToast('Could not cancel: ' + err.message);
     }
@@ -3151,10 +3197,10 @@ function renderBilling(main) {
   const billingCycle = localStorage.getItem('billing_cycle') || 'monthly';
 
   const prices = {
-    monthly: { starter: { price: '$10',  period: '/mo', sub: '',               savings: '' },
-               pro:     { price: '$30',  period: '/mo', sub: '',               savings: '' } },
-    annual:  { starter: { price: '$8',   period: '/mo', sub: 'billed $96/yr',  savings: 'Save $24/yr' },
-               pro:     { price: '$24',  period: '/mo', sub: 'billed $288/yr', savings: 'Save $72/yr' } },
+    monthly: { starter: { price: '$8',     period: '/mo', sub: '',               savings: '' },
+               pro:     { price: '$16',    period: '/mo', sub: '',               savings: '' } },
+    annual:  { starter: { price: '$6.67',  period: '/mo', sub: 'billed $80/yr',  savings: 'Save $16/yr' },
+               pro:     { price: '$13.33', period: '/mo', sub: 'billed $160/yr', savings: 'Save $32/yr' } },
   };
 
   const cur = prices[billingCycle];
@@ -3268,10 +3314,10 @@ function renderBilling(main) {
   const manageBtn = document.getElementById('manage-subscription-btn');
   const cancelBtn = document.getElementById('cancel-sub-btn');
 
-  if (starterBtn) starterBtn.addEventListener('click', openBillingPage);
-  if (proBtn) proBtn.addEventListener('click', openBillingPage);
-  if (manageBtn) manageBtn.addEventListener('click', openBillingPage);
-  if (cancelBtn) cancelBtn.addEventListener('click', openBillingPage);
+  if (starterBtn) starterBtn.addEventListener('click', () => openBillingPage('starter', billingCycle));
+  if (proBtn) proBtn.addEventListener('click', () => openBillingPage('pro', billingCycle));
+  if (manageBtn) manageBtn.addEventListener('click', () => openBillingPage());
+  if (cancelBtn) cancelBtn.addEventListener('click', () => openBillingPage());
 }
 
 // ── Wizard ────────────────────────────────────────────────────────────────
