@@ -2841,6 +2841,9 @@ if (process.env.TYL_DESKTOP) {
     : require('./send-windows.js');
 
   // ── Startup gate: hold the send loop until user confirms any queued messages ──
+  // _sessionStart marks when this app instance launched — messages created after this
+  // are new sends the user just submitted and are never gated.
+  const _sessionStart = db.prepare("SELECT datetime('now') as t").get().t;
   let _startupCheckDone = false;
 
   app.get('/api/startup-pending', requireAuth, (req, res) => {
@@ -2871,9 +2874,9 @@ if (process.env.TYL_DESKTOP) {
   });
 
   async function desktopSendLoop() {
-    if (!_startupCheckDone) return;
     try {
-      // Find the next pending message across all users — skip jobs whose owner has an expired/cancelled subscription
+      // Find the next pending message. Prior-session messages are gated until the user
+      // clicks Resume; messages created during this session always proceed immediately.
       const message = db.prepare(`
         SELECT m.*, j.pace_seconds, j.user_id, j.image_path
         FROM messages m
@@ -2882,6 +2885,7 @@ if (process.env.TYL_DESKTOP) {
         WHERE m.status = 'pending'
           AND j.status = 'queued'
           AND (m.picked_at IS NULL OR m.picked_at < datetime('now', '-90 seconds'))
+          AND (? = 1 OR m.created_at >= ?)
           AND (
             u.is_admin = 1
             OR u.manual_account = 1
@@ -2891,7 +2895,7 @@ if (process.env.TYL_DESKTOP) {
           )
         ORDER BY m.created_at ASC
         LIMIT 1
-      `).get();
+      `).get(_startupCheckDone ? 1 : 0, _sessionStart);
 
       if (!message) return;
 
