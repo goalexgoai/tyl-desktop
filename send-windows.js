@@ -29,8 +29,12 @@ using System.Runtime.InteropServices;
 public class Win32 {
     [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);
     [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+    [DllImport("user32.dll")] public static extern bool BringWindowToTop(IntPtr hWnd);
     [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
     [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
+    [DllImport("user32.dll")] public static extern bool AttachThreadInput(uint idAttach, uint idAttachTo, bool fAttach);
+    [DllImport("user32.dll")] public static extern void SwitchToThisWindow(IntPtr hWnd, bool fAltTab);
+    [DllImport("kernel32.dll")] public static extern uint GetCurrentThreadId();
 }
 "@ -Language CSharp
 
@@ -68,14 +72,24 @@ while ([datetime]::Now -lt $winDeadline) {
 }
 if (-not $window) { throw 'Could not find Phone Link window via UIAutomation' }
 
-# ── 3. Bring Phone Link to foreground — three-layer approach ───────────────
+# ── 3. Bring Phone Link to foreground ──────────────────────────────────────
+# Three-layer approach: UIAutomation → thread-input attachment → AppActivate
 $window.SetFocus()
 Start-Sleep -Milliseconds 200
 
 $hwnd = [IntPtr]$window.Current.NativeWindowHandle
 if ($hwnd -ne [IntPtr]::Zero) {
   [Win32]::ShowWindow($hwnd, 9) | Out-Null   # SW_RESTORE
+
+  # Attach our PowerShell thread's input to Phone Link's thread so
+  # SetForegroundWindow is not blocked by Windows foreground-steal restrictions.
+  $phoneLinkTid = [uint32]0
+  $phoneLinkTid = [Win32]::GetWindowThreadProcessId($hwnd, [ref]$phoneLinkTid)
+  $myTid = [Win32]::GetCurrentThreadId()
+  [Win32]::AttachThreadInput($myTid, $phoneLinkTid, $true) | Out-Null
+  [Win32]::BringWindowToTop($hwnd) | Out-Null
   [Win32]::SetForegroundWindow($hwnd) | Out-Null
+  [Win32]::AttachThreadInput($myTid, $phoneLinkTid, $false) | Out-Null
   Start-Sleep -Milliseconds 200
 }
 
@@ -119,23 +133,63 @@ if (-not $composeOpened) {
 }
 Start-Sleep -Milliseconds 300
 
-# ── 5. Type recipient number — focus is already on recipient field ──────────
+# ── 5. Type recipient number ────────────────────────────────────────────────
 [System.Windows.Forms.SendKeys]::SendWait('${safeNumber}')
 Start-Sleep -Milliseconds 800
 [System.Windows.Forms.SendKeys]::SendWait('{ENTER}')
 
-# ── 6. Wait for conversation to load, then Tab to message field ─────────────
-Start-Sleep -Milliseconds 1500
-[System.Windows.Forms.SendKeys]::SendWait('{TAB}')
-Start-Sleep -Milliseconds 400
+# ── 6. Find message field via UIAutomation, fall back to Tab ───────────────
+# After recipient Enter, Phone Link transitions from compose to conversation view.
+# Poll for an enabled, visible, empty Edit field — that is the message input.
+# If UIAutomation can't find it (Phone Link version without ValuePattern), fall back.
+$msgDeadline = [datetime]::Now.AddSeconds(6)
+$msgField = $null
+while ([datetime]::Now -lt $msgDeadline) {
+  $edits = $window.FindAll([System.Windows.Automation.TreeScope]::Descendants, $editTypeCond)
+  foreach ($edit in $edits) {
+    if ($edit.Current.IsEnabled -and -not $edit.Current.IsOffscreen) {
+      try {
+        $vp = $edit.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern)
+        if ($vp.Current.Value -eq '') { $msgField = $edit; break }
+      } catch { }
+    }
+  }
+  if ($msgField) { break }
+  Start-Sleep -Milliseconds 200
+}
 
-# ── 7. Paste message and send ─────────────────────────────────────────────────
+if ($msgField) {
+  $msgField.SetFocus()
+  Start-Sleep -Milliseconds 300
+} else {
+  # Fallback: fixed wait then Tab (original behaviour for Phone Link versions
+  # where UIAutomation ValuePattern is unavailable)
+  Start-Sleep -Milliseconds 1200
+  [System.Windows.Forms.SendKeys]::SendWait('{TAB}')
+  Start-Sleep -Milliseconds 500
+}
+
+# ── 7. Paste message and send ───────────────────────────────────────────────
 Set-Clipboard -Value '${safeMessage}'
 Start-Sleep -Milliseconds 200
 [System.Windows.Forms.SendKeys]::SendWait('^v')
 Start-Sleep -Milliseconds 500
 [System.Windows.Forms.SendKeys]::SendWait('{ENTER}')
-Start-Sleep -Milliseconds 500
+Start-Sleep -Milliseconds 800
+
+# ── 8. Verify message was consumed ─────────────────────────────────────────
+# If the compose field still has content after Enter, the keystroke was not
+# captured (focus slipped). This turns a silent false-positive into a real
+# failure that TYL can retry or surface to the user.
+if ($msgField) {
+  try {
+    $vp2 = $msgField.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern)
+    if ($vp2.Current.Value -ne '') {
+      throw "Message may not have sent — compose field still has content after Enter. Phone Link may have lost focus mid-send."
+    }
+  } catch [System.Management.Automation.RuntimeException] { throw }
+  catch { }  # ValuePattern unavailable or element gone — skip check
+}
 `;
 
   const scriptBuffer = Buffer.concat([
