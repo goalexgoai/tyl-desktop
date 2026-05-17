@@ -2874,6 +2874,8 @@ if (process.env.TYL_DESKTOP) {
   });
 
   async function desktopSendLoop() {
+    if (desktopSendLoop._running) return;
+    desktopSendLoop._running = true;
     try {
       // Find the next pending message. Prior-session messages are gated until the user
       // clicks Resume; messages created during this session always proceed immediately.
@@ -2910,9 +2912,6 @@ if (process.env.TYL_DESKTOP) {
         _sendProgress = { jobId: message.job_id, total: jobTotal, current: 0, phone: '', done: false, sent: 0, failed: 0 };
         if (global.tylEvents) global.tylEvents.emit('send-start', { total: jobTotal, jobId: message.job_id });
       }
-      _sendProgress.current = (_sendProgress.current || 0) + 1;
-      _sendProgress.phone = message.phone;
-
       // Pace enforcement with jitter — carriers flag perfectly rhythmic sends
       if (message.pace_seconds > 0) {
         const lastSent = db.prepare(`
@@ -2925,9 +2924,13 @@ if (process.env.TYL_DESKTOP) {
           // Add deterministic jitter (0–7s) derived from message ID so each message gets a consistent delay
           const idSum = message.id.split('').reduce((a, c) => a + c.charCodeAt(0), 0);
           const jitter = idSum % 8;
-          if (elapsed < message.pace_seconds + jitter) return;
+          const waitMs = Math.ceil((message.pace_seconds + jitter - elapsed) * 1000);
+          if (waitMs > 0) await new Promise(resolve => setTimeout(resolve, waitMs));
         }
       }
+
+      _sendProgress.current = (_sendProgress.current || 0) + 1;
+      _sendProgress.phone = message.phone;
 
       db.prepare("UPDATE messages SET status='sending', picked_at=datetime('now'), attempts=attempts+1, last_attempt_at=datetime('now') WHERE id=?").run(message.id);
       console.log(`[desktop-sender] picking up message ${message.id} for ${message.phone}`);
@@ -2984,6 +2987,8 @@ if (process.env.TYL_DESKTOP) {
     } catch (err) {
       console.error('[desktop-sender] loop error:', err.message);
       if (process.env.TYL_DESKTOP) process.stdout.write('__TRAY:gray__\n');
+    } finally {
+      desktopSendLoop._running = false;
     }
   }
 
