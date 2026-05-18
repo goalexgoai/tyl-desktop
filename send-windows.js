@@ -1,3 +1,93 @@
+// =============================================================================
+// Windows Phone Link send — DO NOT CHANGE without reading this header.
+// =============================================================================
+// Confirmed working as of v1.0.87 on Windows 11 24H2 with PhoneExperienceHost
+// as the Phone Link UWP host. Diagnostic log from a working bulk-send was
+// captured 2026-05-18 and lives in the v1.0.87 history. Every line below was
+// validated against that log. If you change this file, run the same scenario
+// (3-message bulk, Phone Link behind TYL, emoji + field merge) and re-capture
+// %TEMP%\tyl-send-debug.log to verify the same tier transitions still fire.
+//
+// EMPIRICAL FINDINGS — these are not theories, they are what actually happens
+// in the field. Treat as load-bearing.
+//
+//   1) UIAutomation `$window.SetFocus()` ALWAYS THROWS "Target element cannot
+//      receive focus" on Phone Link's root window. This is benign — the root
+//      doesn't expose a focusable element directly. Catch and proceed. Do
+//      NOT use SetFocus throwing as a signal that focus failed.
+//
+//   2) Win11 24H2 takes ~500ms for a foreground transition to actually settle
+//      after `SetForegroundWindow` returns. v1.0.85 checked at 200ms, saw
+//      "not foreground", retried, and the retry created a flapping state that
+//      made every send fail. Keep at least 500ms total between
+//      `SetForegroundWindow` and the next `Is-PhoneLinkFg` check (we currently
+//      use 300ms + 200ms = 500ms; do not tighten).
+//
+//   3) `AttachThreadInput` returns False on Dustin's setup (integrity-level
+//      mismatch between Electron child PowerShell and the UWP Phone Link host).
+//      It's a no-op here but harmless. Do NOT add a guard that aborts when
+//      AttachThreadInput returns False — SetForegroundWindow alone is what
+//      actually works.
+//
+//   4) Field detection MUST be by Name match, not "first empty Edit":
+//        - Recipient: /Type a name|Type a number|To:/  (log saw "To")
+//        - Message:   /Type a message|Aa|Message|Continue/
+//                      (log saw "Send a message, Conversation with…")
+//        - Compose button: /New message|Compose|New conversation/
+//        - Send button: /^Send$|^Send message$/
+//      If Phone Link's UI strings change, update these regexes — the debug log
+//      will show the new strings under "recipient field: edits_found=…
+//      picked='…'" and "message field: attempts=… picked='…'".
+//
+//   5) DO NOT add post-send verification via ValuePattern. v1.0.81 had a check
+//      that read $msgField.ValuePattern.Value after Enter and threw "Message
+//      may not have sent" if non-empty. The field re-renders after send and
+//      the stale reference produced FALSE NEGATIVES — messages WERE sent but
+//      TYL marked them failed. The Send button Invoke is the signal that the
+//      message was submitted; the Phone Link app handles the rest.
+//
+//   6) Send via the Send BUTTON (UIAutomation Invoke), not Enter. Enter is a
+//      fallback only when the button can't be located. Enter is unreliable
+//      when focus has slipped (it inserts a newline or no-ops). The log
+//      confirms the Send button was found and invoked on each send.
+//
+//   7) Use SendKeys for typing, NOT clipboard paste (Set-Clipboard + Ctrl+V).
+//      Clipboard pollutes the user's clipboard AND fails silently if focus
+//      shifts between Set-Clipboard and Ctrl+V. SendKeys types directly into
+//      the focused field and degrades gracefully.
+//
+//   8) Process name match list MUST include 'PhoneExperienceHost' (that's what
+//      Phone Link actually runs under on Win11 24H2; the older 'PhoneLink' and
+//      'YourPhone' names are legacy). The log confirms 'PhoneExperienceHost'.
+//
+//   9) The JS template literal interpolation `${name}` collides with
+//      PowerShell's `${name}` variable syntax. If you need a PowerShell
+//      `${variable}` inside this script, escape the dollar sign as `\${name}`
+//      so JS leaves it for PowerShell. v1.0.86 shipped broken because of
+//      `${windowSearchMs}` being JS-interpolated (windowSearchMs undefined →
+//      ReferenceError before PowerShell ever ran). The 6 valid JS
+//      interpolations in this file are: Date.now(), processNames.map(),
+//      safeNumber, safeMessage — all the rest of `${…}` must be `\${…}`.
+//
+// PRIOR REGRESSIONS — captured here so the same mistakes are not re-made:
+//   - v1.0.81: added foreground hardening that broke bulk sending because of
+//     points 5, 6, and 4 above.
+//   - v1.0.83: stripped foreground APIs entirely; worked for the easy case but
+//     could not recover when Phone Link was behind another window.
+//   - v1.0.84: added ShowWindow+SetForegroundWindow without timing or tier
+//     model — Phone Link half-restored to a non-focusable state.
+//   - v1.0.85: full AttachThreadInput chain in a 3-retry loop — too tight a
+//     foreground check (200ms) caused flapping; every send failed.
+//   - v1.0.86: correct design but undefined-variable JS bug crashed before
+//     PowerShell ran.
+//   - v1.0.87: the design above; first working bulk-send confirmed by Dustin
+//     including emoji and field merges.
+//
+// If you are changing this file, ask yourself: am I about to break one of
+// the 9 findings above? If so, capture a debug log first and prove the
+// finding is no longer true on the target system.
+// =============================================================================
+
 const { execFile } = require('child_process');
 const { writeFileSync, unlinkSync } = require('fs');
 const { join } = require('path');
