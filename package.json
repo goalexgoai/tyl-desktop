@@ -1,6 +1,6 @@
 {
   "name": "textyourlist",
-  "version": "1.0.86",
+  "version": "1.0.87",
   "description": "Text Your List — Send personal texts to your list",
   "main": "main.js",
   "scripts": {

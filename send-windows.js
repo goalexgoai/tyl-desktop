@@ -94,13 +94,13 @@ while ([datetime]::Now -lt $winDeadline) {
 }
 $windowSearchMs = [int]([datetime]::Now - $windowSearchStart).TotalMilliseconds
 if (-not $window) {
-  Log "FATAL: UIAutomation could not find Phone Link window in ${windowSearchMs}ms (pid=$($proc.Id))"
+  Log "FATAL: UIAutomation could not find Phone Link window in \${windowSearchMs}ms (pid=$($proc.Id))"
   throw 'Could not find Phone Link window via UIAutomation'
 }
 $hwnd = [IntPtr]$window.Current.NativeWindowHandle
 $winName = ''
 try { $winName = $window.Current.Name } catch { }
-Log "window found in ${windowSearchMs}ms: hwnd=$hwnd, name='$winName'"
+Log "window found in \${windowSearchMs}ms: hwnd=$hwnd, name='$winName'"
 
 # ── 3. Bring Phone Link to a focusable state ────────────────────────────────
 # Try the simple v1.0.83 approach first (SetFocus on the AutomationElement).
