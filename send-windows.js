@@ -23,6 +23,15 @@ Add-Type -AssemblyName UIAutomationClient
 Add-Type -AssemblyName UIAutomationTypes
 Add-Type -AssemblyName System.Windows.Forms
 
+Add-Type @"
+using System;
+using System.Runtime.InteropServices;
+public class Win32 {
+    [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);
+    [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+}
+"@ -Language CSharp
+
 # ── 1. Find Phone Link process (any UWP variant) ────────────────────────────
 $proc = $null
 foreach ($name in @(${processNames.map(n => `'${n}'`).join(',')})) {
@@ -41,17 +50,52 @@ $pidCond = New-Object System.Windows.Automation.PropertyCondition(
   [System.Windows.Automation.AutomationElement]::ProcessIdProperty, $proc.Id
 )
 
-$window = $null
-$winDeadline = [datetime]::Now.AddSeconds(6)
-while ([datetime]::Now -lt $winDeadline) {
-  $window = $root.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $pidCond)
-  if ($window) { break }
-  Start-Sleep -Milliseconds 250
+function Find-PhoneLinkWindow {
+  param([int]$timeoutSeconds = 6)
+  $deadline = [datetime]::Now.AddSeconds($timeoutSeconds)
+  while ([datetime]::Now -lt $deadline) {
+    $w = $root.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $pidCond)
+    if ($w) { return $w }
+    Start-Sleep -Milliseconds 250
+  }
+  return $null
 }
+
+$window = Find-PhoneLinkWindow 6
 if (-not $window) { throw 'Could not find Phone Link window via UIAutomation' }
 
-# ── 3. Bring Phone Link to foreground (UIAutomation SetFocus only) ──────────
-$window.SetFocus()
+# ── 3. Restore + foreground + SetFocus with retries ─────────────────────────
+# Multi-send failures (3rd send fails with "Target element cannot receive
+# focus") happen when Phone Link's window is minimized, backgrounded, or its
+# UIAutomation element is stale after the previous send's UI transition.
+# Strategy: restore the native window first (ShowWindow SW_RESTORE +
+# SetForegroundWindow), then try SetFocus on the element with re-find retries.
+$hwnd = [IntPtr]$window.Current.NativeWindowHandle
+if ($hwnd -ne [IntPtr]::Zero) {
+  [Win32]::ShowWindow($hwnd, 9) | Out-Null   # SW_RESTORE
+  Start-Sleep -Milliseconds 150
+  [Win32]::SetForegroundWindow($hwnd) | Out-Null
+  Start-Sleep -Milliseconds 150
+}
+
+$focusOk = $false
+for ($i = 0; $i -lt 3 -and -not $focusOk; $i++) {
+  try {
+    $window.SetFocus()
+    $focusOk = $true
+  } catch {
+    Start-Sleep -Milliseconds 400
+    $window = Find-PhoneLinkWindow 3
+    if (-not $window) { throw 'Phone Link window disappeared while focusing' }
+    $hwnd = [IntPtr]$window.Current.NativeWindowHandle
+    if ($hwnd -ne [IntPtr]::Zero) {
+      [Win32]::ShowWindow($hwnd, 9) | Out-Null
+      [Win32]::SetForegroundWindow($hwnd) | Out-Null
+      Start-Sleep -Milliseconds 200
+    }
+  }
+}
+if (-not $focusOk) { throw 'Could not focus Phone Link after 3 attempts. Click on Phone Link and try again.' }
 Start-Sleep -Milliseconds 500
 
 # ── 4. Shared condition objects ─────────────────────────────────────────────
@@ -82,7 +126,7 @@ if ($compose) {
 } else {
   [System.Windows.Forms.SendKeys]::SendWait('^n')
 }
-Start-Sleep -Milliseconds 600
+Start-Sleep -Milliseconds 700
 
 # ── 6. Find recipient field by Name, type number, Enter ─────────────────────
 $edits = $window.FindAll([System.Windows.Automation.TreeScope]::Descendants, $editCond)
@@ -95,12 +139,22 @@ Start-Sleep -Milliseconds 300
 [System.Windows.Forms.SendKeys]::SendWait('${safeNumber}')
 Start-Sleep -Milliseconds 800
 [System.Windows.Forms.SendKeys]::SendWait('{ENTER}')
-Start-Sleep -Milliseconds 1200
+Start-Sleep -Milliseconds 1300
 
-# ── 7. Find message field by Name, type message ─────────────────────────────
-$edits2 = $window.FindAll([System.Windows.Automation.TreeScope]::Descendants, $editCond)
-$msgField = $edits2 | Where-Object { $_.Current.Name -match 'Type a message|Aa|Message|Continue' } | Select-Object -First 1
-if (-not $msgField) { $msgField = $edits2 | Select-Object -Last 1 }
+# ── 7. Find message field by Name (poll up to 4s), type message ─────────────
+# Phone Link can take a moment to re-render after the recipient Enter — poll
+# rather than relying on a single fixed sleep.
+$msgField = $null
+$msgDeadline = [datetime]::Now.AddSeconds(4)
+while ([datetime]::Now -lt $msgDeadline -and -not $msgField) {
+  $edits2 = $window.FindAll([System.Windows.Automation.TreeScope]::Descendants, $editCond)
+  $msgField = $edits2 | Where-Object { $_.Current.Name -match 'Type a message|Aa|Message|Continue' } | Select-Object -First 1
+  if (-not $msgField -and $edits2.Count -gt $edits.Count) {
+    # Conversation view added a new edit field; take the last one
+    $msgField = $edits2 | Select-Object -Last 1
+  }
+  if (-not $msgField) { Start-Sleep -Milliseconds 250 }
+}
 if (-not $msgField) { throw 'Message field not found' }
 
 $msgField.SetFocus()
@@ -117,7 +171,7 @@ if ($sendBtn) {
 } else {
   [System.Windows.Forms.SendKeys]::SendWait('{ENTER}')
 }
-Start-Sleep -Milliseconds 500
+Start-Sleep -Milliseconds 600
 `;
 
   const scriptBuffer = Buffer.concat([

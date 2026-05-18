@@ -72,12 +72,15 @@ global.tylEvents.on('send-complete', ({ sent, failed, failures }) => {
 
 function setTrayStatus(status) {
   if (!tray) return; // No tray on macOS
-  const icons = {
-    gray:   process.platform === 'win32' ? 'icon.ico' : 'icon-gray.png',
-    green:  'icon-green.png',
-    yellow: 'icon-yellow.png',
-  };
-  const iconFile = icons[status] || icons.gray;
+  // On Windows the multi-size .ico carries the TYL logo at every tray size and
+  // is used regardless of status. The PNG status variants only exist for Linux.
+  let iconFile;
+  if (process.platform === 'win32') {
+    iconFile = 'icon.ico';
+  } else {
+    const linuxIcons = { gray: 'icon-gray.png', green: 'icon-green.png', yellow: 'icon-yellow.png' };
+    iconFile = linuxIcons[status] || linuxIcons.gray;
+  }
   tray.setImage(nativeImage.createFromPath(path.join(__dirname, 'assets', iconFile)));
 }
 
