@@ -29,10 +29,15 @@ using System.Runtime.InteropServices;
 public class Win32 {
     [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);
     [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+    [DllImport("user32.dll")] public static extern bool BringWindowToTop(IntPtr hWnd);
+    [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+    [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
+    [DllImport("user32.dll")] public static extern bool AttachThreadInput(uint idAttach, uint idAttachTo, bool fAttach);
+    [DllImport("kernel32.dll")] public static extern uint GetCurrentThreadId();
 }
 "@ -Language CSharp
 
-# ── 1. Find Phone Link process (any UWP variant) ────────────────────────────
+# ── 1. Find Phone Link process ──────────────────────────────────────────────
 $proc = $null
 foreach ($name in @(${processNames.map(n => `'${n}'`).join(',')})) {
   $found = Get-Process -Name $name -ErrorAction SilentlyContinue | Select-Object -First 1
@@ -61,42 +66,72 @@ function Find-PhoneLinkWindow {
   return $null
 }
 
+function Is-PhoneLinkForeground {
+  param([int]$pid)
+  $fgHwnd = [Win32]::GetForegroundWindow()
+  if ($fgHwnd -eq [IntPtr]::Zero) { return $false }
+  $fgPid = [uint32]0
+  [Win32]::GetWindowThreadProcessId($fgHwnd, [ref]$fgPid) | Out-Null
+  return ($fgPid -eq [uint32]$pid)
+}
+
+# Reliably bring Phone Link to the foreground and into a focused state.
+# Order of operations (each step independently survives partial failures):
+#   1) ShowWindow(SW_RESTORE) — un-minimise if needed.
+#   2) AttachThreadInput(self -> PhoneLink) — defeats Win 11 24H2
+#      foreground-steal protection by sharing input authorisation with
+#      Phone Link's UI thread. Without this, SetForegroundWindow from a
+#      background PowerShell silently no-ops on most systems.
+#   3) BringWindowToTop + SetForegroundWindow — actual foreground promotion.
+#   4) AppActivate — WSH COM fallback if step 3 still didn't take.
+#   5) Element SetFocus — only useful once the window owns foreground.
+function Bring-PhoneLinkForeground {
+  param($window, [int]$pid)
+  $hwnd = [IntPtr]$window.Current.NativeWindowHandle
+  if ($hwnd -ne [IntPtr]::Zero) {
+    [Win32]::ShowWindow($hwnd, 9) | Out-Null   # SW_RESTORE
+    $phoneLinkTid = [uint32]0
+    [Win32]::GetWindowThreadProcessId($hwnd, [ref]$phoneLinkTid) | Out-Null
+    $myTid = [Win32]::GetCurrentThreadId()
+    [Win32]::AttachThreadInput($myTid, $phoneLinkTid, $true) | Out-Null
+    [Win32]::BringWindowToTop($hwnd) | Out-Null
+    [Win32]::SetForegroundWindow($hwnd) | Out-Null
+    [Win32]::AttachThreadInput($myTid, $phoneLinkTid, $false) | Out-Null
+  }
+  Start-Sleep -Milliseconds 200
+  if (-not (Is-PhoneLinkForeground $pid)) {
+    $shell = New-Object -ComObject WScript.Shell
+    if (-not $shell.AppActivate($pid)) {
+      if (-not $shell.AppActivate('Phone Link')) {
+        $shell.AppActivate('Link to Windows') | Out-Null
+      }
+    }
+    Start-Sleep -Milliseconds 250
+  }
+  try { $window.SetFocus() } catch { }
+}
+
 $window = Find-PhoneLinkWindow 6
 if (-not $window) { throw 'Could not find Phone Link window via UIAutomation' }
 
-# ── 3. Restore + foreground + SetFocus with retries ─────────────────────────
-# Multi-send failures (3rd send fails with "Target element cannot receive
-# focus") happen when Phone Link's window is minimized, backgrounded, or its
-# UIAutomation element is stale after the previous send's UI transition.
-# Strategy: restore the native window first (ShowWindow SW_RESTORE +
-# SetForegroundWindow), then try SetFocus on the element with re-find retries.
-$hwnd = [IntPtr]$window.Current.NativeWindowHandle
-if ($hwnd -ne [IntPtr]::Zero) {
-  [Win32]::ShowWindow($hwnd, 9) | Out-Null   # SW_RESTORE
-  Start-Sleep -Milliseconds 150
-  [Win32]::SetForegroundWindow($hwnd) | Out-Null
-  Start-Sleep -Milliseconds 150
-}
-
+# ── 3. Bring to foreground (with retries on stale element refs) ─────────────
 $focusOk = $false
 for ($i = 0; $i -lt 3 -and -not $focusOk; $i++) {
   try {
-    $window.SetFocus()
-    $focusOk = $true
-  } catch {
-    Start-Sleep -Milliseconds 400
-    $window = Find-PhoneLinkWindow 3
-    if (-not $window) { throw 'Phone Link window disappeared while focusing' }
-    $hwnd = [IntPtr]$window.Current.NativeWindowHandle
-    if ($hwnd -ne [IntPtr]::Zero) {
-      [Win32]::ShowWindow($hwnd, 9) | Out-Null
-      [Win32]::SetForegroundWindow($hwnd) | Out-Null
-      Start-Sleep -Milliseconds 200
+    Bring-PhoneLinkForeground $window $proc.Id
+    if (Is-PhoneLinkForeground $proc.Id) {
+      $focusOk = $true
+      break
     }
-  }
+  } catch { }
+  Start-Sleep -Milliseconds 350
+  $window = Find-PhoneLinkWindow 3
+  if (-not $window) { throw 'Phone Link window disappeared while focusing' }
 }
-if (-not $focusOk) { throw 'Could not focus Phone Link after 3 attempts. Click on Phone Link and try again.' }
-Start-Sleep -Milliseconds 500
+if (-not $focusOk) {
+  throw 'Could not bring Phone Link to the foreground. Click on the Phone Link window once and try again.'
+}
+Start-Sleep -Milliseconds 400
 
 # ── 4. Shared condition objects ─────────────────────────────────────────────
 $btnTypeCond = New-Object System.Windows.Automation.PropertyCondition(
@@ -142,15 +177,12 @@ Start-Sleep -Milliseconds 800
 Start-Sleep -Milliseconds 1300
 
 # ── 7. Find message field by Name (poll up to 4s), type message ─────────────
-# Phone Link can take a moment to re-render after the recipient Enter — poll
-# rather than relying on a single fixed sleep.
 $msgField = $null
 $msgDeadline = [datetime]::Now.AddSeconds(4)
 while ([datetime]::Now -lt $msgDeadline -and -not $msgField) {
   $edits2 = $window.FindAll([System.Windows.Automation.TreeScope]::Descendants, $editCond)
   $msgField = $edits2 | Where-Object { $_.Current.Name -match 'Type a message|Aa|Message|Continue' } | Select-Object -First 1
   if (-not $msgField -and $edits2.Count -gt $edits.Count) {
-    # Conversation view added a new edit field; take the last one
     $msgField = $edits2 | Select-Object -Last 1
   }
   if (-not $msgField) { Start-Sleep -Milliseconds 250 }
