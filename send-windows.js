@@ -13,7 +13,7 @@ function escapePowerShell(value) {
 
 module.exports = async function sendViaPhoneLink(number, message) {
   const safeNumber = escapeSendKeys(escapePowerShell(number));
-  const safeMessage = escapePowerShell(message || '');
+  const safeMessage = escapeSendKeys(escapePowerShell(message || ''));
   const tmpFile = join(os.tmpdir(), `textyourlist-${Date.now()}.ps1`);
 
   const processNames = ['PhoneLink', 'PhoneLinkHost', 'PhoneExperienceHost', 'PhoneExperience', 'PhoneLinkInfrastructureHost', 'YourPhone', 'YourPhoneServiceHost'];
@@ -23,22 +23,7 @@ Add-Type -AssemblyName UIAutomationClient
 Add-Type -AssemblyName UIAutomationTypes
 Add-Type -AssemblyName System.Windows.Forms
 
-Add-Type @"
-using System;
-using System.Runtime.InteropServices;
-public class Win32 {
-    [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);
-    [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
-    [DllImport("user32.dll")] public static extern bool BringWindowToTop(IntPtr hWnd);
-    [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
-    [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
-    [DllImport("user32.dll")] public static extern bool AttachThreadInput(uint idAttach, uint idAttachTo, bool fAttach);
-    [DllImport("user32.dll")] public static extern void SwitchToThisWindow(IntPtr hWnd, bool fAltTab);
-    [DllImport("kernel32.dll")] public static extern uint GetCurrentThreadId();
-}
-"@ -Language CSharp
-
-# ── 1. Find Phone Link process ──────────────────────────────────────────────
+# ── 1. Find Phone Link process (any UWP variant) ────────────────────────────
 $proc = $null
 foreach ($name in @(${processNames.map(n => `'${n}'`).join(',')})) {
   $found = Get-Process -Name $name -ErrorAction SilentlyContinue | Select-Object -First 1
@@ -56,13 +41,6 @@ $pidCond = New-Object System.Windows.Automation.PropertyCondition(
   [System.Windows.Automation.AutomationElement]::ProcessIdProperty, $proc.Id
 )
 
-function Is-PhoneLinkForeground {
-  $fgHwnd = [Win32]::GetForegroundWindow()
-  $fgPid = [uint32]0
-  [Win32]::GetWindowThreadProcessId($fgHwnd, [ref]$fgPid) | Out-Null
-  return ($fgPid -eq [uint32]$proc.Id)
-}
-
 $window = $null
 $winDeadline = [datetime]::Now.AddSeconds(6)
 while ([datetime]::Now -lt $winDeadline) {
@@ -72,124 +50,74 @@ while ([datetime]::Now -lt $winDeadline) {
 }
 if (-not $window) { throw 'Could not find Phone Link window via UIAutomation' }
 
-# ── 3. Bring Phone Link to foreground ──────────────────────────────────────
-# Three-layer approach: UIAutomation → thread-input attachment → AppActivate
+# ── 3. Bring Phone Link to foreground (UIAutomation SetFocus only) ──────────
 $window.SetFocus()
-Start-Sleep -Milliseconds 200
+Start-Sleep -Milliseconds 500
 
-$hwnd = [IntPtr]$window.Current.NativeWindowHandle
-if ($hwnd -ne [IntPtr]::Zero) {
-  [Win32]::ShowWindow($hwnd, 9) | Out-Null   # SW_RESTORE
+# ── 4. Shared condition objects ─────────────────────────────────────────────
+$btnTypeCond = New-Object System.Windows.Automation.PropertyCondition(
+  [System.Windows.Automation.AutomationElement]::ControlTypeProperty,
+  [System.Windows.Automation.ControlType]::Button
+)
+$invokableCond = New-Object System.Windows.Automation.PropertyCondition(
+  [System.Windows.Automation.AutomationElement]::IsInvokePatternAvailableProperty, $true
+)
+$btnCond = New-Object System.Windows.Automation.AndCondition($btnTypeCond, $invokableCond)
 
-  # Attach our PowerShell thread's input to Phone Link's thread so
-  # SetForegroundWindow is not blocked by Windows foreground-steal restrictions.
-  $phoneLinkTid = [uint32]0
-  $phoneLinkTid = [Win32]::GetWindowThreadProcessId($hwnd, [ref]$phoneLinkTid)
-  $myTid = [Win32]::GetCurrentThreadId()
-  [Win32]::AttachThreadInput($myTid, $phoneLinkTid, $true) | Out-Null
-  [Win32]::BringWindowToTop($hwnd) | Out-Null
-  [Win32]::SetForegroundWindow($hwnd) | Out-Null
-  [Win32]::AttachThreadInput($myTid, $phoneLinkTid, $false) | Out-Null
-  Start-Sleep -Milliseconds 200
-}
-
-$shell = New-Object -ComObject WScript.Shell
-if (-not $shell.AppActivate($proc.Id)) {
-  if (-not $shell.AppActivate('Phone Link')) {
-    $shell.AppActivate('Link to Windows') | Out-Null
-  }
-}
-Start-Sleep -Milliseconds 300
-
-if (-not (Is-PhoneLinkForeground)) {
-  $window.SetFocus()
-  Start-Sleep -Milliseconds 400
-  if (-not (Is-PhoneLinkForeground)) {
-    throw 'Could not bring Phone Link to the foreground. Click on the Phone Link window and try again.'
-  }
-}
-
-# ── 4. Open compose via Ctrl+N — wait for new edit field ───────────────────
 $editTypeCond = New-Object System.Windows.Automation.PropertyCondition(
   [System.Windows.Automation.AutomationElement]::ControlTypeProperty,
   [System.Windows.Automation.ControlType]::Edit
 )
-$editsBefore = $window.FindAll([System.Windows.Automation.TreeScope]::Descendants, $editTypeCond).Count
+$enabledCond = New-Object System.Windows.Automation.PropertyCondition(
+  [System.Windows.Automation.AutomationElement]::IsEnabledProperty, $true
+)
+$editCond = New-Object System.Windows.Automation.AndCondition($editTypeCond, $enabledCond)
 
-$window.SetFocus()
-[System.Windows.Forms.SendKeys]::SendWait('^n')
+# ── 5. Open compose: try compose button first, fall back to Ctrl+N ──────────
+$compose = $window.FindAll([System.Windows.Automation.TreeScope]::Descendants, $btnCond) |
+  Where-Object { $_.Current.Name -match 'New message|Compose|New conversation' } |
+  Select-Object -First 1
+if ($compose) {
+  $compose.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke()
+} else {
+  [System.Windows.Forms.SendKeys]::SendWait('^n')
+}
+Start-Sleep -Milliseconds 600
 
-$composeDeadline = [datetime]::Now.AddSeconds(5)
-$composeOpened = $false
-while ([datetime]::Now -lt $composeDeadline) {
-  if ($window.FindAll([System.Windows.Automation.TreeScope]::Descendants, $editTypeCond).Count -gt $editsBefore) {
-    $composeOpened = $true
-    break
-  }
-  Start-Sleep -Milliseconds 200
-}
-if (-not $composeOpened) {
-  throw 'Phone Link compose view did not open after Ctrl+N. Make sure Phone Link is open on the Messages tab and try again.'
-}
+# ── 6. Find recipient field by Name, type number, Enter ─────────────────────
+$edits = $window.FindAll([System.Windows.Automation.TreeScope]::Descendants, $editCond)
+$recipient = $edits | Where-Object { $_.Current.Name -match 'Type a name|Type a number|To:' } | Select-Object -First 1
+if (-not $recipient) { $recipient = $edits | Select-Object -First 1 }
+if (-not $recipient) { throw 'Recipient field not found' }
+
+$recipient.SetFocus()
 Start-Sleep -Milliseconds 300
-
-# ── 5. Type recipient number ────────────────────────────────────────────────
 [System.Windows.Forms.SendKeys]::SendWait('${safeNumber}')
 Start-Sleep -Milliseconds 800
 [System.Windows.Forms.SendKeys]::SendWait('{ENTER}')
+Start-Sleep -Milliseconds 1200
 
-# ── 6. Find message field via UIAutomation, fall back to Tab ───────────────
-# After recipient Enter, Phone Link transitions from compose to conversation view.
-# Poll for an enabled, visible, empty Edit field — that is the message input.
-# If UIAutomation can't find it (Phone Link version without ValuePattern), fall back.
-$msgDeadline = [datetime]::Now.AddSeconds(6)
-$msgField = $null
-while ([datetime]::Now -lt $msgDeadline) {
-  $edits = $window.FindAll([System.Windows.Automation.TreeScope]::Descendants, $editTypeCond)
-  foreach ($edit in $edits) {
-    if ($edit.Current.IsEnabled -and -not $edit.Current.IsOffscreen) {
-      try {
-        $vp = $edit.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern)
-        if ($vp.Current.Value -eq '') { $msgField = $edit; break }
-      } catch { }
-    }
-  }
-  if ($msgField) { break }
-  Start-Sleep -Milliseconds 200
-}
+# ── 7. Find message field by Name, type message ─────────────────────────────
+$edits2 = $window.FindAll([System.Windows.Automation.TreeScope]::Descendants, $editCond)
+$msgField = $edits2 | Where-Object { $_.Current.Name -match 'Type a message|Aa|Message|Continue' } | Select-Object -First 1
+if (-not $msgField) { $msgField = $edits2 | Select-Object -Last 1 }
+if (-not $msgField) { throw 'Message field not found' }
 
-if ($msgField) {
-  $msgField.SetFocus()
-  Start-Sleep -Milliseconds 300
-} else {
-  # Fallback: fixed wait then Tab (original behaviour for Phone Link versions
-  # where UIAutomation ValuePattern is unavailable)
-  Start-Sleep -Milliseconds 1200
-  [System.Windows.Forms.SendKeys]::SendWait('{TAB}')
-  Start-Sleep -Milliseconds 500
-}
-
-# ── 7. Paste message and send ───────────────────────────────────────────────
-Set-Clipboard -Value '${safeMessage}'
-Start-Sleep -Milliseconds 200
-[System.Windows.Forms.SendKeys]::SendWait('^v')
+$msgField.SetFocus()
+Start-Sleep -Milliseconds 300
+[System.Windows.Forms.SendKeys]::SendWait('${safeMessage}')
 Start-Sleep -Milliseconds 500
-[System.Windows.Forms.SendKeys]::SendWait('{ENTER}')
-Start-Sleep -Milliseconds 800
 
-# ── 8. Verify message was consumed ─────────────────────────────────────────
-# If the compose field still has content after Enter, the keystroke was not
-# captured (focus slipped). This turns a silent false-positive into a real
-# failure that TYL can retry or surface to the user.
-if ($msgField) {
-  try {
-    $vp2 = $msgField.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern)
-    if ($vp2.Current.Value -ne '') {
-      throw "Message may not have sent — compose field still has content after Enter. Phone Link may have lost focus mid-send."
-    }
-  } catch [System.Management.Automation.RuntimeException] { throw }
-  catch { }  # ValuePattern unavailable or element gone — skip check
+# ── 8. Invoke Send button; fall back to Enter ───────────────────────────────
+$sendBtn = $window.FindAll([System.Windows.Automation.TreeScope]::Descendants, $btnCond) |
+  Where-Object { $_.Current.Name -match '^Send$|^Send message$' } |
+  Select-Object -First 1
+if ($sendBtn) {
+  $sendBtn.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke()
+} else {
+  [System.Windows.Forms.SendKeys]::SendWait('{ENTER}')
 }
+Start-Sleep -Milliseconds 500
 `;
 
   const scriptBuffer = Buffer.concat([
@@ -203,7 +131,7 @@ if ($msgField) {
       const proc = execFile(
         'powershell',
         ['-NonInteractive', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-File', tmpFile],
-        { windowsHide: true, timeout: 35000 },
+        { windowsHide: true, timeout: 45000 },
         (err, stdout, stderr) => {
           if (err) {
             if (err.killed || err.signal === 'SIGTERM') {
