@@ -571,17 +571,17 @@ function renderSend(main) {
       <a href="#" onclick="navigate('quick-send');return false" style="font-size:12.5px;color:var(--accent);font-weight:600;text-decoration:underline;margin-top:4px">Send a test message</a>
     </div>
     <div id="companion-status-banner"></div>
-    ${(u.pending_api_count || 0) > 0 ? `<div id="api-pending-banner" style="background:#fff7ed;border:1px solid #fb923c;border-radius:8px;padding:14px 16px;margin:0 0 14px;font-size:13.5px">
+    ${(u.pending_api_count || 0) > 0 ? `<div id="api-pending-banner" style="background:#ea580c;border:1px solid #ea580c;border-radius:8px;padding:14px 16px;margin:0 0 14px;font-size:13.5px;color:#fff">
       <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
-        <span style="font-weight:600;color:#9a3412">⏸ ${u.pending_api_count} message${u.pending_api_count===1?'':'s'} held via API — waiting for your approval</span>
+        <span style="font-weight:600;color:#fff">⏸ ${u.pending_api_count} message${u.pending_api_count===1?'':'s'} held via API — waiting for your approval</span>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
-          <button class="btn btn-primary btn-sm" onclick="releaseApiMessages(0)">Send now (fast)</button>
-          <button class="btn btn-ghost btn-sm" onclick="releaseApiMessages(${u.api_default_pace >= 0 ? u.api_default_pace : 7})">Smart Throttle</button>
-          <button class="btn btn-ghost btn-sm" onclick="document.getElementById('api-pending-banner').style.display='none'">Keep holding</button>
-          <button class="btn btn-ghost btn-sm" style="color:var(--danger)" onclick="cancelApiMessages()">Cancel all</button>
+          <button class="btn btn-sm" style="background:#fff;color:#ea580c;border:none" onclick="releaseApiMessages(0)">Send now (fast)</button>
+          <button class="btn btn-sm" style="background:transparent;color:#fff;border:1px solid #fff" onclick="releaseApiMessages(${u.api_default_pace >= 0 ? u.api_default_pace : 7})">Smart Throttle</button>
+          <button class="btn btn-sm" style="background:transparent;color:#fff;border:1px solid #fff" onclick="document.getElementById('api-pending-banner').style.display='none'">Keep holding</button>
+          <button class="btn btn-sm" style="background:#fff;color:#dc2626;border:none" onclick="cancelApiMessages()">Cancel all</button>
         </div>
       </div>
-      <div style="font-size:12px;color:#c2410c;margin-top:6px">To act on these later, check <strong>Send History</strong> — they appear at the top with a Review button.</div>
+      <div style="font-size:12px;color:#fff;opacity:0.9;margin-top:6px">To act on these later, check <strong>Send History</strong> — they appear at the top with a Review button.</div>
     </div>` : ''}
     <div class="main-body"><div id="send-body"></div></div>`;
 
@@ -648,7 +648,7 @@ async function checkCompanionBanner() {
     const lastUsed = activeKey.last_used_at;
     const secsAgo = lastUsed ? (Date.now() - new Date(lastUsed + 'Z').getTime()) / 1000 : Infinity;
     if (secsAgo > 90) {
-      el.innerHTML = `<div style="background:#fef3c7;border:1px solid #fbbf24;border-radius:8px;padding:10px 16px;margin:0 0 12px;font-size:13.5px;display:flex;align-items:center;gap:10px">
+      el.innerHTML = `<div style="background:#d97706;border:1px solid #d97706;border-radius:8px;padding:10px 16px;margin:0 0 12px;font-size:13.5px;display:flex;align-items:center;gap:10px;color:#fff">
         <span style="font-size:16px">&#9888;</span>
         <span><strong>Companion app not connected.</strong> Your messages are queued but won't send until your companion app is open and running.
         <a href="#" onclick="navigate('help');return false" style="color:var(--accent);text-decoration:underline">Go to Help</a> to download it.
@@ -1093,11 +1093,11 @@ async function renderBulkSend(body) {
           <textarea id="bs-message" rows="4" placeholder="Hi {first_name}, just wanted to reach out..."></textarea>
           ${emojiBarHtml('bs-message')}
           <div class="char-count" id="bs-char">0 chars &middot; 1 segment</div>
-          <div id="bs-merge-warning" style="display:none;margin-top:6px;padding:8px 12px;background:#fef3c7;border:1px solid #fbbf24;border-radius:6px;font-size:13px;color:#92400e"></div>
+          <div id="bs-merge-warning" style="display:none;margin-top:6px;padding:8px 12px;background:#d97706;border:1px solid #d97706;border-radius:6px;font-size:13px;color:#fff"></div>
           <div id="bs-identical-warn" class="alert alert-warn" style="display:none;margin-top:8px;margin-bottom:0">&#9888; This message is identical for every recipient. Add a merge field like {first_name} for better delivery rates and to avoid spam filters.</div>
-          <div id="bs-personalization-nudge" style="display:none;margin-top:8px;background:#fef9c3;border:1px solid #fbbf24;border-radius:8px;padding:10px 14px;font-size:13px">
-            &#128161; <strong>Tip:</strong> Adding a name like <code>{first_name}</code> makes each text feel personal and dramatically improves response rates.
-            <a href="#" style="color:#92400e;margin-left:6px;text-decoration:underline" onclick="document.getElementById('bs-personalization-nudge').style.display='none';return false">Got it</a>
+          <div id="bs-personalization-nudge" style="display:none;margin-top:8px;background:#d97706;border:1px solid #d97706;border-radius:8px;padding:10px 14px;font-size:13px;color:#fff">
+            &#128161; <strong>Tip:</strong> Adding a name like <code style="background:#fff;padding:1px 6px;border-radius:3px;color:#9a3412;font-weight:600">{first_name}</code> makes each text feel personal and dramatically improves response rates.
+            <a href="#" style="color:#fff;margin-left:6px;text-decoration:underline" onclick="document.getElementById('bs-personalization-nudge').style.display='none';return false">Got it</a>
           </div>
           <div id="bs-live-preview" style="display:none;margin-top:10px;background:#f8f9fa;border:1px solid #e5e7eb;border-radius:8px;padding:10px 14px">
             <div style="font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px">Sample preview</div>
@@ -2469,13 +2469,13 @@ async function renderHistoryTab(body) {
 
 function statusBadge(status) {
   const map = {
-    draft:       'background:#e5e7eb;color:#374151',
-    queued:      'background:#dbeafe;color:#1d4ed8',
-    completed:   'background:#dcfce7;color:#15803d',
-    failed:      'background:#fee2e2;color:#dc2626',
-    paused:      'background:#fef9c3;color:#a16207',
-    cancelled:   'background:#e5e7eb;color:#6b7280',
-    api_pending: 'background:#fff7ed;color:#c2410c',
+    draft:       'background:#6b7280;color:#fff',
+    queued:      'background:#2C60A0;color:#fff',
+    completed:   'background:#16a34a;color:#fff',
+    failed:      'background:#dc2626;color:#fff',
+    paused:      'background:#d97706;color:#fff',
+    cancelled:   'background:#6b7280;color:#fff',
+    api_pending: 'background:#ea580c;color:#fff',
   };
   const style = map[status] || map.draft;
   const label = status === 'queued' ? '⟳ Sending' : status === 'api_pending' ? '⏸ Held' : status.charAt(0).toUpperCase() + status.slice(1);
@@ -2512,7 +2512,7 @@ function renderJobCard(j) {
           <div class="progress-bar"><div class="progress-fill" style="width:${pct}%${isActive?';animation:none':''}"></div></div>
         </div>` : ''}
       <div style="font-size:12px;color:var(--text-muted);margin-top:8px">
-        ${isWebJob ? '<span style="background:#f3f4f6;color:#6b7280;font-size:11px;font-weight:600;padding:1px 6px;border-radius:4px;margin-right:4px">API</span>' : ''}
+        ${isWebJob ? '<span style="background:#6b7280;color:#fff;font-size:11px;font-weight:600;padding:1px 6px;border-radius:4px;margin-right:4px">API</span>' : ''}
         Started ${fmt(j.created_at)}
         ${j.updated_at && j.updated_at !== j.created_at ? ` · Updated ${fmt(j.updated_at)}` : ''}
         ${!isHeld && j.pace_seconds > 0 ? ` · Smart Throttle (~${j.pace_seconds}-${j.pace_seconds + 7}s)` : ''}
@@ -2541,16 +2541,16 @@ async function loadCampaignHistory() {
       const pace = currentUser?.api_default_pace >= 0 ? currentUser.api_default_pace : 7;
       const totalMsgs = heldJobs.reduce((s, j) => s + (j.total || 1), 0);
       html += `
-        <div style="background:#fff7ed;border:1px solid #fb923c;border-radius:10px;padding:14px 16px;margin-bottom:8px">
+        <div style="background:#ea580c;border:1px solid #ea580c;border-radius:10px;padding:14px 16px;margin-bottom:8px;color:#fff">
           <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
             <div>
-              <div style="font-weight:700;font-size:14px;color:#9a3412">&#9208; ${heldJobs.length} job${heldJobs.length===1?'':'s'} held via API</div>
-              <div style="font-size:12px;color:#c2410c;margin-top:2px">${totalMsgs} message${totalMsgs===1?'':'s'} waiting for your approval</div>
+              <div style="font-weight:700;font-size:14px;color:#fff">&#9208; ${heldJobs.length} job${heldJobs.length===1?'':'s'} held via API</div>
+              <div style="font-size:12px;color:#fff;opacity:0.9;margin-top:2px">${totalMsgs} message${totalMsgs===1?'':'s'} waiting for your approval</div>
             </div>
             <div style="display:flex;gap:8px;flex-wrap:wrap">
-              <button class="btn btn-primary btn-sm" onclick="releaseApiMessages(0)">Release all (fast)</button>
-              <button class="btn btn-ghost btn-sm" onclick="releaseApiMessages(${pace})">Smart Throttle</button>
-              <button class="btn btn-ghost btn-sm" style="color:var(--danger)" onclick="cancelApiMessages()">Cancel all</button>
+              <button class="btn btn-sm" style="background:#fff;color:#ea580c;border:none" onclick="releaseApiMessages(0)">Release all (fast)</button>
+              <button class="btn btn-sm" style="background:transparent;color:#fff;border:1px solid #fff" onclick="releaseApiMessages(${pace})">Smart Throttle</button>
+              <button class="btn btn-sm" style="background:#fff;color:#dc2626;border:none" onclick="cancelApiMessages()">Cancel all</button>
             </div>
           </div>
         </div>`;
@@ -2667,12 +2667,12 @@ async function refreshJobDetail(jobId) {
           if (deadPhones.length > 0 && container) {
             const banner = document.createElement('div');
             banner.id = 'dead-suppress-banner';
-            banner.style.cssText = 'background:#fef3c7;border:1px solid #fbbf24;border-radius:8px;padding:10px 16px;margin-bottom:16px;font-size:13.5px;display:flex;align-items:center;justify-content:space-between;gap:12px';
+            banner.style.cssText = 'background:#d97706;border:1px solid #d97706;border-radius:8px;padding:10px 16px;margin-bottom:16px;font-size:13.5px;display:flex;align-items:center;justify-content:space-between;gap:12px;color:#fff';
             banner.innerHTML = `
               <span>&#9888; <strong>${deadPhones.length} number${deadPhones.length === 1 ? '' : 's'} failed permanently.</strong> Add to suppression list to skip them on future sends?</span>
               <div style="display:flex;gap:8px;flex-shrink:0">
-                <button class="btn btn-primary btn-sm" id="btn-suppress-dead">Add to suppression list</button>
-                <button class="btn btn-ghost btn-sm" id="btn-suppress-dismiss">Dismiss</button>
+                <button class="btn btn-sm" style="background:#fff;color:#d97706;border:none" id="btn-suppress-dead">Add to suppression list</button>
+                <button class="btn btn-sm" style="background:transparent;color:#fff;border:1px solid #fff" id="btn-suppress-dismiss">Dismiss</button>
               </div>`;
             container.insertBefore(banner, container.firstChild);
             document.getElementById('btn-suppress-dead').addEventListener('click', async () => {
@@ -2912,15 +2912,15 @@ function renderGettingStarted(main) {
       <div class="main-body" style="max-width:640px">
 
         <!-- Setup toggle -->
-        <div style="display:flex;align-items:center;gap:14px;padding:16px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;margin-bottom:20px">
+        <div style="display:flex;align-items:center;gap:14px;padding:16px;background:#16a34a;border:1px solid #16a34a;border-radius:8px;margin-bottom:20px;color:#fff">
           <label style="position:relative;display:inline-block;width:44px;height:24px;cursor:pointer;flex-shrink:0">
             <input type="checkbox" id="setup-toggle-input" checked style="opacity:0;width:0;height:0">
-            <span id="setup-toggle-track" style="position:absolute;inset:0;background:#16a34a;border-radius:99px;transition:0.2s"></span>
-            <span id="setup-toggle-thumb" style="position:absolute;top:3px;left:23px;width:18px;height:18px;background:#fff;border-radius:50%;transition:0.2s"></span>
+            <span id="setup-toggle-track" style="position:absolute;inset:0;background:#fff;border-radius:99px;transition:0.2s"></span>
+            <span id="setup-toggle-thumb" style="position:absolute;top:3px;left:23px;width:18px;height:18px;background:#16a34a;border-radius:50%;transition:0.2s"></span>
           </label>
           <div>
-            <div style="font-size:14px;font-weight:600;color:#15803d">&#10003; Setup complete</div>
-            <div style="font-size:12.5px;color:#166534">Toggle off to show setup steps again</div>
+            <div style="font-size:14px;font-weight:600;color:#fff">&#10003; Setup complete</div>
+            <div style="font-size:12.5px;color:#fff;opacity:0.9">Toggle off to show setup steps again</div>
           </div>
         </div>
 
@@ -3240,7 +3240,7 @@ function renderBilling(main) {
           <span style="position:absolute;inset:0;background:${billingCycle==='annual'?'#16a34a':'#ccc'};border-radius:99px;transition:0.2s"></span>
           <span style="position:absolute;top:3px;left:${billingCycle==='annual'?'23px':'3px'};width:18px;height:18px;background:#fff;border-radius:50%;transition:0.2s"></span>
         </label>
-        <span style="font-size:14px;font-weight:${billingCycle==='annual'?'700':'400'}">Annual <span style="font-size:12px;background:#dcfce7;color:#15803d;padding:2px 8px;border-radius:99px;font-weight:600">Save 20%</span></span>
+        <span style="font-size:14px;font-weight:${billingCycle==='annual'?'700':'400'}">Annual <span style="font-size:12px;background:#16a34a;color:#fff;padding:2px 8px;border-radius:99px;font-weight:600">Save 20%</span></span>
       </div>
 
       <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px">
@@ -3820,7 +3820,7 @@ function renderAccount(main) {
               <option value="windows" ${u.api_send_platform === 'windows' ? 'selected' : ''}>Windows</option>
               <option value="any" ${u.api_send_platform === 'any' ? 'selected' : ''}>Any (first available)</option>
             </select>
-            <div id="windows-platform-warning" style="margin-top:8px;padding:8px 10px;background:#fffbeb;border:1px solid #fcd34d;border-radius:6px;font-size:12px;color:#92400e;${(u.api_send_platform === 'windows') ? '' : 'display:none'}">⚠ Windows sends go through Phone Link. If you are actively using your Windows machine when sends come in, Phone Link may disrupt your work. Consider using <strong>Hold until launch</strong> above to control when sends happen.</div>
+            <div id="windows-platform-warning" style="margin-top:8px;padding:8px 10px;background:#d97706;border:1px solid #d97706;border-radius:6px;font-size:12px;color:#fff;${(u.api_send_platform === 'windows') ? '' : 'display:none'}">⚠ Windows sends go through Phone Link. If you are actively using your Windows machine when sends come in, Phone Link may disrupt your work. Consider using <strong>Hold until launch</strong> above to control when sends happen.</div>
           </div>
           <button class="btn btn-ghost btn-sm" id="save-api-pace">Save</button>
         </div>

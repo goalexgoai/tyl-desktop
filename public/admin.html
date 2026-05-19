@@ -32,12 +32,12 @@
     .form-inline label { font-size: 11px; font-weight: 600; color: #666; text-transform: uppercase; letter-spacing: 0.4px; }
     .form-inline input, .form-inline select { padding: 7px 10px; border: 1px solid #ddd; border-radius: 6px; font-size: 13.5px; font-family: inherit; }
     .status-badge { font-size: 11px; padding: 2px 8px; border-radius: 99px; font-weight: 500; }
-    .status-active { background: #dcfce7; color: #15803d; }
-    .status-free { background: #f3f4f6; color: #374151; }
-    .status-cancelled { background: #fee2e2; color: #dc2626; }
-    .status-past_due { background: #fef3c7; color: #b45309; }
-    .status-manual { background: #dbeafe; color: #1d4ed8; }
-    .status-trialing { background: #ede9fe; color: #6d28d9; }
+    .status-active { background: #16a34a; color: #fff; }
+    .status-free { background: #6b7280; color: #fff; }
+    .status-cancelled { background: #dc2626; color: #fff; }
+    .status-past_due { background: #d97706; color: #fff; }
+    .status-manual { background: #2C60A0; color: #fff; }
+    .status-trialing { background: #7c3aed; color: #fff; }
     @media (max-width: 900px) {
       .metrics-grid { grid-template-columns: repeat(4, 1fr); }
     }
@@ -280,7 +280,7 @@
             <td>
               ${esc(u.email)}
               ${u.is_admin ? ' <span class="badge">admin</span>' : ''}
-              ${u.manual_account ? ' <span class="badge" style="background:#dbeafe;color:#1d4ed8">manual</span>' : ''}
+              ${u.manual_account ? ' <span class="badge" style="background:#2C60A0;color:#fff">manual</span>' : ''}
             </td>
             <td>
               <select class="plan-select" data-uid="${u.id}">
