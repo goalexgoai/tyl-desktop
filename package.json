@@ -1,6 +1,6 @@
 {
   "name": "textyourlist",
-  "version": "1.0.87",
+  "version": "1.0.88",
   "description": "Text Your List — Send personal texts to your list",
   "main": "main.js",
   "scripts": {
@@ -80,8 +80,7 @@
           ]
         }
       ],
-      "icon": "assets/icon.ico",
-      "signAndEditExecutable": false
+      "icon": "assets/icon.ico"
     },
     "publish": {
       "provider": "github",
