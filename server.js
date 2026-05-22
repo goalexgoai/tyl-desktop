@@ -848,12 +848,17 @@ app.get('/api/auth/me', requireAuth, async (req, res) => {
   });
 });
 
+// App version (reported to the web server on each heartbeat for admin visibility).
+let APP_VERSION = '';
+try { APP_VERSION = require('electron').app.getVersion(); }
+catch { try { APP_VERSION = require('./package.json').version; } catch { APP_VERSION = ''; } }
+
 // Desktop heartbeat — updates local timestamp, signals web server, caches web pending count
 app.post('/api/desktop-ping', requireAuth, (req, res) => {
   db.prepare("UPDATE users SET last_active_at = datetime('now') WHERE id = ?").run(req.user.id);
   if (req.user.web_user_id) {
     // Signal web server that desktop is active (updates desktop_last_seen_at for API routing)
-    desktopWebPost('/api/desktop-heartbeat', { web_user_id: req.user.web_user_id }).catch(() => {});
+    desktopWebPost('/api/desktop-heartbeat', { web_user_id: req.user.web_user_id, version: APP_VERSION }).catch(() => {});
     // Fetch and cache web pending count so /api/auth/me can include it
     desktopWebPost('/api/desktop-web-pending', { web_user_id: req.user.web_user_id, action: 'count' })
       .then(r => {
