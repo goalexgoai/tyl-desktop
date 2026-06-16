@@ -2984,6 +2984,20 @@ if (process.env.TYL_DESKTOP) {
           log(message.user_id, message.id, message.job_id, message.phone, newStatus, err.message);
           console.error(`[desktop-sender] failed → ${message.phone}: ${err.message}`);
         }
+        // Ship debug log to web server on any Windows failure so failures are
+        // visible in the admin panel without needing to access the user's machine.
+        if (err.debugLog) {
+          const reportRow = db.prepare('SELECT web_user_id FROM users WHERE id = ?').get(message.user_id);
+          if (reportRow && reportRow.web_user_id) {
+            desktopWebPost('/api/desktop-error-report', {
+              web_user_id: reportRow.web_user_id,
+              platform: process.platform,
+              app_version: APP_VERSION,
+              error_message: err.message,
+              debug_log: err.debugLog,
+            }).catch(() => {});
+          }
+        }
       }
 
       recountJob(message.job_id);

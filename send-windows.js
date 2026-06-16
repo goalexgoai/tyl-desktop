@@ -356,6 +356,7 @@ Log "send complete (no exception thrown)"
   ]);
   writeFileSync(tmpFile, scriptBuffer);
 
+  let sendError = null;
   try {
     await new Promise((resolve, reject) => {
       const proc = execFile(
@@ -378,8 +379,20 @@ Log "send complete (no exception thrown)"
       );
       if (typeof global.__registerSendProc === 'function') global.__registerSendProc(proc);
     });
+  } catch (err) {
+    sendError = err;
   } finally {
     try { unlinkSync(tmpFile); } catch (_) {}
+  }
+
+  if (sendError) {
+    // Attach the PowerShell debug log so the caller can ship it to the server
+    // for diagnosis without needing to reach the user's machine.
+    try {
+      const { readFileSync } = require('fs');
+      sendError.debugLog = readFileSync(join(os.tmpdir(), 'tyl-send-debug.log'), 'utf8');
+    } catch (_) {}
+    throw sendError;
   }
   return true;
 };
