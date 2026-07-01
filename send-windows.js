@@ -297,7 +297,12 @@ $recipient = $edits | Where-Object { $_.Current.Name -match 'Type a name|Type a 
 if (-not $recipient) { $recipient = $edits | Select-Object -First 1 }
 $recipName = ''
 try { if ($recipient) { $recipName = $recipient.Current.Name } } catch { }
-Log "recipient field: edits_found=$($edits.Count), picked='$recipName'"
+# Dump every edit's Name so a failing machine's log reveals the actual UI
+# strings (localization / Phone Link version drift show up here). Diagnostic
+# only — does not affect the send path.
+$editNames = ''
+try { $editNames = (@($edits) | ForEach-Object { "'" + $_.Current.Name + "'" }) -join ', ' } catch { }
+Log "recipient field: edits_found=$($edits.Count), picked='$recipName', all_edit_names=[$editNames]"
 if (-not $recipient) {
   Log "FATAL: no recipient field"
   throw 'Recipient field not found'
@@ -327,7 +332,17 @@ $msgFieldName = ''
 try { if ($msgField) { $msgFieldName = $msgField.Current.Name } } catch { }
 Log "message field: attempts=$msgAttempts, picked='$msgFieldName'"
 if (-not $msgField) {
-  Log "FATAL: no message field after $msgAttempts polls"
+  # Dump the post-Enter edit names. If this list still shows only the recipient
+  # box (no message field appeared), the recipient chip was never committed —
+  # i.e. typing the raw number + Enter did not resolve to a conversation on
+  # this machine's Phone Link. That is the most common non-English / non-contact
+  # failure mode and is what this log line is here to confirm.
+  $edits2Names = ''
+  try {
+    $edits2 = $window.FindAll([System.Windows.Automation.TreeScope]::Descendants, $editCond)
+    $edits2Names = (@($edits2) | ForEach-Object { "'" + $_.Current.Name + "'" }) -join ', '
+  } catch { }
+  Log "FATAL: no message field after $msgAttempts polls; post-enter_edit_names=[$edits2Names]"
   throw 'Message field not found'
 }
 
@@ -340,6 +355,16 @@ Start-Sleep -Milliseconds 500
 $sendBtns = $window.FindAll([System.Windows.Automation.TreeScope]::Descendants, $btnCond) |
   Where-Object { $_.Current.Name -match '^Send$|^Send message$' }
 $sendBtn = $sendBtns | Select-Object -First 1
+if (-not $sendBtn) {
+  # Send button not matched — dump all button names so we can see what the
+  # Send control is actually called on this machine before we fall back to Enter.
+  $btnNames = ''
+  try {
+    $allBtns = $window.FindAll([System.Windows.Automation.TreeScope]::Descendants, $btnCond)
+    $btnNames = (@($allBtns) | ForEach-Object { "'" + $_.Current.Name + "'" }) -join ', '
+  } catch { }
+  Log "send: no Send-button match; all_button_names=[$btnNames]"
+}
 Log "send: matching send buttons=$($sendBtns.Count), invoked=$($sendBtn -ne $null)"
 if ($sendBtn) {
   $sendBtn.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke()

@@ -668,9 +668,31 @@ function renderQuickSend(body) {
   const isPro = u.is_admin || u.manual_account || u.plan === 'pro';
   const showImageAttach = isMac && isPro;
 
+  const appName = isMac ? 'Messages' : 'Phone Link';
+  const isDesktopApp = !!window.electronAPI?.isDesktop;
+
   body.innerHTML = `
     ${isBlocked ? `<div class="alert alert-error" style="margin-bottom:16px">Your subscription has expired. <button class="btn btn-primary btn-sm" onclick="navigate('billing')">Upgrade now</button></div>` : ''}
     ${!isBlocked && remaining <= 0 ? upgradePrompt(`You've used all ${u.monthly_limit} sends this month.`) : ''}
+
+    ${isDesktopApp ? `
+    <div class="card" style="max-width:640px;margin-bottom:16px">
+      <div class="card-header"><h3>Verify your setup</h3></div>
+      <div class="card-body">
+        <p style="font-size:13.5px;color:var(--text-muted);margin:0 0 12px;line-height:1.5">
+          Send a test to <strong>your own phone number</strong> first. A successful test confirms ${appName} is connected and Text Your List can send through it — so a full campaign will work. Test sends don't count toward your monthly limit.
+        </p>
+        <div id="readiness" style="font-size:13.5px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          <span id="readiness-dot" style="width:10px;height:10px;border-radius:50%;background:#9ca3af;display:inline-block"></span>
+          <span id="readiness-text">Checking ${appName}…</span>
+          <button class="btn btn-ghost btn-sm" id="readiness-recheck" style="margin-left:auto">Re-check</button>
+        </div>
+        <ul style="font-size:12.5px;color:var(--text-muted);margin:12px 0 0;padding-left:18px;line-height:1.6">
+          <li>Open ${appName} and make sure your phone is connected${isMac ? '' : ' and shows recent messages'}.</li>
+          ${isMac ? '' : '<li>Keep ' + appName + ' running while sending — it briefly comes to the front for each message.</li>'}
+        </ul>
+      </div>
+    </div>` : ''}
 
     <div class="card" style="max-width:640px">
       <div class="card-header"><h3>Test Send <span title="Single sends here don't count toward your monthly limit" style="display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:50%;background:#e5e7eb;color:#6b7280;font-size:10px;font-weight:700;cursor:help;vertical-align:middle;margin-left:4px;line-height:1">i</span></h3></div>
@@ -712,6 +734,29 @@ function renderQuickSend(body) {
         </div>
       </div>
     </div>`;
+
+  // Live readiness check — confirms the messaging app is running before a test.
+  if (isDesktopApp) {
+    const runReadiness = async () => {
+      const dot = document.getElementById('readiness-dot');
+      const txt = document.getElementById('readiness-text');
+      if (!dot || !txt) return;
+      dot.style.background = '#9ca3af';
+      txt.textContent = `Checking ${appName}…`;
+      let running = false;
+      try {
+        running = isMac ? await window.electronAPI.checkMessagesRunning()
+                        : await window.electronAPI.checkPhoneLinkRunning();
+      } catch (_) { running = false; }
+      dot.style.background = running ? '#16a34a' : '#dc2626';
+      txt.innerHTML = running
+        ? `${appName} is running — you're ready to send a test.`
+        : `${appName} isn't open. <a href="#" onclick="navigate('help');return false" style="color:var(--accent);text-decoration:underline">Open it</a>, connect your phone, then re-check.`;
+    };
+    const recheckBtn = document.getElementById('readiness-recheck');
+    if (recheckBtn) recheckBtn.addEventListener('click', runReadiness);
+    runReadiness();
+  }
 
   const msgEl = document.getElementById('qs-message');
   const charEl = document.getElementById('qs-char');

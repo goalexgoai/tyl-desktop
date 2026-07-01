@@ -766,7 +766,7 @@ app.post('/api/auth/change-password', requireAuth, async (req, res) => {
     if (authCheck.status !== 200) return res.status(503).json({ error: 'Unable to verify current password. Check your connection.' });
 
     // Update password on web server via the standard change-password endpoint
-    const change = await desktopWebPost('/api/auth/change-password-desktop', { email: req.user.email, newPassword, secret: process.env.DESKTOP_LICENSE_SECRET });
+    const change = await desktopWebPost('/api/auth/change-password-desktop', { email: req.user.email, newPassword, currentPassword, secret: process.env.DESKTOP_LICENSE_SECRET });
     if (change.status !== 200) return res.status(503).json({ error: 'Password change failed. Check your connection.' });
 
     // Update local offline_hash for 7-day grace
@@ -2801,8 +2801,13 @@ async function poll(){
       document.getElementById('cancel-btn').style.display='none';
       return;
     }
-    document.getElementById('prog').textContent='Message '+d.current+' of '+d.total;
-    document.getElementById('phone').textContent=d.phone||'';
+    if(d.connecting){
+      document.getElementById('prog').textContent='Connecting to ${isWin ? 'Phone Link' : 'Messages'}…';
+      document.getElementById('phone').textContent='The first message can take a few seconds.';
+    }else{
+      document.getElementById('prog').textContent='Message '+d.current+' of '+d.total;
+      document.getElementById('phone').textContent=d.phone||'';
+    }
   }catch(e){}
   setTimeout(poll,600);
 }
@@ -2936,6 +2941,10 @@ if (process.env.TYL_DESKTOP) {
 
       _sendProgress.current = (_sendProgress.current || 0) + 1;
       _sendProgress.phone = message.phone;
+      // First message of a job pays the cold-start cost (locating + focusing the
+      // messaging app can take several seconds). Flag it so the progress window
+      // shows "connecting" instead of looking like a hang.
+      _sendProgress.connecting = ((_sendProgress.sent || 0) === 0);
 
       db.prepare("UPDATE messages SET status='sending', picked_at=datetime('now'), attempts=attempts+1, last_attempt_at=datetime('now') WHERE id=?").run(message.id);
       console.log(`[desktop-sender] picking up message ${message.id} for ${message.phone}`);
@@ -2946,6 +2955,8 @@ if (process.env.TYL_DESKTOP) {
         global.__registerSendProc = (proc) => { _currentSendProc = proc; };
         await sendFn(message.phone, message.body, message.image_path || null);
         _currentSendProc = null;
+        _sendProgress.connecting = false;
+        _sendProgress.sent = (_sendProgress.sent || 0) + 1;
         db.prepare("UPDATE messages SET status='sent', sent_at=datetime('now'), error=NULL WHERE id=?").run(message.id);
         const jobRow = db.prepare("SELECT is_test FROM jobs WHERE id = ?").get(message.job_id);
         const isTest = jobRow && jobRow.is_test;
@@ -3038,6 +3049,20 @@ if (process.env.TYL_DESKTOP) {
   async function webApiPollLoop() {
     const platform = process.platform === 'darwin' ? 'mac' : 'windows';
     try {
+      // Server-side heartbeat (throttled to ~60s). The renderer also pings every
+      // 60s, but on Windows closing the window to the tray destroys the renderer
+      // and stops that ping — so desktop_last_seen_at and desktop_app_version
+      // would silently stall. This loop runs regardless of the window, keeping
+      // both accurate and making the running version visible in the admin panel.
+      const now = Date.now();
+      if (now - (webApiPollLoop._lastHeartbeat || 0) >= 60000) {
+        webApiPollLoop._lastHeartbeat = now;
+        const hbUsers = db.prepare('SELECT web_user_id FROM users WHERE web_user_id IS NOT NULL').all();
+        for (const u of hbUsers) {
+          desktopWebPost('/api/desktop-heartbeat', { web_user_id: u.web_user_id, version: APP_VERSION }).catch(() => {});
+        }
+      }
+
       // Fetch companion key for any logged-in users who don't have one yet (e.g. pre-existing sessions)
       const usersNeedingKey = db.prepare('SELECT id, web_user_id FROM users WHERE web_user_id IS NOT NULL AND (web_companion_key IS NULL OR web_companion_key = \'\')').all();
       for (const u of usersNeedingKey) {

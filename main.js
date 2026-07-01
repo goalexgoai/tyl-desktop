@@ -8,6 +8,38 @@ try { autoUpdater = require('electron-updater').autoUpdater; } catch (_) {}
 
 app.setAppUserModelId('com.textyourlist.app');
 
+// ── Startup / crash telemetry ────────────────────────────────────────────────
+// Send-failure telemetry only fires once the app is running and a send is
+// attempted. If the app fails to START (or the renderer crashes), that's
+// invisible server-side — which is exactly the blind spot when a user reports
+// "it won't work" before ever sending. Report those events too, best-effort.
+function reportDesktopEvent(errorMessage, detail) {
+  try {
+    const https = require('https');
+    const webUrl = process.env.TYL_WEB_URL || 'https://app.textyourlist.com';
+    const secret = process.env.DESKTOP_LICENSE_SECRET || 'cd69e5f72254cff5b33050350de14925296a19a35b18bf92d3677eddaf17dc7f';
+    let version = '';
+    try { version = app.getVersion(); } catch (_) {}
+    const body = JSON.stringify({
+      web_user_id: null,
+      platform: process.platform,
+      app_version: version,
+      error_message: String(errorMessage || '').slice(0, 2000),
+      debug_log: String(detail || '').slice(0, 100000),
+    });
+    const u = new URL(`${webUrl}/api/desktop-error-report`);
+    const req = https.request({
+      hostname: u.hostname, port: 443, path: u.pathname, method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body), 'x-desktop-secret': secret },
+      timeout: 8000,
+    });
+    req.on('error', () => {});
+    req.on('timeout', () => { try { req.destroy(); } catch (_) {} });
+    req.write(body);
+    req.end();
+  } catch (_) {}
+}
+
 let mainWindow = null;
 let tray = null;
 let serverPort = null;
@@ -48,6 +80,27 @@ global.tylEvents.on('send-start', () => {
   openProgressWindow();
 });
 
+// Translate raw send errors into plain-language guidance the user can act on.
+// The raw strings come from send-windows.js / send-mac.js; users should never
+// see "Message field not found" — they should see what to do about it.
+function friendlyError(raw) {
+  const e = String(raw || '');
+  const app = process.platform === 'darwin' ? 'Messages' : 'Phone Link';
+  if (/not authorized to send apple events|permission/i.test(e))
+    return `${app} permission wasn't granted. Open Help → Manage Permissions, grant access, then resend.`;
+  if (/phone ?link not found|could not find phone link|not found\. processes|application isn't running|isn't running/i.test(e))
+    return `${app} wasn't running or wasn't ready. Open ${app}, confirm your phone is connected, then resend.`;
+  if (/could not focus|foreground|receive focus/i.test(e))
+    return `Couldn't bring ${app} to the front. Close other windows, click ${app} once, then resend.`;
+  if (/recipient field|message field|compose|new message|did not open/i.test(e))
+    return `${app} didn't open a new message. Make sure ${app} is up to date and your phone is connected, then resend. If the number isn't a saved contact, try adding it first.`;
+  if (/timed out|timeout/i.test(e))
+    return `${app} was too slow to respond. Make sure it's open and your phone is connected, then resend.`;
+  if (/cancelled by user/i.test(e))
+    return `Cancelled.`;
+  return e || 'Unknown error';
+}
+
 global.tylEvents.on('send-complete', ({ sent, failed, failures }) => {
   closeProgressWindow();
   const { dialog } = require('electron');
@@ -60,7 +113,7 @@ global.tylEvents.on('send-complete', ({ sent, failed, failures }) => {
       buttons: ['OK'],
     });
   } else {
-    const failLines = failures.map(f => `• ${f.phone}: ${f.error || 'unknown error'}`).join('\n');
+    const failLines = failures.map(f => `• ${f.phone}: ${friendlyError(f.error)}`).join('\n');
     dialog.showMessageBox(parent, {
       type: 'warning',
       title: 'Send complete — some failures',
@@ -221,6 +274,16 @@ function createWindow(port) {
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
+
+  // Report renderer crashes / load failures — another pre-send blind spot.
+  mainWindow.webContents.on('render-process-gone', (_e, details) => {
+    reportDesktopEvent(`RENDERER GONE: ${details.reason}`, `exitCode=${details.exitCode}`);
+  });
+  mainWindow.webContents.on('did-fail-load', (_e, errorCode, errorDescription, validatedURL) => {
+    // Ignore benign aborted loads (e.g. in-app redirects).
+    if (errorCode === -3) return;
+    reportDesktopEvent(`LOAD FAILED: ${errorDescription}`, `code=${errorCode} url=${validatedURL}`);
+  });
 }
 
 function createTray() {
@@ -291,6 +354,7 @@ if (!gotLock) {
       if (app.isPackaged && autoUpdater) autoUpdater.checkForUpdatesAndNotify().catch(() => {});
     } catch (err) {
       console.error('Startup failed:', err);
+      reportDesktopEvent(`STARTUP FAILED: ${err.message}`, err.stack || '');
       const { dialog } = require('electron');
       await dialog.showMessageBox({
         type: 'error',
