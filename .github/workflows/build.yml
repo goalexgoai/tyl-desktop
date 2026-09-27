@@ -109,7 +109,12 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: win-build
-          path: dist/*.exe
+          # latest.yml + blockmap are what electron-updater reads for Windows
+          # auto-update. Without them in the release, installs never update.
+          path: |
+            dist/*.exe
+            dist/*.exe.blockmap
+            dist/latest.yml
 
   release:
     needs: [build-mac-arm64, build-mac-x64, build-win]
@@ -139,7 +144,23 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/*
+          files: |
+            dist/*.dmg
+            dist/*.exe
+            dist/*.exe.blockmap
           draft: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Publishing latest.yml is what switches Windows auto-update on: every
+      # installed copy that checks in will download this release and install it
+      # on next quit. Gated on the repo variable AUTO_UPDATE so a release can be
+      # validated first; to turn it on for a release that went out without it:
+      #   gh release upload vX.Y.Z latest.yml   (from the win-build artifact)
+      - name: Publish Windows auto-update manifest
+        if: ${{ vars.AUTO_UPDATE == 'true' }}
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/latest.yml
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
