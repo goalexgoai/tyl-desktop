@@ -36,4 +36,25 @@ function errorSignature(raw) {
     .slice(0, 120);
 }
 
-module.exports = { friendlyError, errorSignature };
+// Character fingerprint of the message, with the words removed: letters and
+// digits are only counted; punctuation, symbols, emoji and invisible
+// characters are listed by code point. Sent with error reports so
+// input-caused failures (like the ’ bug in 1.0.92) are diagnosable without
+// storing what anyone wrote. Mirrors inputFingerprint in text-sender.
+function inputFingerprint(text) {
+  const counts = new Map();
+  let letters = 0, digits = 0, spaces = 0, len = 0;
+  for (const ch of String(text || '')) {
+    len++;
+    if (/\p{L}|\p{M}/u.test(ch)) { letters++; continue; }
+    if (/\p{Nd}/u.test(ch)) { digits++; continue; }
+    if (ch === ' ') { spaces++; continue; }
+    const cp = ch.codePointAt(0);
+    const key = cp < 0x7f && cp > 0x20 ? ch : `U+${cp.toString(16).toUpperCase().padStart(4, '0')}`;
+    counts.set(key, (counts.get(key) || 0) + 1);
+  }
+  const special = [...counts.entries()].map(([k, n]) => `${k} x${n}`).join(', ') || 'none';
+  return `len=${len} letters=${letters} digits=${digits} spaces=${spaces} special=[${special}]`;
+}
+
+module.exports = { friendlyError, errorSignature, inputFingerprint };

@@ -326,7 +326,7 @@ function log(userId, messageId, jobId, phone, status, error = null) {
 
 // In-memory progress tracker for the desktop progress window
 let _sendProgress = null; // { jobId, total, current, phone, done, sent, failed }
-const { friendlyError, errorSignature } = require('./send-errors.js');
+const { friendlyError, errorSignature, inputFingerprint } = require('./send-errors.js');
 // Consecutive same-cause failures in the current job. When one root cause hits
 // every message (e.g. Phone Link on the wrong tab), pause after a few instead
 // of grinding through the whole list — field data had 537 identical failures.
@@ -3080,7 +3080,8 @@ if (process.env.TYL_DESKTOP) {
               web_user_id: reportRow.web_user_id,
               platform: process.platform,
               app_version: APP_VERSION,
-              error_message: err.message,
+              // Message text never leaves the machine; its character fingerprint does.
+              error_message: `${err.message}\n[message fingerprint, text removed] ${inputFingerprint(message.body)}`,
               debug_log: err.debugLog || '',
             }).catch(() => {});
           }
