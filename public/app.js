@@ -941,7 +941,7 @@ function showSendConfirmModal(previewContact, previewMessage, count, onConfirm, 
   if (phoneLinkHelpLink) {
     phoneLinkHelpLink.addEventListener('click', e => {
       e.preventDefault();
-      if (window.electronAPI?.openExternal) window.electronAPI.openExternal('https://textyourlist.com/help-windows');
+      if (window.electronAPI?.openExternal) window.electronAPI.openExternal('https://textyourlist.com/help/phone-link');
     });
   }
 
