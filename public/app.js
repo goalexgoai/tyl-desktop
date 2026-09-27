@@ -901,6 +901,9 @@ function showSendConfirmModal(previewContact, previewMessage, count, onConfirm, 
     ${previewHtml ? `<div style="font-size:12px;color:var(--text-muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em">Message preview</div>${previewHtml}` : ''}
     ${showWarning ? `<div class="alert alert-warn" style="margin:12px 0 0">Sending to ${count} contacts. We recommend no more than 200/day to keep your number healthy.</div>` : ''}
     <div id="confirm-app-warn" style="display:none" class="alert alert-error" style="margin:10px 0 0"></div>
+    ${count > 1 && window.electronAPI?.isDesktop && currentUser && currentUser.has_successful_send === false
+      ? `<div class="alert alert-warn" style="margin:12px 0 0">You haven't sent a message from this computer yet. We recommend a <a href="#" onclick="document.getElementById('wizard-root').innerHTML='';navigate('quick-send');return false" style="color:inherit;text-decoration:underline;font-weight:600">test to your own phone</a> first. It takes 30 seconds and confirms ${window.electronAPI?.platform === 'darwin' ? 'Messages' : 'Phone Link'} is set up.</div>`
+      : ''}
     ${window.electronAPI?.platform === 'darwin'
       ? `<div style="background:var(--bg-alt,#f7f7f7);border-radius:8px;padding:12px 14px;margin:14px 0 0;font-size:13px;color:var(--text-muted);line-height:1.7">
           Be sure <strong style="color:var(--text)">Messages</strong> is open on your Mac before sending.
@@ -909,7 +912,7 @@ function showSendConfirmModal(previewContact, previewMessage, count, onConfirm, 
           <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;user-select:none">
             <input type="checkbox" id="phonelink-confirm" style="margin-top:2px;flex-shrink:0;width:16px;height:16px;cursor:pointer">
             <span style="font-size:13px;color:var(--text);line-height:1.5">
-              <strong>Phone Link</strong> is open and my phone is nearby.
+              <strong>Phone Link</strong> is open on the <strong>Messages</strong> tab and my phone is nearby.
               <a href="#" id="phonelink-help-link" style="color:var(--primary,#C44A76);margin-left:4px">Need help?</a>
             </span>
           </label>
@@ -952,12 +955,15 @@ function showSendConfirmModal(previewContact, previewMessage, count, onConfirm, 
     if (window.electronAPI?.isDesktop) {
       try {
         const isMac = window.electronAPI.platform === 'darwin';
+        if (!isMac) sendBtn.textContent = 'Checking Phone Link…';
         const isRunning = isMac
           ? await window.electronAPI.checkMessagesRunning()
-          : await window.electronAPI.checkPhoneLinkRunning();
+          : await window.electronAPI.checkPhoneLinkRunning({ launch: true });
         if (!isRunning) {
           const appName = isMac ? 'Messages' : 'Phone Link';
-          warnEl.textContent = `${appName} is not open. Open it now, then click Send.`;
+          warnEl.textContent = isMac
+            ? `${appName} is not open. Open it now, then click Send.`
+            : `We couldn't open Phone Link. Open it from the Start menu, make sure your phone shows as connected and the Messages tab is selected, then click Send.`;
           warnEl.style.display = 'block';
           sendBtn.disabled = false;
           sendBtn.textContent = 'Send';
@@ -2647,8 +2653,16 @@ async function refreshJobDetail(jobId) {
       m.error && /closed — sending paused/i.test(m.error)
     );
     const appName = window.electronAPI?.platform === 'darwin' ? 'Messages' : 'Phone Link';
+    // Paused by the send loop for another reason (e.g. repeated failures).
+    const pausedReason = job.status === 'paused' && !pausedByApp ? job.pause_reason : null;
 
     container.innerHTML = `
+      ${pausedReason ? `<div class="alert alert-warn" style="margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;gap:12px">
+        <span>&#9888; ${escHtml(pausedReason)}</span>
+        <div style="display:flex;gap:8px;flex-shrink:0">
+          <button class="btn btn-primary btn-sm" onclick="setJobStatus('${jobId}','queued')">Resume</button>
+        </div>
+      </div>` : ''}
       ${pausedByApp ? `<div class="alert alert-warn" style="margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;gap:12px">
         <span>&#9888; <strong>${appName} closed</strong> — sending paused. Reopen ${appName}, then resume.</span>
         <div style="display:flex;gap:8px;flex-shrink:0">
@@ -2689,7 +2703,7 @@ async function refreshJobDetail(jobId) {
             ${messages.map(m => `<tr>
               <td style="font-family:var(--mono);font-size:13px">${escHtml(m.phone)}</td>
               <td>${escHtml([m.first_name, m.last_name].filter(Boolean).join(' ')) || '—'}</td>
-              <td>${pill(m.status)}</td>
+              <td>${pill(m.status)}${m.error && ['failed','dead'].includes(m.status) ? `<div style="font-size:11.5px;color:var(--text-muted);margin-top:4px;max-width:340px;line-height:1.4">${escHtml(m.error.split('\n')[0].slice(0, 220))}</div>` : ''}</td>
               <td>${m.attempts}</td>
               <td>${fmt(m.sent_at)}</td>
             </tr>`).join('')}

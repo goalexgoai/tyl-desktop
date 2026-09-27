@@ -108,6 +108,25 @@ describe('send-windows.js empirical-findings invariants', () => {
     }
   });
 
+  test('Finding 10: Phone Link relaunch runs only after the window search failed', () => {
+    const launch = ps.indexOf('shell:AppsFolder');
+    expect(launch).toBeGreaterThan(-1);
+    const guard = ps.lastIndexOf('if (-not $window) {', launch);
+    expect(guard).toBeGreaterThan(-1);
+    // The guard must come after the initial 8s search loop, not replace it.
+    expect(guard).toBeGreaterThan(ps.indexOf('$winDeadline = $windowSearchStart.AddSeconds(8)'));
+  });
+
+  test('Finding 11: Messages-tab recovery runs only when no compose button was found', () => {
+    const nav = ps.indexOf("'^Messages$'");
+    expect(nav).toBeGreaterThan(-1);
+    const guard = ps.lastIndexOf('if (-not $compose) {', nav);
+    expect(guard).toBeGreaterThan(ps.indexOf('Log "compose: matching buttons='));
+    // Working path unchanged: compose Invoke and Ctrl+N fallback still follow.
+    expect(ps.indexOf('if ($compose) {', nav)).toBeGreaterThan(nav);
+    expect(ps).toMatch(/SendWait\('\^n'\)/);
+  });
+
   test('JS template literal builds without ReferenceError when sendViaPhoneLink is invoked', () => {
     // Smoke test the v1.0.86 regression specifically — building the script
     // string must not throw. We mock execFile so the function short-circuits
@@ -127,5 +146,44 @@ describe('send-windows.js empirical-findings invariants', () => {
     } finally {
       cp.execFile = realExecFile;
     }
+  });
+});
+
+// Regression: 619 field sends (both paying Windows customers, Sept 2026) died
+// with ParserError "Missing ')' in method call" because a typographic ’ in the
+// message closed the PowerShell '...' literal early. PowerShell's tokenizer
+// treats ' ‘ ’ ‚ ‛ all as single quotes; a doubled pair yields the 2nd char.
+describe('escapePowerShell handles every PowerShell single-quote variant', () => {
+  const fnSrc = SRC.match(/function escapePowerShell\(value\) \{[\s\S]*?\n\}/)[0];
+  // eslint-disable-next-line no-new-func
+  const escapePowerShell = new Function(`${fnSrc}; return escapePowerShell;`)();
+  const isQuote = c => /['‘’‚‛]/.test(c);
+
+  // Mirrors PowerShell's single-quoted-string scan. Returns the parsed value
+  // and whether the literal ended exactly at the closing quote we append.
+  function parsePsLiteral(escaped) {
+    const src = escaped + "'";
+    let out = '';
+    for (let i = 0; i < src.length; i++) {
+      const c = src[i];
+      if (isQuote(c)) {
+        if (i + 1 < src.length && isQuote(src[i + 1])) { out += src[i + 1]; i++; continue; }
+        return { value: out, closedAtEnd: i === src.length - 1 };
+      }
+      out += c;
+    }
+    return { value: out, closedAtEnd: false };
+  }
+
+  test.each([
+    "Confirming 1 guest(s) for Catarina’s celebration",
+    "into God’s arms",
+    "plain ASCII it's fine",
+    "‘single’ ‚low‛ and “double” quotes",
+    "O''Brien",
+  ])('round-trips %s', (msg) => {
+    const r = parsePsLiteral(escapePowerShell(msg));
+    expect(r.closedAtEnd).toBe(true);
+    expect(r.value).toBe(msg);
   });
 });

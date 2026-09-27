@@ -80,26 +80,8 @@ global.tylEvents.on('send-start', () => {
   openProgressWindow();
 });
 
-// Translate raw send errors into plain-language guidance the user can act on.
-// The raw strings come from send-windows.js / send-mac.js; users should never
-// see "Message field not found" — they should see what to do about it.
-function friendlyError(raw) {
-  const e = String(raw || '');
-  const app = process.platform === 'darwin' ? 'Messages' : 'Phone Link';
-  if (/not authorized to send apple events|permission/i.test(e))
-    return `${app} permission wasn't granted. Open Help → Manage Permissions, grant access, then resend.`;
-  if (/phone ?link not found|could not find phone link|not found\. processes|application isn't running|isn't running/i.test(e))
-    return `${app} wasn't running or wasn't ready. Open ${app}, confirm your phone is connected, then resend.`;
-  if (/could not focus|foreground|receive focus/i.test(e))
-    return `Couldn't bring ${app} to the front. Close other windows, click ${app} once, then resend.`;
-  if (/recipient field|message field|compose|new message|did not open/i.test(e))
-    return `${app} didn't open a new message. Make sure ${app} is up to date and your phone is connected, then resend. If the number isn't a saved contact, try adding it first.`;
-  if (/timed out|timeout/i.test(e))
-    return `${app} was too slow to respond. Make sure it's open and your phone is connected, then resend.`;
-  if (/cancelled by user/i.test(e))
-    return `Cancelled.`;
-  return e || 'Unknown error';
-}
+// Plain-language send errors live in send-errors.js (shared with server.js).
+const { friendlyError } = require('./send-errors.js');
 
 global.tylEvents.on('send-complete', ({ sent, failed, failures }) => {
   closeProgressWindow();
@@ -113,7 +95,19 @@ global.tylEvents.on('send-complete', ({ sent, failed, failures }) => {
       buttons: ['OK'],
     });
   } else {
-    const failLines = failures.map(f => `• ${f.phone}: ${friendlyError(f.error)}`).join('\n');
+    // Group by cause: one line per distinct problem, not one per contact.
+    // A single root cause across a 100-contact list used to produce a
+    // dialog taller than the screen.
+    const groups = new Map();
+    for (const f of failures) {
+      const msg = friendlyError(f.error);
+      if (!groups.has(msg)) groups.set(msg, []);
+      groups.get(msg).push(f.phone);
+    }
+    const failLines = [...groups.entries()].slice(0, 5).map(([msg, phones]) =>
+      `• ${phones.length} message${phones.length !== 1 ? 's' : ''}: ${msg}` +
+      (phones.length <= 3 ? ` (${phones.join(', ')})` : '')
+    ).join('\n');
     dialog.showMessageBox(parent, {
       type: 'warning',
       title: 'Send complete — some failures',
@@ -121,6 +115,18 @@ global.tylEvents.on('send-complete', ({ sent, failed, failures }) => {
       buttons: ['OK'],
     });
   }
+});
+
+global.tylEvents.on('send-paused', ({ reason }) => {
+  closeProgressWindow();
+  const { dialog } = require('electron');
+  const parent = mainWindow && !mainWindow.isDestroyed() ? mainWindow : null;
+  dialog.showMessageBox(parent, {
+    type: 'warning',
+    title: 'Sending paused',
+    message: `${reason}\n\nYour remaining messages are saved. Open the History tab and click Resume when you're ready.`,
+    buttons: ['OK'],
+  });
 });
 
 function setTrayStatus(status) {
@@ -451,18 +457,37 @@ ipcMain.handle('check-messages-running', () => {
   });
 });
 
-ipcMain.handle('check-phone-link-running', () => {
+// Phone Link readiness. PhoneExperienceHost keeps running in the background
+// after the Phone Link window is closed, so a process check alone reported
+// "running" while nothing was open (field logs, Sept 2026). This checks for a
+// real top-level window and, when `launch` is true, opens Phone Link if needed.
+ipcMain.handle('check-phone-link-running', (_e, opts) => {
   if (process.platform !== 'win32') return true;
+  const launch = !!(opts && opts.launch);
+  const script = `
+Add-Type -AssemblyName UIAutomationClient
+Add-Type -AssemblyName UIAutomationTypes
+$names = @('PhoneLink','PhoneLinkHost','PhoneExperienceHost','PhoneExperience','YourPhone')
+function Has-Window {
+  $root = [System.Windows.Automation.AutomationElement]::RootElement
+  foreach ($p in @(Get-Process -Name $names -ErrorAction SilentlyContinue)) {
+    $c = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ProcessIdProperty, $p.Id)
+    if ($root.FindFirst([System.Windows.Automation.TreeScope]::Children, $c)) { return $true }
+  }
+  return $false
+}
+if (Has-Window) { exit 0 }
+if ('${launch ? '1' : '0'}' -ne '1') { exit 1 }
+try { Start-Process -FilePath 'explorer.exe' -ArgumentList 'shell:AppsFolder\\Microsoft.YourPhone_8wekyb3d8bbwe!App' } catch { exit 1 }
+$deadline = [datetime]::Now.AddSeconds(12)
+while ([datetime]::Now -lt $deadline) { Start-Sleep -Milliseconds 500; if (Has-Window) { exit 0 } }
+exit 1
+`;
   return new Promise((resolve) => {
     const { execFile } = require('child_process');
-    // Check for PhoneLink.exe (Windows 11 Phone Link) or YourPhone.exe (legacy).
-    // Avoid YourPhoneServer which is a background service that runs even when Phone Link is not open.
-    const proc = execFile('powershell', [
-      '-NoProfile', '-NonInteractive', '-Command',
-      'if (Get-Process -Name PhoneLink,PhoneExperienceHost,PhoneLinkHost,YourPhone -ErrorAction SilentlyContinue) { exit 0 } else { exit 1 }'
-    ], { timeout: 3000 }, (err) => {
-      resolve(!err);
-    });
+    const encoded = Buffer.from(script, 'utf16le').toString('base64');
+    const proc = execFile('powershell', ['-NoProfile', '-NonInteractive', '-EncodedCommand', encoded],
+      { timeout: launch ? 20000 : 8000, windowsHide: true }, (err) => resolve(!err));
     proc.on('error', () => resolve(false));
   });
 });

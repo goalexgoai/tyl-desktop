@@ -326,6 +326,15 @@ function log(userId, messageId, jobId, phone, status, error = null) {
 
 // In-memory progress tracker for the desktop progress window
 let _sendProgress = null; // { jobId, total, current, phone, done, sent, failed }
+const { friendlyError, errorSignature } = require('./send-errors.js');
+// Consecutive same-cause failures in the current job. When one root cause hits
+// every message (e.g. Phone Link on the wrong tab), pause after a few instead
+// of grinding through the whole list — field data had 537 identical failures.
+const FAIL_STREAK_LIMIT = 3;
+let _failStreak = { jobId: null, sig: null, ids: [] };
+// Error reports are throttled per job so one broken send can't flood the admin panel.
+const _errorReportsByJob = new Map();
+const ERROR_REPORTS_PER_JOB = 5;
 let _cancelSend = false;  // set true to abort the active desktop send job
 let _currentSendProc = null; // child_process handle for the active send script
 
@@ -837,6 +846,8 @@ app.get('/api/auth/me', requireAuth, async (req, res) => {
     pending_api_count: db.prepare("SELECT COUNT(*) as c FROM jobs WHERE user_id = ? AND status = 'api_pending'").get(fresh.id).c + (fresh.web_pending_count || 0),
     api_default_pace: fresh.api_default_pace != null ? fresh.api_default_pace : null,
     api_send_platform: fresh.api_send_platform || 'mac',
+    // Drives the "send a test to yourself first" nudge on the bulk confirm modal.
+    has_successful_send: !!db.prepare("SELECT 1 FROM messages m JOIN jobs j ON j.id = m.job_id WHERE j.user_id = ? AND m.status = 'sent' LIMIT 1").get(fresh.id),
     daily_sends: db.prepare(`
       SELECT COUNT(*) as c FROM send_logs sl
       JOIN messages m ON m.id = sl.message_id
@@ -858,7 +869,7 @@ app.post('/api/desktop-ping', requireAuth, (req, res) => {
   db.prepare("UPDATE users SET last_active_at = datetime('now') WHERE id = ?").run(req.user.id);
   if (req.user.web_user_id) {
     // Signal web server that desktop is active (updates desktop_last_seen_at for API routing)
-    desktopWebPost('/api/desktop-heartbeat', { web_user_id: req.user.web_user_id, version: APP_VERSION }).catch(() => {});
+    desktopWebPost('/api/desktop-heartbeat', { web_user_id: req.user.web_user_id, version: APP_VERSION, platform: process.platform, os_release: require('os').release() }).catch(() => {});
     // Fetch and cache web pending count so /api/auth/me can include it
     desktopWebPost('/api/desktop-web-pending', { web_user_id: req.user.web_user_id, action: 'count' })
       .then(r => {
@@ -1055,6 +1066,10 @@ app.post('/api/jobs/cancel-api', requireAuth, async (req, res) => {
 app.get('/api/jobs/:id', requireAuth, (req, res) => {
   const job = db.prepare('SELECT * FROM jobs WHERE id = ? AND user_id = ?').get(req.params.id, req.user.id);
   if (!job) return res.status(404).json({ error: 'Not found' });
+  if (job.status === 'paused') {
+    const r = db.prepare("SELECT error FROM messages WHERE job_id = ? AND error LIKE '%sending paused%' ORDER BY last_attempt_at DESC LIMIT 1").get(job.id);
+    job.pause_reason = r ? r.error : null;
+  }
   res.json(job);
 });
 
@@ -2883,6 +2898,33 @@ if (process.env.TYL_DESKTOP) {
     res.json({ cancelled: jobs.length });
   });
 
+  // Called whenever the send loop pauses a job, so the (non-closable) progress
+  // window doesn't sit on "Connecting…" with only a Cancel button.
+  function notifyJobPaused(jobId, reason) {
+    if (_sendProgress && _sendProgress.jobId === jobId) {
+      _sendProgress = { ..._sendProgress, done: true, paused: true, pauseReason: reason };
+    }
+    if (global.tylEvents) global.tylEvents.emit('send-paused', { jobId, reason });
+    reportDesktopEvent(jobId, 'job_paused', reason);
+  }
+
+  // Funnel telemetry (bulk started / finished / paused). Fire-and-forget.
+  function reportDesktopEvent(jobId, event, detail) {
+    try {
+      const row = db.prepare('SELECT u.web_user_id, j.is_test, j.total FROM jobs j JOIN users u ON u.id = j.user_id WHERE j.id = ?').get(jobId);
+      if (!row || !row.web_user_id) return;
+      desktopWebPost('/api/desktop-event', {
+        web_user_id: row.web_user_id,
+        platform: process.platform,
+        app_version: APP_VERSION,
+        event,
+        is_test: !!row.is_test,
+        detail: String(detail || '').slice(0, 500),
+        count: row.total || 0,
+      }).catch(() => {});
+    } catch (_) {}
+  }
+
   async function desktopSendLoop() {
     if (desktopSendLoop._running) return;
     desktopSendLoop._running = true;
@@ -2921,6 +2963,7 @@ if (process.env.TYL_DESKTOP) {
         ).get(message.job_id)?.c || 1;
         _sendProgress = { jobId: message.job_id, total: jobTotal, current: 0, phone: '', done: false, sent: 0, failed: 0 };
         if (global.tylEvents) global.tylEvents.emit('send-start', { total: jobTotal, jobId: message.job_id });
+        reportDesktopEvent(message.job_id, 'job_started', '');
       }
       // Pace enforcement with jitter — carriers flag perfectly rhythmic sends
       if (message.pace_seconds > 0) {
@@ -2958,6 +3001,7 @@ if (process.env.TYL_DESKTOP) {
         _sendProgress.connecting = false;
         _sendProgress.sent = (_sendProgress.sent || 0) + 1;
         db.prepare("UPDATE messages SET status='sent', sent_at=datetime('now'), error=NULL WHERE id=?").run(message.id);
+        _failStreak = { jobId: null, sig: null, ids: [] };
         const jobRow = db.prepare("SELECT is_test FROM jobs WHERE id = ?").get(message.job_id);
         const isTest = jobRow && jobRow.is_test;
         if (!isTest) { incrementSendCount(message.user_id, 1); }
@@ -2980,6 +3024,7 @@ if (process.env.TYL_DESKTOP) {
           db.prepare("UPDATE jobs SET status='paused', updated_at=datetime('now') WHERE id=?").run(message.job_id);
           log(message.user_id, message.id, message.job_id, message.phone, 'paused', pauseReason);
           console.warn(`[desktop-sender] macOS Automation permission denied — job ${message.job_id} paused`);
+          notifyJobPaused(message.job_id, pauseReason);
         } else if (isAppClosed) {
           const appName = process.platform === 'darwin' ? 'Messages' : 'Phone Link';
           const pauseReason = `${appName} closed — sending paused. Reopen ${appName} then click "Resume" to continue.`;
@@ -2988,16 +3033,47 @@ if (process.env.TYL_DESKTOP) {
           db.prepare("UPDATE jobs SET status='paused', updated_at=datetime('now') WHERE id=?").run(message.job_id);
           log(message.user_id, message.id, message.job_id, message.phone, 'paused', pauseReason);
           console.warn(`[desktop-sender] messaging app closed — job ${message.job_id} paused`);
+          notifyJobPaused(message.job_id, pauseReason);
         } else {
           const attempts = message.attempts + 1;
           const newStatus = attempts >= 3 ? 'dead' : 'failed';
-          db.prepare("UPDATE messages SET status=?, error=?, last_attempt_at=datetime('now') WHERE id=?").run(newStatus, err.message, message.id);
+          // messages.error is shown to the user, so store the plain-language
+          // version; the raw error stays in send_logs and the error report.
+          const shown = friendlyError(err.message);
+          db.prepare("UPDATE messages SET status=?, error=?, last_attempt_at=datetime('now') WHERE id=?").run(newStatus, shown, message.id);
           log(message.user_id, message.id, message.job_id, message.phone, newStatus, err.message);
           console.error(`[desktop-sender] failed → ${message.phone}: ${err.message}`);
+
+          const sig = errorSignature(err.message);
+          if (_failStreak.jobId === message.job_id && _failStreak.sig === sig) {
+            _failStreak.ids.push(message.id);
+          } else {
+            _failStreak = { jobId: message.job_id, sig, ids: [message.id] };
+          }
+          if (_failStreak.ids.length >= FAIL_STREAK_LIMIT && !/cancelled by user/i.test(err.message)) {
+            // Same cause N times in a row: stop, put the streak back in the
+            // queue so Resume retries them, and tell the user why.
+            const pauseReason = `Sending paused after ${_failStreak.ids.length} failures in a row. ${shown} Then click "Resume".`;
+            const ids = _failStreak.ids;
+            db.transaction(() => {
+              const reset = db.prepare("UPDATE messages SET status='pending', picked_at=NULL WHERE id=? AND status='failed'");
+              ids.forEach(id => reset.run(id));
+              db.prepare("UPDATE messages SET error=? WHERE id=?").run(pauseReason, message.id);
+              db.prepare("UPDATE jobs SET status='paused', updated_at=datetime('now') WHERE id=?").run(message.job_id);
+            })();
+            log(message.user_id, message.id, message.job_id, message.phone, 'paused', pauseReason);
+            console.warn(`[desktop-sender] ${ids.length} consecutive '${sig}' failures — job ${message.job_id} paused`);
+            _failStreak = { jobId: null, sig: null, ids: [] };
+            notifyJobPaused(message.job_id, pauseReason);
+          }
         }
         // Ship debug log to web server on any Windows failure so failures are
         // visible in the admin panel without needing to access the user's machine.
-        if (err.debugLog) {
+        // Mac errors are reported too (without a debug log) — previously Mac
+        // failures were invisible to the admin panel.
+        const sentForJob = _errorReportsByJob.get(message.job_id) || 0;
+        if (sentForJob < ERROR_REPORTS_PER_JOB && !/cancelled by user/i.test(err.message)) {
+          _errorReportsByJob.set(message.job_id, sentForJob + 1);
           const reportRow = db.prepare('SELECT web_user_id FROM users WHERE id = ?').get(message.user_id);
           if (reportRow && reportRow.web_user_id) {
             desktopWebPost('/api/desktop-error-report', {
@@ -3005,13 +3081,18 @@ if (process.env.TYL_DESKTOP) {
               platform: process.platform,
               app_version: APP_VERSION,
               error_message: err.message,
-              debug_log: err.debugLog,
+              debug_log: err.debugLog || '',
             }).catch(() => {});
           }
         }
       }
 
       recountJob(message.job_id);
+      const after = db.prepare('SELECT status, sent, failed FROM jobs WHERE id = ?').get(message.job_id);
+      if (after && after.status === 'completed') {
+        reportDesktopEvent(message.job_id, 'job_completed', `sent=${after.sent} failed=${after.failed}`);
+        _errorReportsByJob.delete(message.job_id);
+      }
       const remaining = db.prepare("SELECT COUNT(*) as c FROM messages m JOIN jobs j ON j.id = m.job_id WHERE j.status = 'queued' AND m.status IN ('pending','sending')").get();
       if (process.env.TYL_DESKTOP && (!remaining || remaining.c === 0)) process.stdout.write('__TRAY:gray__\n');
     } catch (err) {
@@ -3059,7 +3140,7 @@ if (process.env.TYL_DESKTOP) {
         webApiPollLoop._lastHeartbeat = now;
         const hbUsers = db.prepare('SELECT web_user_id FROM users WHERE web_user_id IS NOT NULL').all();
         for (const u of hbUsers) {
-          desktopWebPost('/api/desktop-heartbeat', { web_user_id: u.web_user_id, version: APP_VERSION }).catch(() => {});
+          desktopWebPost('/api/desktop-heartbeat', { web_user_id: u.web_user_id, version: APP_VERSION, platform: process.platform, os_release: require('os').release() }).catch(() => {});
         }
       }
 
@@ -3132,6 +3213,7 @@ if (process.env.TYL_DESKTOP) {
 
   // Poll every 5 seconds for pending messages (local) and web API jobs
   setInterval(desktopSendLoop, 5000);
+  app.locals.desktopSendLoop = desktopSendLoop; // exposed for tests
   setInterval(webApiPollLoop, 5000);
   console.log('[desktop-sender] embedded sender active');
   console.log('[web-poll] web API poll loop active');

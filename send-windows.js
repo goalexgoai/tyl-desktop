@@ -65,9 +65,23 @@
 //      `${variable}` inside this script, escape the dollar sign as `\${name}`
 //      so JS leaves it for PowerShell. v1.0.86 shipped broken because of
 //      `${windowSearchMs}` being JS-interpolated (windowSearchMs undefined →
-//      ReferenceError before PowerShell ever ran). The 6 valid JS
-//      interpolations in this file are: Date.now(), processNames.map(),
+//      ReferenceError before PowerShell ever ran). The valid JS
+//      interpolations in this file are: Date.now(), processNames.map() (twice),
 //      safeNumber, safeMessage — all the rest of `${…}` must be `\${…}`.
+//
+//  10) PhoneExperienceHost keeps running in the background after the user
+//      closes the Phone Link window. "Process found, window not found" means
+//      Phone Link is closed, so launch it (shell:AppsFolder) and search again.
+//      Seen in field logs Sept 2026 ("could not find Phone Link window in
+//      8550ms"). Runs only when the window search has already failed.
+//
+//  11) If no compose button is found, Phone Link is usually on another tab
+//      (field logs: only edit was "Search your contacts", or zero edits).
+//      Select the "Messages" nav item and look again. Runs only when compose
+//      was not found; logs nav_names so a mismatch is diagnosable.
+//
+//  12) PowerShell treats ‘ ’ ‚ ‛ as single quotes too. escapePowerShell must
+//      double all of them, or a pasted ’ breaks every send in the job.
 //
 // PRIOR REGRESSIONS — captured here so the same mistakes are not re-made:
 //   - v1.0.81: added foreground hardening that broke bulk sending because of
@@ -97,8 +111,13 @@ function escapeSendKeys(value) {
   return value.replace(/([+^%~{}\[\]()])/g, '{$1}');
 }
 
+// PowerShell treats the typographic quotes ‘ ’ ‚ ‛ (U+2018–U+201B) as single-
+// quote delimiters, not just ASCII '. Text pasted from Word/Docs/phones uses ’,
+// which previously terminated the '...' string early and every send in the job
+// died with a ParserError ("Missing ')' in method call"). Doubling any of them
+// escapes it; PowerShell keeps the second char, so ’ is still typed as ’.
 function escapePowerShell(value) {
-  return value.replace(/'/g, "''");
+  return value.replace(/['‘’‚‛]/g, "$&$&");
 }
 
 module.exports = async function sendViaPhoneLink(number, message) {
@@ -183,6 +202,31 @@ while ([datetime]::Now -lt $winDeadline) {
   Start-Sleep -Milliseconds 250
 }
 $windowSearchMs = [int]([datetime]::Now - $windowSearchStart).TotalMilliseconds
+if (-not $window) {
+  # Failure path only (finding 10): PhoneExperienceHost keeps running in the
+  # background after the user closes Phone Link, so the process check above
+  # passes but no window exists. Launch Phone Link and search once more.
+  Log "window not found in \${windowSearchMs}ms; launching Phone Link and retrying"
+  try { Start-Process -FilePath 'explorer.exe' -ArgumentList 'shell:AppsFolder\\Microsoft.YourPhone_8wekyb3d8bbwe!App' } catch { Log "launch threw: $($_.Exception.Message)" }
+  $relaunchDeadline = [datetime]::Now.AddSeconds(15)
+  while ([datetime]::Now -lt $relaunchDeadline) {
+    Start-Sleep -Milliseconds 500
+    foreach ($name in @(${processNames.map(n => `'${n}'`).join(',')})) {
+      $found = Get-Process -Name $name -ErrorAction SilentlyContinue | Select-Object -First 1
+      if ($found) {
+        $c = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ProcessIdProperty, $found.Id)
+        $w = $root.FindFirst([System.Windows.Automation.TreeScope]::Children, $c)
+        if ($w) { $window = $w; $proc = $found; break }
+      }
+    }
+    if ($window) { break }
+  }
+  if ($window) {
+    Log "window found after launch: pid=$($proc.Id)"
+    # Give a freshly launched Phone Link time to load conversations.
+    Start-Sleep -Milliseconds 2500
+  }
+}
 if (-not $window) {
   Log "FATAL: UIAutomation could not find Phone Link window in \${windowSearchMs}ms (pid=$($proc.Id))"
   throw 'Could not find Phone Link window via UIAutomation'
@@ -284,6 +328,39 @@ $composeBtns = $window.FindAll([System.Windows.Automation.TreeScope]::Descendant
   Where-Object { $_.Current.Name -match 'New message|Compose|New conversation' }
 $compose = $composeBtns | Select-Object -First 1
 Log "compose: matching buttons=$($composeBtns.Count), invoked=$($compose -ne $null)"
+if (-not $compose) {
+  # Failure path only (finding 11): field logs show Phone Link parked on
+  # Calls/Photos ("Search your contacts" was the only edit) or a screen with no
+  # edits at all. Select the Messages nav item, then look for compose again.
+  # When compose is found above, none of this runs.
+  $navTypes = @('TabItem', 'ListItem', 'Button', 'MenuItem', 'Hyperlink')
+  $allEls = $window.FindAll([System.Windows.Automation.TreeScope]::Descendants, [System.Windows.Automation.Condition]::TrueCondition)
+  $navNames = ''
+  try {
+    $navNames = (@($allEls) | Where-Object { $navTypes -contains $_.Current.ControlType.ProgrammaticName.Replace('ControlType.', '') -and $_.Current.Name } |
+      ForEach-Object { "'" + $_.Current.Name + "'" } | Select-Object -Unique -First 60) -join ', '
+  } catch { }
+  Log "compose: none found; nav_names=[$navNames]"
+  $msgNav = @($allEls) | Where-Object {
+    $_.Current.Name -match '^Messages$' -and $navTypes -contains $_.Current.ControlType.ProgrammaticName.Replace('ControlType.', '')
+  } | Select-Object -First 1
+  if ($msgNav) {
+    $pat = $null
+    $how = 'none'
+    try {
+      if ($msgNav.TryGetCurrentPattern([System.Windows.Automation.SelectionItemPattern]::Pattern, [ref]$pat)) { $pat.Select(); $how = 'select' }
+      elseif ($msgNav.TryGetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern, [ref]$pat)) { $pat.Invoke(); $how = 'invoke' }
+    } catch { Log "compose: messages nav activate threw: $($_.Exception.Message)" }
+    Log "compose: selected Messages nav via $how"
+    Start-Sleep -Milliseconds 1500
+    $composeBtns = $window.FindAll([System.Windows.Automation.TreeScope]::Descendants, $btnCond) |
+      Where-Object { $_.Current.Name -match 'New message|Compose|New conversation' }
+    $compose = $composeBtns | Select-Object -First 1
+    Log "compose: after Messages nav matching buttons=$($composeBtns.Count), invoked=$($compose -ne $null)"
+  } else {
+    Log "compose: no Messages nav item found"
+  }
+}
 if ($compose) {
   $compose.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke()
 } else {
