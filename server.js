@@ -4,6 +4,7 @@ const helmet = require('helmet');
 const { rateLimit } = require('express-rate-limit');
 const multer = require('multer');
 const { parse } = require('csv-parse/sync');
+const { isVCard, vcardBufferToCsv } = require('./vcard');
 const crypto = require('crypto');
 const uuidv4 = crypto.randomUUID;
 const path = require('path');
@@ -274,8 +275,16 @@ function validateMaxLength(value, max, fieldName) {
 function validateCsvUpload(file) {
   const allowed = ['text/csv', 'application/vnd.ms-excel', 'text/plain'];
   if (!file) return 'No file uploaded';
+  if (isVCard(file)) return null; // phone contacts export (.vcf) — converted to CSV separately
   if (!allowed.includes(file.mimetype)) return 'File must be a CSV upload';
   return null;
+}
+
+// Returns CSV text for the uploaded file, converting a vCard contacts export first if needed.
+// Throws on a vCard with no usable contacts — caller should surface err.message to the user.
+function csvTextFromUpload(file) {
+  if (isVCard(file)) return vcardBufferToCsv(file.buffer);
+  return file.buffer.toString('utf8');
 }
 
 function validateCsvRows(rows) {
@@ -931,7 +940,7 @@ app.post('/api/upload', requireAuth, upload.single('file'), (req, res) => {
   try {
     const fileError = validateCsvUpload(req.file);
     if (fileError) return res.status(400).json({ error: fileError });
-    const text = req.file.buffer.toString('utf8');
+    const text = csvTextFromUpload(req.file);
     const rows = parse(text, { columns: true, skip_empty_lines: true, trim: true });
     const rowError = validateCsvRows(rows);
     if (rowError) return res.status(400).json({ error: rowError });
@@ -963,6 +972,7 @@ app.post('/api/upload', requireAuth, upload.single('file'), (req, res) => {
       empty_phone_count: emptyPhoneCount,
     });
   } catch (err) {
+    if (isVCard(req.file)) return res.status(400).json({ error: err.message });
     // Non-UTF-8 encoding often causes parse errors
     if (/invalid byte|unexpected|encoding/i.test(err.message)) {
       return res.status(400).json({ error: 'Could not read your CSV — it may use a non-UTF-8 encoding. In Excel: File → Save As → CSV UTF-8, then re-upload.' });
@@ -2300,7 +2310,11 @@ app.put('/api/lists/:id', requireAuth, upload.single('file'), (req, res) => {
   if (req.file) {
     const fileError = validateCsvUpload(req.file);
     if (fileError) return res.status(400).json({ error: fileError });
-    text = req.file.buffer.toString('utf8');
+    try {
+      text = csvTextFromUpload(req.file);
+    } catch (err) {
+      return res.status(400).json({ error: err.message });
+    }
     try {
       const rows = parse(text, { columns: true, skip_empty_lines: true, trim: true });
       const rowError = validateCsvRows(rows);

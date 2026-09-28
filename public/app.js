@@ -1109,12 +1109,12 @@ async function renderBulkSend(body) {
             <div style="font-size:13px;font-weight:600;color:var(--text-muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:0.4px">Upload a new list</div>
             <div class="drop-zone" id="bs-dz" style="padding:24px 16px">
               <div class="dz-icon" style="font-size:22px;margin-bottom:8px">&#128196;</div>
-              <p><strong>Drop CSV here</strong></p>
+              <p><strong>Drop CSV or contacts file here</strong></p>
               <p style="margin-top:4px;font-size:12px"><span style="text-decoration:underline;cursor:pointer" id="bs-browse">browse</span></p>
             </div>
-            <input type="file" id="bs-file" accept=".csv" style="display:none" />
+            <input type="file" id="bs-file" accept=".csv,.vcf,text/csv,text/vcard,text/x-vcard" style="display:none" />
             <div style="margin-top:6px;font-size:12px;color:var(--text-muted)">
-              Need a template? <a href="/api/csv-template" download style="color:var(--accent);text-decoration:underline">Download CSV template</a>
+              Need a template? <a href="/api/csv-template" download style="color:var(--accent);text-decoration:underline">Download CSV template</a> &middot; or export your phone's contacts (.vcf) and drop it in — we'll convert it automatically
             </div>
             <div id="bs-upload-result" style="margin-top:8px"></div>
           </div>
@@ -1468,7 +1468,7 @@ async function renderBulkSend(body) {
       refreshBsPreview();
       // Auto-fill campaign name
       const nameEl = document.getElementById('bs-campaign-name');
-      if (nameEl && !nameEl.value) nameEl.value = file.name.replace(/\.csv$/i,'') + ' — ' + new Date().toLocaleDateString();
+      if (nameEl && !nameEl.value) nameEl.value = file.name.replace(/\.(csv|vcf)$/i,'') + ' — ' + new Date().toLocaleDateString();
       updateEstimate();
     } catch (err) {
       document.getElementById('bs-upload-result').innerHTML = `<div class="alert alert-error" style="margin:0">${escHtml(err.message)}</div>`;
@@ -2075,7 +2075,7 @@ function openCreateList() {
 function replaceList(listId) {
   const input = document.createElement('input');
   input.type = 'file';
-  input.accept = '.csv,text/csv';
+  input.accept = '.csv,.vcf,text/csv,text/vcard,text/x-vcard';
   input.addEventListener('change', async () => {
     if (!input.files[0]) return;
     const fd = new FormData();
@@ -2116,10 +2116,10 @@ function openListUpload() {
       </div>
       <div class="drop-zone" id="ul-dz">
         <div class="dz-icon">&#128196;</div>
-        <p><strong>Drop CSV here</strong> or <span style="text-decoration:underline;cursor:pointer" id="ul-browse">browse</span></p>
-        <p style="margin-top:6px;font-size:12px;color:var(--text-muted)">Columns: first_name, last_name, phone, special</p>
+        <p><strong>Drop CSV or contacts file here</strong> or <span style="text-decoration:underline;cursor:pointer" id="ul-browse">browse</span></p>
+        <p style="margin-top:6px;font-size:12px;color:var(--text-muted)">CSV columns: first_name, last_name, phone, special &mdash; or drop your phone's exported contacts (.vcf) and we'll convert it</p>
       </div>
-      <input type="file" id="ul-file" accept=".csv" style="display:none" />
+      <input type="file" id="ul-file" accept=".csv,.vcf,text/csv,text/vcard,text/x-vcard" style="display:none" />
       <div id="ul-summary" style="margin-top:12px"></div>
     </div>
     <div class="wizard-footer">

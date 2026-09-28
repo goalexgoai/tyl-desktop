@@ -177,6 +177,59 @@ describe('API integration', () => {
     });
   });
 
+  // ── Upload: CSV and vCard (.vcf) ───────────────────────────────────────────
+  describe('POST /api/upload', () => {
+    test('accepts a plain CSV', async () => {
+      const res = await request(app)
+        .post('/api/upload')
+        .set('Cookie', cookies)
+        .attach('file', Buffer.from('first_name,phone\nAlice,8015551111\n'), 'list.csv');
+      expect(res.status).toBe(200);
+      expect(res.body.total).toBe(1);
+      expect(res.body.no_phone_column).toBe(false);
+    });
+
+    test('accepts a .vcf contacts export and converts it to the same shape as a CSV', async () => {
+      const vcf = 'BEGIN:VCARD\nN:Sanders;Karen;;;\nTEL;TYPE=CELL:3035551212\nEND:VCARD\n';
+      const res = await request(app)
+        .post('/api/upload')
+        .set('Cookie', cookies)
+        .attach('file', Buffer.from(vcf), { filename: 'contacts.vcf', contentType: 'text/x-vcard' });
+      expect(res.status).toBe(200);
+      expect(res.body.total).toBe(1);
+      expect(res.body.columns).toEqual(['first_name', 'last_name', 'phone']);
+      expect(res.body.rows[0].phone).toBe('3035551212');
+      expect(res.body.no_phone_column).toBe(false);
+    });
+
+    test('a .vcf with no phone numbers returns a friendly 400', async () => {
+      const vcf = 'BEGIN:VCARD\nFN:No Phone\nEND:VCARD\n';
+      const res = await request(app)
+        .post('/api/upload')
+        .set('Cookie', cookies)
+        .attach('file', Buffer.from(vcf), 'contacts.vcf');
+      expect(res.status).toBe(400);
+      expect(res.body.error).toMatch(/No contacts with phone numbers/);
+    });
+
+    test('PUT /api/lists/:id accepts a .vcf replacement file', async () => {
+      const created = await request(app)
+        .post('/api/lists')
+        .set('Cookie', cookies)
+        .send({ name: 'Replace Me', csv_data: 'First,Phone\nAlice,8015551111', columns: ['First', 'Phone'], row_count: 1 });
+      const id = created.body.id;
+
+      const vcf = 'BEGIN:VCARD\nN:Feliciano;Jennifer;;;\nTEL:3055559876\nEND:VCARD\n';
+      const res = await request(app)
+        .put(`/api/lists/${id}`)
+        .set('Cookie', cookies)
+        .attach('file', Buffer.from(vcf), 'contacts.vcf');
+      expect(res.status).toBe(200);
+      expect(res.body.row_count).toBe(1);
+      expect(res.body.columns).toEqual(['first_name', 'last_name', 'phone']);
+    });
+  });
+
   // ── Jobs ────────────────────────────────────────────────────────────────────
   describe('Jobs', () => {
     let jobId;
