@@ -2939,6 +2939,24 @@ if (process.env.TYL_DESKTOP) {
     } catch (_) {}
   }
 
+  // Readiness results from the Test Send page / Send confirm, so setup
+  // problems are visible even when the user never presses Send. Once per
+  // state per app session.
+  const _reportedPhoneLinkStates = new Set();
+  app.post('/api/telemetry/phone-link-state', requireAuth, (req, res) => {
+    const { state, phoneLink, build } = req.body || {};
+    const key = `${req.user.id}:${state}`;
+    if (state && !_reportedPhoneLinkStates.has(key) && req.user.web_user_id) {
+      _reportedPhoneLinkStates.add(key);
+      desktopWebPost('/api/desktop-event', {
+        web_user_id: req.user.web_user_id, platform: process.platform, app_version: APP_VERSION,
+        event: 'phone_link_state', is_test: false, count: 0,
+        detail: `state=${String(state).slice(0, 20)} phonelink=${String(phoneLink || '').slice(0, 20)} build=${String(build || '').slice(0, 20)}`,
+      }).catch(() => {});
+    }
+    res.json({ ok: true });
+  });
+
   async function desktopSendLoop() {
     if (desktopSendLoop._running) return;
     desktopSendLoop._running = true;
@@ -3035,7 +3053,7 @@ if (process.env.TYL_DESKTOP) {
         // same way, so pause right away with the specific fix.
         // Test sends just fail with the message (a paused test could fire later).
         const isTestJob = !!(db.prepare('SELECT is_test FROM jobs WHERE id = ?').get(message.job_id) || {}).is_test;
-        const isSetupIssue = !isTestJob && /Phone Link not set up|Phone Link pairing incomplete|messaging not enabled on iPhone/i.test(err.message);
+        const isSetupIssue = !isTestJob && /Phone Link not set up|Phone Link pairing incomplete/i.test(err.message);
         if (isSetupIssue) {
           const pauseReason = `Sending paused. ${friendlyError(err.message)} Then click "Resume".`;
           db.prepare("UPDATE messages SET status='pending', picked_at=NULL, error=?, last_attempt_at=datetime('now') WHERE id=?").run(pauseReason, message.id);

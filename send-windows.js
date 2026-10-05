@@ -82,9 +82,16 @@
 //
 //  13) Phone Link's UI includes phone NOTIFICATIONS as controls (sender +
 //      preview text). Never log long control names. When compose and the
-//      Messages tab are both missing, classify the screen (setup / Bluetooth
-//      pairing failed / iPhone paired without messaging) and throw a specific
-//      error. Field logs 2026-10-04: a Windows 10 + iPhone user hit all three.
+//      Messages tab are both missing, throw a specific error only for screens
+//      we can identify for certain (first-run setup, Bluetooth pairing
+//      failed). "iPhone paired, no Messages" is NOT assumed to be a phone
+//      permission problem: the Messages tab may be a control type we don't
+//      search. Field logs 2026-10-04 (Windows 10 + iPhone).
+//
+//  14) On those failures, Log-Diagnostics dumps Phone Link version, OS build,
+//      language and the control tree (type + AutomationId; names only when
+//      short; server keeps only known labels). Once per send. No mouse
+//      clicks to activate Messages: DPI scaling makes coordinates unreliable.
 //
 //  12) PowerShell treats ‘ ’ ‚ ‛ as single quotes too. escapePowerShell must
 //      double all of them, or a pasted ’ breaks every send in the job.
@@ -174,6 +181,40 @@ function Log-Foreground($label) {
     try { $procName = (Get-Process -Id $fgPid -ErrorAction SilentlyContinue).Name } catch { }
     Log "$label foreground: hwnd=$fg, pid=$fgPid, proc=$procName, title='$title'"
   } catch { Log "$label foreground: log failed: $($_.Exception.Message)" }
+}
+
+# ── Failure diagnostics (finding 14) ────────────────────────────────────────
+# One-time dump when a send can't find what it needs: Phone Link version, OS
+# build, language, and the window's controls by type + AutomationId. Names are
+# kept only when short and single-line (long ones are notifications), and the
+# server keeps only known Phone Link labels. AutomationIds that look like
+# numbers or addresses are masked.
+$script:diagDone = $false
+function Log-Diagnostics($win) {
+  if ($script:diagDone) { return }
+  $script:diagDone = $true
+  try {
+    $pl = Get-AppxPackage -Name Microsoft.YourPhone -ErrorAction SilentlyContinue | Select-Object -First 1
+    $nt = Get-ItemProperty 'HKLM:\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion' -ErrorAction SilentlyContinue
+    Log "env: phonelink=$($pl.Version) build=$($nt.CurrentBuild).$($nt.UBR) release=$($nt.DisplayVersion) culture=$((Get-Culture).Name) ui=$((Get-UICulture).Name)"
+  } catch { Log "env: failed: $($_.Exception.Message)" }
+  if (-not $win) { return }
+  try {
+    $els = $win.FindAll([System.Windows.Automation.TreeScope]::Descendants, [System.Windows.Automation.Condition]::TrueCondition)
+    $n = 0
+    foreach ($e in $els) {
+      $c = $e.Current
+      $t = $c.ControlType.ProgrammaticName.Replace('ControlType.', '')
+      if ($t -eq 'Text' -or $t -eq 'Image') { continue }
+      if ($n -ge 150) { Log "ui: truncated at 150 of $($els.Count) elements"; break }
+      $nm = $c.Name
+      $nmOut = if ($nm -and $nm.Length -le 40 -and $nm -notmatch "[\r\n]") { $nm } elseif ($nm) { "<len $($nm.Length)>" } else { '' }
+      $aid = $c.AutomationId
+      if ($aid -match '[0-9]{5,}|@|[+]') { $aid = '<masked>' }
+      Log ("ui: type=" + $t + " id='" + $aid + "' class='" + $c.ClassName + "' enabled=" + $c.IsEnabled + " offscreen=" + $c.IsOffscreen + " name='" + $nmOut + "'")
+      $n++
+    }
+  } catch { Log "ui: dump failed: $($_.Exception.Message)" }
 }
 
 Log "════════ send start (v1.0.86) ════════"
@@ -349,26 +390,39 @@ if (-not $compose) {
       ForEach-Object { "'" + $_.Current.Name + "'" } | Select-Object -Unique -First 40) -join ', '
   } catch { }
   Log "compose: none found; nav_names=[$navNames]"
+  # Prefer navigation-type controls, but Phone Link's layouts differ (Android
+  # vs iPhone, versions), so fall back to any control named exactly Messages.
   $msgNav = @($allEls) | Where-Object {
     $_.Current.Name -match '^Messages$' -and $navTypes -contains $_.Current.ControlType.ProgrammaticName.Replace('ControlType.', '')
   } | Select-Object -First 1
+  if (-not $msgNav) {
+    $msgNav = @($allEls) | Where-Object { $_.Current.Name -match '^Messages$' } | Select-Object -First 1
+  }
   if ($msgNav) {
     $pat = $null
     $how = 'none'
+    $navType = ''
+    try { $navType = $msgNav.Current.ControlType.ProgrammaticName.Replace('ControlType.', '') } catch { }
     try {
       if ($msgNav.TryGetCurrentPattern([System.Windows.Automation.SelectionItemPattern]::Pattern, [ref]$pat)) { $pat.Select(); $how = 'select' }
       elseif ($msgNav.TryGetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern, [ref]$pat)) { $pat.Invoke(); $how = 'invoke' }
+      elseif ($msgNav.TryGetCurrentPattern([System.Windows.Automation.TogglePattern]::Pattern, [ref]$pat)) { $pat.Toggle(); $how = 'toggle' }
+      elseif ($msgNav.TryGetCurrentPattern([System.Windows.Automation.ExpandCollapsePattern]::Pattern, [ref]$pat)) { $pat.Expand(); $how = 'expand' }
+      else { $msgNav.SetFocus(); Start-Sleep -Milliseconds 200; [System.Windows.Forms.SendKeys]::SendWait(' '); $how = 'focus+space' }
     } catch { Log "compose: messages nav activate threw: $($_.Exception.Message)" }
-    Log "compose: selected Messages nav via $how"
+    Log "compose: selected Messages nav (type=$navType) via $how"
     Start-Sleep -Milliseconds 1500
     $composeBtns = $window.FindAll([System.Windows.Automation.TreeScope]::Descendants, $btnCond) |
       Where-Object { $_.Current.Name -match 'New message|Compose|New conversation' }
     $compose = $composeBtns | Select-Object -First 1
     Log "compose: after Messages nav matching buttons=$($composeBtns.Count), invoked=$($compose -ne $null)"
+    if (-not $compose) { Log-Diagnostics $window }
   } else {
     Log "compose: no Messages nav item found"
-    # Phone Link isn't on a usable screen. Name the setup state so the user
-    # gets the right fix instead of "click the Messages tab" (finding 13).
+    Log-Diagnostics $window
+    # Only screens we can identify for certain get a specific error. Anything
+    # else falls through to the Ctrl+N path, whose failure is diagnosed by the
+    # dump above (finding 13).
     $labels = @($allEls | ForEach-Object { try { $_.Current.Name } catch { '' } } | Where-Object { $_ -and $_.Length -le 40 })
     if (($labels | Where-Object { $_ -match '^Android' }) -and ($labels | Where-Object { $_ -match '^iPhone' })) {
       Log "FATAL: Phone Link setup screen (no phone connected)"
@@ -377,10 +431,6 @@ if (-not $compose) {
     if ($labels -contains 'Try Bluetooth pairing again') {
       Log "FATAL: Phone Link Bluetooth pairing failed"
       throw 'Phone Link pairing incomplete'
-    }
-    if ($labels -contains 'Remove Bluetooth pairing') {
-      Log "FATAL: iPhone paired but no Messages view (messaging permission off)"
-      throw 'Phone Link messaging not enabled on iPhone'
     }
   }
 }
@@ -405,6 +455,7 @@ try { $editNames = (@($edits) | ForEach-Object { "'" + $_.Current.Name + "'" }) 
 Log "recipient field: edits_found=$($edits.Count), picked='$recipName', all_edit_names=[$editNames]"
 if (-not $recipient) {
   Log "FATAL: no recipient field"
+  Log-Diagnostics $window
   throw 'Recipient field not found'
 }
 
@@ -443,6 +494,7 @@ if (-not $msgField) {
     $edits2Names = (@($edits2) | ForEach-Object { "'" + $_.Current.Name + "'" }) -join ', '
   } catch { }
   Log "FATAL: no message field after $msgAttempts polls; post-enter_edit_names=[$edits2Names]"
+  Log-Diagnostics $window
   throw 'Message field not found'
 }
 

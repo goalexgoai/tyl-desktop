@@ -131,8 +131,10 @@ describe('send-windows.js empirical-findings invariants', () => {
     const cls = ps.indexOf("throw 'Phone Link not set up: no phone connected'");
     expect(cls).toBeGreaterThan(-1);
     expect(ps.lastIndexOf('Log "compose: no Messages nav item found"', cls)).toBeGreaterThan(ps.indexOf('if (-not $compose) {'));
+    expect(ps.lastIndexOf('Log-Diagnostics $window', cls)).toBeGreaterThan(ps.lastIndexOf('Log "compose: no Messages nav item found"', cls));
     expect(ps.indexOf("throw 'Phone Link pairing incomplete'")).toBeGreaterThan(cls);
-    expect(ps.indexOf("throw 'Phone Link messaging not enabled on iPhone'")).toBeGreaterThan(cls);
+    // 'iPhone paired, no Messages' must not be asserted as a permission problem.
+    expect(ps).not.toMatch(/messaging not enabled/);
   });
 
   test('Finding 13: logged nav names are length-limited (notifications must not be logged)', () => {

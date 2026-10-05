@@ -102,14 +102,14 @@ test('paused job detail exposes pause_reason', async () => {
 });
 
 test('Phone Link setup problem pauses a bulk job on the first failure', async () => {
-  sendFn.mockReset().mockRejectedValue(new Error("Phone Link messaging not enabled on iPhone\r\nAt C:\\x.ps1:1"));
+  sendFn.mockReset().mockRejectedValue(new Error("Phone Link pairing incomplete\r\nAt C:\\x.ps1:1"));
   const jobId = makeJob(5);
   await runLoop(3);
   expect(sendFn).toHaveBeenCalledTimes(1);
   expect(db.prepare('SELECT status FROM jobs WHERE id = ?').get(jobId).status).toBe('paused');
   expect(statuses(jobId).every(s => s === 'pending')).toBe(true);
   const err = db.prepare("SELECT error FROM messages WHERE job_id = ? AND error IS NOT NULL").get(jobId).error;
-  expect(err).toMatch(/Show Notifications and Sync Contacts/);
+  expect(err).toMatch(/Try Bluetooth pairing again/);
 });
 
 test('Phone Link setup problem on a test send fails it instead of pausing', async () => {

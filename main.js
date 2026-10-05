@@ -494,9 +494,9 @@ exit 1
 
 // Which Phone Link screen is showing, as a single status word (no control
 // names leave PowerShell, so phone notifications are never read out).
-// ready | not-set-up | pairing-failed | messaging-off | no-window | unknown
+// ready | not-set-up | pairing-failed | no-window | unknown
 ipcMain.handle('phone-link-state', () => {
-  if (process.platform !== 'win32') return 'ready';
+  if (process.platform !== 'win32') return { state: 'ready' };
   const script = `
 Add-Type -AssemblyName UIAutomationClient
 Add-Type -AssemblyName UIAutomationTypes
@@ -507,24 +507,26 @@ foreach ($p in @(Get-Process -Name 'PhoneLink','PhoneLinkHost','PhoneExperienceH
   $w = $root.FindFirst([System.Windows.Automation.TreeScope]::Children, $c)
   if ($w) { $win = $w; break }
 }
-if (-not $win) { 'no-window'; exit }
+$pl = Get-AppxPackage -Name Microsoft.YourPhone -ErrorAction SilentlyContinue | Select-Object -First 1
+$nt = Get-ItemProperty 'HKLM:\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion' -ErrorAction SilentlyContinue
+$env = "|" + $pl.Version + "|" + $nt.CurrentBuild + "." + $nt.UBR
+if (-not $win) { 'no-window' + $env; exit }
 $labels = @($win.FindAll([System.Windows.Automation.TreeScope]::Descendants, [System.Windows.Automation.Condition]::TrueCondition) |
   ForEach-Object { try { $_.Current.Name } catch { '' } } | Where-Object { $_ -and $_.Length -le 40 })
-if (($labels -contains 'Messages') -or ($labels | Where-Object { $_ -match '^(New message|Compose|New conversation)$' })) { 'ready'; exit }
-if (($labels | Where-Object { $_ -match '^Android' }) -and ($labels | Where-Object { $_ -match '^iPhone' })) { 'not-set-up'; exit }
-if ($labels -contains 'Try Bluetooth pairing again') { 'pairing-failed'; exit }
-if ($labels -contains 'Remove Bluetooth pairing') { 'messaging-off'; exit }
-'unknown'
+if (($labels -contains 'Messages') -or ($labels | Where-Object { $_ -match '^(New message|Compose|New conversation)$' })) { 'ready' + $env; exit }
+if (($labels | Where-Object { $_ -match '^Android' }) -and ($labels | Where-Object { $_ -match '^iPhone' })) { 'not-set-up' + $env; exit }
+if ($labels -contains 'Try Bluetooth pairing again') { 'pairing-failed' + $env; exit }
+'unknown' + $env
 `;
   return new Promise((resolve) => {
     const { execFile } = require('child_process');
     const encoded = Buffer.from(script, 'utf16le').toString('base64');
     const proc = execFile('powershell', ['-NoProfile', '-NonInteractive', '-EncodedCommand', encoded],
       { timeout: 10000, windowsHide: true }, (err, stdout) => {
-        const state = String(stdout || '').trim().split(/\r?\n/).pop();
-        resolve(err ? 'unknown' : (state || 'unknown'));
+        const [state, phoneLink, build] = String(stdout || '').trim().split(/\r?\n/).pop().split('|');
+        resolve(err ? { state: 'unknown' } : { state: state || 'unknown', phoneLink: phoneLink || '', build: build || '' });
       });
-    proc.on('error', () => resolve('unknown'));
+    proc.on('error', () => resolve({ state: 'unknown' }));
   });
 });
 

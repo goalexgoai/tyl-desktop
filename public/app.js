@@ -663,7 +663,6 @@ async function checkCompanionBanner() {
 const PHONE_LINK_SETUP_HELP = {
   'not-set-up': "Phone Link isn't connected to your phone yet. Open Phone Link, choose Android or iPhone, and finish pairing.",
   'pairing-failed': 'Phone Link couldn\'t finish pairing with your phone. Keep your phone near your PC with Bluetooth on, click "Try Bluetooth pairing again" in Phone Link, and tap Allow on every prompt on your phone.',
-  'messaging-off': "Your iPhone is connected, but Phone Link isn't allowed to send messages. On your iPhone open Settings, then Bluetooth, tap the (i) next to your PC, and turn on Show Notifications and Sync Contacts. Then reopen Phone Link.",
 };
 
 // ── Test Send ────────────────────────────────────────────────────────────
@@ -759,7 +758,12 @@ function renderQuickSend(body) {
       // Windows: an open Phone Link window can still be unpaired or unable to message.
       let setupHelp = null;
       if (running && !isMac && window.electronAPI.phoneLinkState) {
-        try { setupHelp = PHONE_LINK_SETUP_HELP[await window.electronAPI.phoneLinkState()] || null; } catch (_) {}
+        try {
+          const st = await window.electronAPI.phoneLinkState();
+          setupHelp = PHONE_LINK_SETUP_HELP[st.state] || null;
+          // Lets us see setup problems even if the user never presses Send.
+          post('/api/telemetry/phone-link-state', st).catch(() => {});
+        } catch (_) {}
       }
       dot.style.background = running && !setupHelp ? '#16a34a' : '#dc2626';
       txt.innerHTML = setupHelp
@@ -976,7 +980,11 @@ function showSendConfirmModal(previewContact, previewMessage, count, onConfirm, 
           : await window.electronAPI.checkPhoneLinkRunning({ launch: true });
         if (isRunning && !isMac && window.electronAPI.phoneLinkState) {
           let help = null;
-          try { help = PHONE_LINK_SETUP_HELP[await window.electronAPI.phoneLinkState()] || null; } catch (_) {}
+          try {
+            const st = await window.electronAPI.phoneLinkState();
+            help = PHONE_LINK_SETUP_HELP[st.state] || null;
+            post('/api/telemetry/phone-link-state', st).catch(() => {});
+          } catch (_) {}
           // Warn, but never hard-block: if the screen check misreads a working
           // setup, the user can still send (the send itself reports real problems).
           if (help && !sendBtn.dataset.override) {
