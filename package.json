@@ -52,6 +52,7 @@
       "send-mac.js",
       "send-windows.js",
       "send-errors.js",
+      "vcard.js",
       "assets/**",
       "node_modules/**"
     ],
@@ -63,6 +64,7 @@
       "send-mac.js",
       "send-windows.js",
       "send-errors.js",
+      "vcard.js",
       "assets/**",
       "public/**",
       "companion/**",
