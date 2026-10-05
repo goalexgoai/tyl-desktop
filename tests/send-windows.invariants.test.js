@@ -127,6 +127,19 @@ describe('send-windows.js empirical-findings invariants', () => {
     expect(ps).toMatch(/SendWait\('\^n'\)/);
   });
 
+  test('Finding 13: setup-state classification only after compose AND Messages nav were not found', () => {
+    const cls = ps.indexOf("throw 'Phone Link not set up: no phone connected'");
+    expect(cls).toBeGreaterThan(-1);
+    expect(ps.lastIndexOf('Log "compose: no Messages nav item found"', cls)).toBeGreaterThan(ps.indexOf('if (-not $compose) {'));
+    expect(ps.indexOf("throw 'Phone Link pairing incomplete'")).toBeGreaterThan(cls);
+    expect(ps.indexOf("throw 'Phone Link messaging not enabled on iPhone'")).toBeGreaterThan(cls);
+  });
+
+  test('Finding 13: logged nav names are length-limited (notifications must not be logged)', () => {
+    const line = ps.slice(ps.indexOf('$navNames = '), ps.indexOf('Log "compose: none found; nav_names='));
+    expect(line).toMatch(/Name\.Length -le 40/);
+  });
+
   test('JS template literal builds without ReferenceError when sendViaPhoneLink is invoked', () => {
     // Smoke test the v1.0.86 regression specifically — building the script
     // string must not throw. We mock execFile so the function short-circuits

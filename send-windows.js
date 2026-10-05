@@ -80,6 +80,12 @@
 //      Select the "Messages" nav item and look again. Runs only when compose
 //      was not found; logs nav_names so a mismatch is diagnosable.
 //
+//  13) Phone Link's UI includes phone NOTIFICATIONS as controls (sender +
+//      preview text). Never log long control names. When compose and the
+//      Messages tab are both missing, classify the screen (setup / Bluetooth
+//      pairing failed / iPhone paired without messaging) and throw a specific
+//      error. Field logs 2026-10-04: a Windows 10 + iPhone user hit all three.
+//
 //  12) PowerShell treats ‘ ’ ‚ ‛ as single quotes too. escapePowerShell must
 //      double all of them, or a pasted ’ breaks every send in the job.
 //
@@ -337,8 +343,10 @@ if (-not $compose) {
   $allEls = $window.FindAll([System.Windows.Automation.TreeScope]::Descendants, [System.Windows.Automation.Condition]::TrueCondition)
   $navNames = ''
   try {
-    $navNames = (@($allEls) | Where-Object { $navTypes -contains $_.Current.ControlType.ProgrammaticName.Replace('ControlType.', '') -and $_.Current.Name } |
-      ForEach-Object { "'" + $_.Current.Name + "'" } | Select-Object -Unique -First 60) -join ', '
+    # Long names are usually phone notifications (sender + preview), which must
+    # never be logged; keep short single-line labels only (finding 13).
+    $navNames = (@($allEls) | Where-Object { $navTypes -contains $_.Current.ControlType.ProgrammaticName.Replace('ControlType.', '') -and $_.Current.Name -and $_.Current.Name.Length -le 40 -and $_.Current.Name -notmatch "[\r\n]" } |
+      ForEach-Object { "'" + $_.Current.Name + "'" } | Select-Object -Unique -First 40) -join ', '
   } catch { }
   Log "compose: none found; nav_names=[$navNames]"
   $msgNav = @($allEls) | Where-Object {
@@ -359,6 +367,21 @@ if (-not $compose) {
     Log "compose: after Messages nav matching buttons=$($composeBtns.Count), invoked=$($compose -ne $null)"
   } else {
     Log "compose: no Messages nav item found"
+    # Phone Link isn't on a usable screen. Name the setup state so the user
+    # gets the right fix instead of "click the Messages tab" (finding 13).
+    $labels = @($allEls | ForEach-Object { try { $_.Current.Name } catch { '' } } | Where-Object { $_ -and $_.Length -le 40 })
+    if (($labels | Where-Object { $_ -match '^Android' }) -and ($labels | Where-Object { $_ -match '^iPhone' })) {
+      Log "FATAL: Phone Link setup screen (no phone connected)"
+      throw 'Phone Link not set up: no phone connected'
+    }
+    if ($labels -contains 'Try Bluetooth pairing again') {
+      Log "FATAL: Phone Link Bluetooth pairing failed"
+      throw 'Phone Link pairing incomplete'
+    }
+    if ($labels -contains 'Remove Bluetooth pairing') {
+      Log "FATAL: iPhone paired but no Messages view (messaging permission off)"
+      throw 'Phone Link messaging not enabled on iPhone'
+    }
   }
 }
 if ($compose) {

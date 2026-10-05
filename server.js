@@ -3031,7 +3031,19 @@ if (process.env.TYL_DESKTOP) {
         // Detect messaging-app errors that should pause the job vs. hard failures.
         const isAuthError = /not authorized to send apple events/i.test(err.message);
         const isAppClosed = !isAuthError && /connection is invalid|application isn't running|phone link not found|phonelink.*not found|execution error.*messages|phone link window|could not find phone link|compose view did not open|automation timed out/i.test(err.message);
-        if (isAuthError) {
+        // Phone Link isn't paired / can't message: every message would fail the
+        // same way, so pause right away with the specific fix.
+        // Test sends just fail with the message (a paused test could fire later).
+        const isTestJob = !!(db.prepare('SELECT is_test FROM jobs WHERE id = ?').get(message.job_id) || {}).is_test;
+        const isSetupIssue = !isTestJob && /Phone Link not set up|Phone Link pairing incomplete|messaging not enabled on iPhone/i.test(err.message);
+        if (isSetupIssue) {
+          const pauseReason = `Sending paused. ${friendlyError(err.message)} Then click "Resume".`;
+          db.prepare("UPDATE messages SET status='pending', picked_at=NULL, error=?, last_attempt_at=datetime('now') WHERE id=?").run(pauseReason, message.id);
+          db.prepare("UPDATE jobs SET status='paused', updated_at=datetime('now') WHERE id=?").run(message.job_id);
+          log(message.user_id, message.id, message.job_id, message.phone, 'paused', err.message);
+          console.warn(`[desktop-sender] Phone Link setup issue — job ${message.job_id} paused`);
+          notifyJobPaused(message.job_id, pauseReason);
+        } else if (isAuthError) {
           // macOS Automation permission not granted — pause with actionable message.
           const pauseReason = 'macOS permission needed. Go to Help → Manage Permissions to grant access, then click Resume.';
           db.prepare("UPDATE messages SET status='pending', picked_at=NULL, error=?, last_attempt_at=datetime('now') WHERE id=?").run(pauseReason, message.id);

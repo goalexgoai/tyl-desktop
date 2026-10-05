@@ -658,6 +658,14 @@ async function checkCompanionBanner() {
   } catch (e) { /* ignore */ }
 }
 
+// Phone Link setup states that block sending, with the fix for each.
+// Mirrors send-errors.js; state comes from the phone-link-state IPC.
+const PHONE_LINK_SETUP_HELP = {
+  'not-set-up': "Phone Link isn't connected to your phone yet. Open Phone Link, choose Android or iPhone, and finish pairing.",
+  'pairing-failed': 'Phone Link couldn\'t finish pairing with your phone. Keep your phone near your PC with Bluetooth on, click "Try Bluetooth pairing again" in Phone Link, and tap Allow on every prompt on your phone.',
+  'messaging-off': "Your iPhone is connected, but Phone Link isn't allowed to send messages. On your iPhone open Settings, then Bluetooth, tap the (i) next to your PC, and turn on Show Notifications and Sync Contacts. Then reopen Phone Link.",
+};
+
 // ── Test Send ────────────────────────────────────────────────────────────
 
 function renderQuickSend(body) {
@@ -748,9 +756,16 @@ function renderQuickSend(body) {
         running = isMac ? await window.electronAPI.checkMessagesRunning()
                         : await window.electronAPI.checkPhoneLinkRunning();
       } catch (_) { running = false; }
-      dot.style.background = running ? '#16a34a' : '#dc2626';
-      txt.innerHTML = running
-        ? `${appName} is running — you're ready to send a test.`
+      // Windows: an open Phone Link window can still be unpaired or unable to message.
+      let setupHelp = null;
+      if (running && !isMac && window.electronAPI.phoneLinkState) {
+        try { setupHelp = PHONE_LINK_SETUP_HELP[await window.electronAPI.phoneLinkState()] || null; } catch (_) {}
+      }
+      dot.style.background = running && !setupHelp ? '#16a34a' : '#dc2626';
+      txt.innerHTML = setupHelp
+        ? escHtml(setupHelp) + ` <a href="#" onclick="window.electronAPI.openExternal('https://textyourlist.com/help/phone-link');return false" style="color:var(--accent);text-decoration:underline">Setup guide</a>`
+        : running
+        ? `${appName} is running, so you're ready to send a test.`
         : `${appName} isn't open. <a href="#" onclick="navigate('help');return false" style="color:var(--accent);text-decoration:underline">Open it</a>, connect your phone, then re-check.`;
     };
     const recheckBtn = document.getElementById('readiness-recheck');
@@ -959,6 +974,20 @@ function showSendConfirmModal(previewContact, previewMessage, count, onConfirm, 
         const isRunning = isMac
           ? await window.electronAPI.checkMessagesRunning()
           : await window.electronAPI.checkPhoneLinkRunning({ launch: true });
+        if (isRunning && !isMac && window.electronAPI.phoneLinkState) {
+          let help = null;
+          try { help = PHONE_LINK_SETUP_HELP[await window.electronAPI.phoneLinkState()] || null; } catch (_) {}
+          // Warn, but never hard-block: if the screen check misreads a working
+          // setup, the user can still send (the send itself reports real problems).
+          if (help && !sendBtn.dataset.override) {
+            warnEl.textContent = help;
+            warnEl.style.display = 'block';
+            sendBtn.dataset.override = '1';
+            sendBtn.disabled = false;
+            sendBtn.textContent = 'Send anyway';
+            return;
+          }
+        }
         if (!isRunning) {
           const appName = isMac ? 'Messages' : 'Phone Link';
           warnEl.textContent = isMac

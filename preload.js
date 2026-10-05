@@ -9,6 +9,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Messaging app state checks
   checkMessagesRunning: () => ipcRenderer.invoke('check-messages-running'),
   checkPhoneLinkRunning: (opts) => ipcRenderer.invoke('check-phone-link-running', opts || {}),
+  phoneLinkState: () => ipcRenderer.invoke('phone-link-state'),
 
   // Setup wizard
   checkChatDbAccess: () => ipcRenderer.invoke('check-chat-db-access'),

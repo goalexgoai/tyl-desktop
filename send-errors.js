@@ -12,6 +12,12 @@ function friendlyError(raw, platform = process.platform) {
     return `${app} wasn't running or wasn't ready. Open ${app}, confirm your phone is connected, then resend.`;
   if (/could not focus|foreground|receive focus/i.test(e))
     return `Couldn't bring ${app} to the front. Close other windows, click ${app} once, then resend.`;
+  if (/Phone Link not set up/i.test(e))
+    return `Phone Link isn't connected to your phone yet. Open Phone Link, choose Android or iPhone, and finish pairing. Then send a test to yourself.`;
+  if (/Phone Link pairing incomplete/i.test(e))
+    return `Phone Link couldn't finish pairing with your phone over Bluetooth. Keep your phone near your PC with Bluetooth on, click "Try Bluetooth pairing again" in Phone Link, and tap Allow on every prompt on your phone.`;
+  if (/messaging not enabled on iPhone/i.test(e))
+    return `Your iPhone is connected, but Phone Link isn't allowed to send messages. On your iPhone open Settings, then Bluetooth, tap the (i) next to your PC, and turn on Show Notifications and Sync Contacts. Then reopen Phone Link and send a test to yourself.`;
   if (/recipient field|message field|compose|new message|did not open/i.test(e))
     return `${app} didn't open a new message. In ${app}, click the Messages tab and confirm your phone is connected, then resend.`;
   if (/timed out|timeout/i.test(e))

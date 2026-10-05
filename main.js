@@ -492,6 +492,42 @@ exit 1
   });
 });
 
+// Which Phone Link screen is showing, as a single status word (no control
+// names leave PowerShell, so phone notifications are never read out).
+// ready | not-set-up | pairing-failed | messaging-off | no-window | unknown
+ipcMain.handle('phone-link-state', () => {
+  if (process.platform !== 'win32') return 'ready';
+  const script = `
+Add-Type -AssemblyName UIAutomationClient
+Add-Type -AssemblyName UIAutomationTypes
+$root = [System.Windows.Automation.AutomationElement]::RootElement
+$win = $null
+foreach ($p in @(Get-Process -Name 'PhoneLink','PhoneLinkHost','PhoneExperienceHost','PhoneExperience','YourPhone' -ErrorAction SilentlyContinue)) {
+  $c = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ProcessIdProperty, $p.Id)
+  $w = $root.FindFirst([System.Windows.Automation.TreeScope]::Children, $c)
+  if ($w) { $win = $w; break }
+}
+if (-not $win) { 'no-window'; exit }
+$labels = @($win.FindAll([System.Windows.Automation.TreeScope]::Descendants, [System.Windows.Automation.Condition]::TrueCondition) |
+  ForEach-Object { try { $_.Current.Name } catch { '' } } | Where-Object { $_ -and $_.Length -le 40 })
+if (($labels -contains 'Messages') -or ($labels | Where-Object { $_ -match '^(New message|Compose|New conversation)$' })) { 'ready'; exit }
+if (($labels | Where-Object { $_ -match '^Android' }) -and ($labels | Where-Object { $_ -match '^iPhone' })) { 'not-set-up'; exit }
+if ($labels -contains 'Try Bluetooth pairing again') { 'pairing-failed'; exit }
+if ($labels -contains 'Remove Bluetooth pairing') { 'messaging-off'; exit }
+'unknown'
+`;
+  return new Promise((resolve) => {
+    const { execFile } = require('child_process');
+    const encoded = Buffer.from(script, 'utf16le').toString('base64');
+    const proc = execFile('powershell', ['-NoProfile', '-NonInteractive', '-EncodedCommand', encoded],
+      { timeout: 10000, windowsHide: true }, (err, stdout) => {
+        const state = String(stdout || '').trim().split(/\r?\n/).pop();
+        resolve(err ? 'unknown' : (state || 'unknown'));
+      });
+    proc.on('error', () => resolve('unknown'));
+  });
+});
+
 ipcMain.handle('is-setup-done', () => {
   if (process.platform !== 'darwin') return true; // Windows needs no setup
   try {

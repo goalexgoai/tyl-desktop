@@ -100,3 +100,23 @@ test('paused job detail exposes pause_reason', async () => {
   expect(res.status).toBe(200);
   expect(res.body.pause_reason).toMatch(/Update Text Your List to the latest version/);
 });
+
+test('Phone Link setup problem pauses a bulk job on the first failure', async () => {
+  sendFn.mockReset().mockRejectedValue(new Error("Phone Link messaging not enabled on iPhone\r\nAt C:\\x.ps1:1"));
+  const jobId = makeJob(5);
+  await runLoop(3);
+  expect(sendFn).toHaveBeenCalledTimes(1);
+  expect(db.prepare('SELECT status FROM jobs WHERE id = ?').get(jobId).status).toBe('paused');
+  expect(statuses(jobId).every(s => s === 'pending')).toBe(true);
+  const err = db.prepare("SELECT error FROM messages WHERE job_id = ? AND error IS NOT NULL").get(jobId).error;
+  expect(err).toMatch(/Show Notifications and Sync Contacts/);
+});
+
+test('Phone Link setup problem on a test send fails it instead of pausing', async () => {
+  sendFn.mockReset().mockRejectedValue(new Error('Phone Link not set up: no phone connected'));
+  const jobId = makeJob(1);
+  db.prepare('UPDATE jobs SET is_test = 1 WHERE id = ?').run(jobId);
+  await runLoop(2);
+  expect(db.prepare('SELECT status FROM jobs WHERE id = ?').get(jobId).status).toBe('completed');
+  expect(db.prepare('SELECT error FROM messages WHERE job_id = ?').get(jobId).error).toMatch(/isn't connected to your phone yet/);
+});
