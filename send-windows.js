@@ -96,6 +96,39 @@
 //  12) PowerShell treats ‘ ’ ‚ ‛ as single quotes too. escapePowerShell must
 //      double all of them, or a pasted ’ breaks every send in the job.
 //
+//  15) $window.FindAll(Descendants, …) walks the ENTIRE Phone Link window,
+//      including the whole visible conversation list / message history. Cost
+//      scales with how much history Phone Link is rendering, not with time.
+//      Field evidence (2026-10-09): a message-field poll logged "attempts=14"
+//      against a nominal 4s deadline but actually took ~6.9s — the FindAll
+//      calls themselves ate the budget, not the sleeps between them. The
+//      field box existed (AutomationId 'InputTextBox', enabled) in the
+//      failure-path diagnostic dump taken moments later. Fix: once compose is
+//      open, try to resolve a scoped subtree root (AutomationId
+//      'ConversationPane') ONCE and search inside it for the rest of this
+//      send. Falls back to searching $window if that AutomationId isn't
+//      present on some build/layout — never worse than the old behavior.
+//
+//  16) Likely explanation for "works on Dustin's machine, fails for new
+//      customers": Dustin's manual tests mostly go to numbers with an
+//      existing conversation thread (his own phone, people he's texted
+//      before). A brand-new customer's bulk list is, by definition, numbers
+//      Phone Link has never texted — creating a new conversation thread is a
+//      slower path than appending to one that already exists. The fixed
+//      1300ms sleep after recipient-Enter was tuned against the fast
+//      (existing-thread) case. Not fully proven, but it is consistent with
+//      every field failure logged so far being a bulk send to new contacts.
+//
+//  17) The message field's sibling Send button (AutomationId
+//      'SendMessageButton') is reliably IsEnabled=False while the field is
+//      empty and True once text is present (confirmed in field logs). Unlike
+//      finding 5, this reads IsEnabled, not ValuePattern.Value, and reads it
+//      BEFORE Send is invoked, not after — so it does not hit the stale-
+//      reference-after-send problem finding 5 documents. Used as a real gate
+//      before clicking Send: if text never registers, fail with a specific,
+//      diagnosable error instead of silently clicking Send on a field we
+//      never confirmed received the text.
+//
 // PRIOR REGRESSIONS — captured here so the same mistakes are not re-made:
 //   - v1.0.81: added foreground hardening that broke bulk sending because of
 //     points 5, 6, and 4 above.
@@ -217,7 +250,7 @@ function Log-Diagnostics($win) {
   } catch { Log "ui: dump failed: $($_.Exception.Message)" }
 }
 
-Log "════════ send start (v1.0.86) ════════"
+Log "════════ send start (v${require('./package.json').version}) ════════"
 Log-Foreground "initial"
 
 # ── 1. Find Phone Link process ──────────────────────────────────────────────
@@ -464,18 +497,40 @@ Start-Sleep -Milliseconds 300
 [System.Windows.Forms.SendKeys]::SendWait('${safeNumber}')
 Start-Sleep -Milliseconds 800
 [System.Windows.Forms.SendKeys]::SendWait('{ENTER}')
-Start-Sleep -Milliseconds 1300
+# A brand-new number (no prior thread) makes Phone Link create a new
+# conversation, which is slower than resuming one that already exists
+# (finding 16) — this fixed sleep only covers the gap before we start
+# polling below, the polling budget covers the rest.
+Start-Sleep -Milliseconds 1800
 
-# ── 7. Find message field by Name (poll up to 4s), type message ─────────────
+# ── 7. Scope the rest of the search to the conversation pane if we can find
+#      one, so every poll below walks a small subtree instead of the whole
+#      window (finding 15). Falls back to $window — never worse than before.
+$searchRoot = $window
+$convIdCond = New-Object System.Windows.Automation.PropertyCondition(
+  [System.Windows.Automation.AutomationElement]::AutomationIdProperty, 'ConversationPane'
+)
+try {
+  $convPane = $window.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $convIdCond)
+  if ($convPane) { $searchRoot = $convPane }
+} catch { }
+Log "scope: using $(if ($searchRoot -eq $window) { 'full window' } else { 'ConversationPane' }) for field search"
+
+# ── 8. Find message field: AutomationId first, Name regex as fallback, poll
+#      up to 10s (finding 15 — a scoped, cheap poll can afford more attempts
+#      than the old 4s/whole-window one could) ─────────────────────────────
+$msgIdCond = New-Object System.Windows.Automation.PropertyCondition(
+  [System.Windows.Automation.AutomationElement]::AutomationIdProperty, 'InputTextBox'
+)
 $msgField = $null
-$msgDeadline = [datetime]::Now.AddSeconds(4)
+$msgDeadline = [datetime]::Now.AddSeconds(10)
 $msgAttempts = 0
 while ([datetime]::Now -lt $msgDeadline -and -not $msgField) {
   $msgAttempts++
-  $edits2 = $window.FindAll([System.Windows.Automation.TreeScope]::Descendants, $editCond)
-  $msgField = $edits2 | Where-Object { $_.Current.Name -match 'Type a message|Aa|Message|Continue' } | Select-Object -First 1
-  if (-not $msgField -and $edits2.Count -gt $edits.Count) {
-    $msgField = $edits2 | Select-Object -Last 1
+  $msgField = $searchRoot.FindFirst([System.Windows.Automation.TreeScope]::Descendants, (New-Object System.Windows.Automation.AndCondition($msgIdCond, $enabledCond)))
+  if (-not $msgField) {
+    $edits2 = $searchRoot.FindAll([System.Windows.Automation.TreeScope]::Descendants, $editCond)
+    $msgField = $edits2 | Where-Object { $_.Current.Name -match 'Type a message|Aa|Message|Continue' } | Select-Object -First 1
   }
   if (-not $msgField) { Start-Sleep -Milliseconds 250 }
 }
@@ -490,7 +545,7 @@ if (-not $msgField) {
   # failure mode and is what this log line is here to confirm.
   $edits2Names = ''
   try {
-    $edits2 = $window.FindAll([System.Windows.Automation.TreeScope]::Descendants, $editCond)
+    $edits2 = $searchRoot.FindAll([System.Windows.Automation.TreeScope]::Descendants, $editCond)
     $edits2Names = (@($edits2) | ForEach-Object { "'" + $_.Current.Name + "'" }) -join ', '
   } catch { }
   Log "FATAL: no message field after $msgAttempts polls; post-enter_edit_names=[$edits2Names]"
@@ -503,7 +558,30 @@ Start-Sleep -Milliseconds 300
 [System.Windows.Forms.SendKeys]::SendWait('${safeMessage}')
 Start-Sleep -Milliseconds 500
 
-# ── 8. Invoke Send button; fall back to Enter ───────────────────────────────
+# ── 9. Confirm the text actually registered before clicking Send (finding
+#      17) — poll the Send button's IsEnabled state (not ValuePattern.Value;
+#      that's the stale-after-send problem finding 5 documents, this reads it
+#      BEFORE Send is invoked). If it never enables, something ate the
+#      keystrokes (focus slipped, field wasn't actually ready) — fail loudly
+#      instead of clicking Send on a field we never confirmed has the text.
+$readyDeadline = [datetime]::Now.AddSeconds(2)
+$textRegistered = $false
+$readyAttempts = 0
+while ([datetime]::Now -lt $readyDeadline -and -not $textRegistered) {
+  $readyAttempts++
+  $candidateSendBtns = $searchRoot.FindAll([System.Windows.Automation.TreeScope]::Descendants, $btnCond) |
+    Where-Object { $_.Current.Name -match '^Send$|^Send message$' }
+  if (@($candidateSendBtns | Where-Object { $_.Current.IsEnabled }).Count -gt 0) { $textRegistered = $true }
+  if (-not $textRegistered) { Start-Sleep -Milliseconds 200 }
+}
+Log "text registered: attempts=$readyAttempts, confirmed=$textRegistered"
+if (-not $textRegistered) {
+  Log "FATAL: Send stayed disabled after typing — message text likely did not register"
+  Log-Diagnostics $window
+  throw 'Message text did not register in the field'
+}
+
+# ── 10. Invoke Send button; fall back to Enter ──────────────────────────────
 $sendBtns = $window.FindAll([System.Windows.Automation.TreeScope]::Descendants, $btnCond) |
   Where-Object { $_.Current.Name -match '^Send$|^Send message$' }
 $sendBtn = $sendBtns | Select-Object -First 1
