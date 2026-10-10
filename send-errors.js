@@ -16,6 +16,8 @@ function friendlyError(raw, platform = process.platform) {
     return `Phone Link isn't connected to your phone yet. Open Phone Link, choose Android or iPhone, and finish pairing. Then send a test to yourself.`;
   if (/Phone Link pairing incomplete/i.test(e))
     return `Phone Link couldn't finish pairing with your phone over Bluetooth. Keep your phone near your PC with Bluetooth on, click "Try Bluetooth pairing again" in Phone Link, and tap Allow on every prompt on your phone.`;
+  if (/Message text did not register/i.test(e))
+    return `${app} didn't pick up the message text. Make sure ${app} is in front and visible (not minimized), then resend.`;
   if (/recipient field|message field|compose|new message|did not open/i.test(e))
     return `${app} didn't open a new message. In ${app}, click the Messages tab and confirm your phone is connected, then resend.`;
   if (/timed out|timeout/i.test(e))

@@ -94,7 +94,7 @@ describe('send-windows.js empirical-findings invariants', () => {
     // Exact matches OR prefix matches — needed because the simple { … } regex
     // can't balance nested braces in `${processNames.map(n => \`'${n}'\`)…}`.
     const ALLOWED_EXACT = new Set(['safeNumber', 'safeMessage', 'n']);
-    const ALLOWED_PREFIX = ['processNames.map('];
+    const ALLOWED_PREFIX = ['processNames.map(', "require('./package.json')"];
     const isAllowed = (e) => ALLOWED_EXACT.has(e) || ALLOWED_PREFIX.some(p => e.startsWith(p));
     const interpolations = [...ps.matchAll(/(?<!\\)\$\{([^}]+)\}/g)].map(m => m[1]);
     for (const expr of interpolations) {
