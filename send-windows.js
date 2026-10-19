@@ -129,6 +129,40 @@
 //      diagnosable error instead of silently clicking Send on a field we
 //      never confirmed received the text.
 //
+//  18) Field evidence 2026-10-19 (Windows 10 19045, Phone Link 1.25072.81.0 —
+//      the first real failure on a non-Win11-24H2 build): the recipient box
+//      is named exactly 'To' with no trailing colon. The old regex required
+//      'To:' and missed it, falling through to a blind "grab the first edit
+//      field" fallback that picked an unrelated search box instead, typing
+//      the phone number into the wrong control. Fixed by matching
+//      '^To:?$' (colon optional) AND removing the blind-grab fallback
+//      entirely — if no edit matches a known recipient name, fail loudly
+//      (Recipient field not confidently identified) rather than guess.
+//
+//  19) The SAME customer's other failure that same session: recipient-field
+//      search found edits_found=0 (nothing had rendered yet) on the single
+//      check 700ms after compose activation. Fixed by polling up to 5s
+//      (300ms steps) for the recipient field instead of checking once —
+//      mirrors the pattern already proven for the message field (finding
+//      15). Compose/Ctrl+N activation itself still only runs ONCE; the poll
+//      loop never re-invokes it, because repeating that action could open a
+//      second compose window instead of waiting for the first state
+//      transition to finish (this was flagged specifically before shipping —
+//      see ChatGPT review in businesses/tyl.md 2026-10-19).
+//
+//  20) The ConversationPane scope lookup (finding 15) is now a bounded poll
+//      (3s/300ms) instead of a single check, giving a slow-to-render new
+//      conversation more time to appear before the message-field search
+//      scopes down. Deliberately NON-BLOCKING: there is no field evidence
+//      yet of a reliable hard-fail signal for "recipient was accepted" — a
+//      stale ConversationPane from a prior conversation could false-
+//      positive, a genuinely slow one could false-negative past any budget
+//      chosen — so absence still falls back to the full window exactly like
+//      before rather than failing the job on an unproven predicate. If a
+//      future failure log shows this mattering, that's the evidence needed
+//      to design a real correlated acceptance check (e.g. confirm the
+//      rendered recipient chip/value matches the number just sent).
+//
 // PRIOR REGRESSIONS — captured here so the same mistakes are not re-made:
 //   - v1.0.81: added foreground hardening that broke bulk sending because of
 //     points 5, 6, and 4 above.
@@ -469,15 +503,43 @@ if (-not $compose) {
 }
 if ($compose) {
   $compose.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke()
+  Log "compose: activated via button (invoke)"
 } else {
   [System.Windows.Forms.SendKeys]::SendWait('^n')
+  Log "compose: activated via Ctrl+N fallback"
 }
-Start-Sleep -Milliseconds 700
 
 # ── 6. Find recipient field by Name, type number, Enter ─────────────────────
-$edits = $window.FindAll([System.Windows.Automation.TreeScope]::Descendants, $editCond)
-$recipient = $edits | Where-Object { $_.Current.Name -match 'Type a name|Type a number|To:' } | Select-Object -First 1
-if (-not $recipient) { $recipient = $edits | Select-Object -First 1 }
+# Bounded poll (5s/300ms) instead of a single check 700ms after activation.
+# Field evidence 2026-10-19: a real customer's Phone Link build rendered
+# ZERO edit fields on the one-shot check (edits_found=0) — it just needed
+# more time. Activation above runs exactly ONCE; this loop only polls for
+# the resulting state, it never re-invokes compose/Ctrl+N (repeating that
+# action risks opening a second compose window instead of waiting for the
+# first state transition to finish).
+$recipDeadline = [datetime]::Now.AddSeconds(5)
+$recipAttempts = 0
+$edits = @()
+$recipient = $null
+# Track the union of everything seen across polls, not just the final one —
+# a field that appears then disappears (or a transient duplicate) would
+# otherwise be invisible in the log (ChatGPT review, 2026-10-19).
+$maxEditsSeen = 0
+$allNamesSeen = New-Object System.Collections.Generic.HashSet[string]
+while ([datetime]::Now -lt $recipDeadline -and -not $recipient) {
+  $recipAttempts++
+  $edits = $window.FindAll([System.Windows.Automation.TreeScope]::Descendants, $editCond)
+  if ($edits.Count -gt $maxEditsSeen) { $maxEditsSeen = $edits.Count }
+  try { @($edits) | ForEach-Object { [void]$allNamesSeen.Add($_.Current.Name) } } catch { }
+  # Field evidence 2026-10-19: the same customer's recipient box is named
+  # just 'To' (no colon) on his Phone Link build — the old regex required
+  # the literal colon, missed it, and the old fallback below grabbed
+  # whichever edit FindAll returned first (a search box, that time),
+  # silently typing the number into the wrong control. That blind grab is
+  # gone: if nothing matches by name, keep polling, then fail loudly.
+  $recipient = $edits | Where-Object { $_.Current.Name -match 'Type a name|Type a number|^To:?$' } | Select-Object -First 1
+  if (-not $recipient) { Start-Sleep -Milliseconds 300 }
+}
 $recipName = ''
 try { if ($recipient) { $recipName = $recipient.Current.Name } } catch { }
 # Dump every edit's Name so a failing machine's log reveals the actual UI
@@ -485,11 +547,12 @@ try { if ($recipient) { $recipName = $recipient.Current.Name } } catch { }
 # only — does not affect the send path.
 $editNames = ''
 try { $editNames = (@($edits) | ForEach-Object { "'" + $_.Current.Name + "'" }) -join ', ' } catch { }
-Log "recipient field: edits_found=$($edits.Count), picked='$recipName', all_edit_names=[$editNames]"
+$allNamesStr = ($allNamesSeen | ForEach-Object { "'" + $_ + "'" }) -join ', '
+Log "recipient field: attempts=$recipAttempts, edits_found=$($edits.Count), max_edits_seen=$maxEditsSeen, picked='$recipName', all_edit_names=[$editNames], all_names_seen_across_polls=[$allNamesStr]"
 if (-not $recipient) {
-  Log "FATAL: no recipient field"
+  Log "FATAL: no recipient field matched by name after $recipAttempts polls"
   Log-Diagnostics $window
-  throw 'Recipient field not found'
+  throw 'Recipient field not confidently identified'
 }
 
 $recipient.SetFocus()
@@ -505,16 +568,28 @@ Start-Sleep -Milliseconds 1800
 
 # ── 7. Scope the rest of the search to the conversation pane if we can find
 #      one, so every poll below walks a small subtree instead of the whole
-#      window (finding 15). Falls back to $window — never worse than before.
+#      window (finding 15). Bounded poll (3s/300ms) instead of a single
+#      check — gives a slow-to-render new conversation more time to appear.
+#      NON-BLOCKING: no field evidence yet of a reliable hard-fail signal
+#      here (a stale ConversationPane from a prior conversation could false-
+#      positive; a slow one could false-negative past any budget we pick),
+#      so absence still falls back to searching $window exactly like before
+#      — never worse than the old behavior — rather than failing the job on
+#      an unproven predicate.
 $searchRoot = $window
 $convIdCond = New-Object System.Windows.Automation.PropertyCondition(
   [System.Windows.Automation.AutomationElement]::AutomationIdProperty, 'ConversationPane'
 )
-try {
-  $convPane = $window.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $convIdCond)
-  if ($convPane) { $searchRoot = $convPane }
-} catch { }
-Log "scope: using $(if ($searchRoot -eq $window) { 'full window' } else { 'ConversationPane' }) for field search"
+$convDeadline = [datetime]::Now.AddSeconds(3)
+$convAttempts = 0
+$convPane = $null
+while ([datetime]::Now -lt $convDeadline -and -not $convPane) {
+  $convAttempts++
+  try { $convPane = $window.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $convIdCond) } catch { }
+  if (-not $convPane) { Start-Sleep -Milliseconds 300 }
+}
+if ($convPane) { $searchRoot = $convPane }
+Log "scope: using $(if ($searchRoot -eq $window) { 'full window' } else { 'ConversationPane' }) for field search (attempts=$convAttempts)"
 
 # ── 8. Find message field: AutomationId first, Name regex as fallback, poll
 #      up to 10s (finding 15 — a scoped, cheap poll can afford more attempts
