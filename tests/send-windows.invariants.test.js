@@ -50,11 +50,17 @@ describe('send-windows.js empirical-findings invariants', () => {
     expect(ps).not.toMatch(/if\s*\(\s*-not\s+\$attachOk\s*\)\s*\{/);
   });
 
-  test('Finding 4: field detection is by Name regex match, not "first empty"', () => {
-    expect(ps).toMatch(/Type a name\|Type a number\|To:/);
+  test('Finding 4/18: field detection is by Name regex match, not "first empty"', () => {
+    // Finding 18 (2026-10-19): colon is now optional — a real customer's
+    // Phone Link build names the recipient box 'To' with no colon.
+    expect(ps).toMatch(/Type a name\|Type a number\|\^To:\?\$/);
     expect(ps).toMatch(/Type a message\|Aa\|Message\|Continue/);
     expect(ps).toMatch(/New message\|Compose\|New conversation/);
     expect(ps).toMatch(/\^Send\$\|\^Send message\$/);
+  });
+
+  test('Finding 18: no blind "pick first edit" fallback on the recipient field', () => {
+    expect(ps).not.toMatch(/\$recipient = \$edits \| Select-Object -First 1\s*\}/);
   });
 
   test('Finding 5: no post-send ValuePattern verification (false-negative source)', () => {
