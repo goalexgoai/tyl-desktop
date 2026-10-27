@@ -244,13 +244,15 @@
           btn.textContent = 'Authorize access';
           msg.innerHTML = 'Access was not granted. Go to <strong>System Settings → Privacy &amp; Security → Automation → Text Your List</strong> and enable Messages, then try again.';
           msg.className = 'status-msg err';
+          api.reportSetupEvent && api.reportSetupEvent('Messages automation permission denied');
         }
-      } catch {
+      } catch (err) {
         localStorage.removeItem('tyl_messages_granted');
         btn.disabled = false;
         btn.textContent = 'Authorize access';
         msg.textContent = 'Something went wrong. Try again.';
         msg.className = 'status-msg err';
+        api.reportSetupEvent && api.reportSetupEvent('Messages permission check threw', String(err && err.message || err));
       }
       updateContinue();
     }
@@ -294,6 +296,7 @@
       msg.className = 'status-msg';
       document.getElementById('fda-hint').style.display = 'none';
       updateContinue();
+      api.reportSetupEvent && api.reportSetupEvent('Full Disk Access skipped by user');
     }
 
     async function finish() {

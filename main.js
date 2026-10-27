@@ -46,6 +46,14 @@ let serverPort = null;
 let serverReady = false;
 app.isQuitting = false;
 
+// Tracks whether the Mac setup wizard was shown this run and never completed —
+// used to report a silent abandonment if the user quits mid-setup. Every step
+// in the wizard (chat.db access, Messages automation) swallows its own errors
+// to keep the UI friendly, which means none of it reaches us unless we also
+// catch the "gave up and quit" case explicitly.
+let setupWizardShown = false;
+let setupWizardDone = false;
+
 // ── Send progress / completion ──────────────────────────────────────────────
 const { EventEmitter } = require('events');
 global.tylEvents = new EventEmitter();
@@ -354,7 +362,10 @@ if (!gotLock) {
       createWindow(port);
 
       if (!setupDone && mainWindow) {
+        setupWizardShown = true;
         mainWindow.loadURL(`http://127.0.0.1:${port}/setup`);
+      } else {
+        setupWizardDone = true;
       }
 
       if (app.isPackaged && autoUpdater) autoUpdater.checkForUpdatesAndNotify().catch(() => {});
@@ -387,6 +398,9 @@ app.on('activate', () => {
 
 app.on('before-quit', () => {
   app.isQuitting = true;
+  if (setupWizardShown && !setupWizardDone) {
+    reportDesktopEvent('SETUP ABANDONED: app quit before setup wizard completed', '');
+  }
   // Server runs in-process — it exits with the main process automatically.
 });
 
@@ -440,10 +454,19 @@ ipcMain.on('open-fda-settings', () => {
 ipcMain.handle('mark-setup-done', () => {
   try {
     fs.writeFileSync(path.join(app.getPath('userData'), 'tyl-setup-done'), '1', 'utf8');
+    setupWizardDone = true;
     return true;
-  } catch {
+  } catch (err) {
+    reportDesktopEvent('SETUP: could not write tyl-setup-done', err.message);
     return false;
   }
+});
+
+// Lets the setup wizard (and any future renderer-side flow) report a failure
+// or a deliberate skip that its own IPC handlers swallow internally for UX
+// reasons. Fire-and-forget, same as reportDesktopEvent — never blocks the UI.
+ipcMain.on('report-setup-event', (_e, message, detail) => {
+  reportDesktopEvent(`SETUP: ${message}`, detail);
 });
 
 ipcMain.handle('check-messages-running', () => {

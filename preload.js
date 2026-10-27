@@ -17,4 +17,5 @@ contextBridge.exposeInMainWorld('electronAPI', {
   openFdaSettings: () => ipcRenderer.send('open-fda-settings'),
   markSetupDone: () => ipcRenderer.invoke('mark-setup-done'),
   isSetupDone: () => ipcRenderer.invoke('is-setup-done'),
+  reportSetupEvent: (message, detail) => ipcRenderer.send('report-setup-event', message, detail),
 });
