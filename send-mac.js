@@ -43,14 +43,19 @@ function getMaxMessageRowId() {
   }
 }
 
-// Poll chat.db after an iMessage send to determine if it succeeded or failed.
+// Poll chat.db after a send to determine if it succeeded or failed.
 // Returns: 'delivered' | 'error' | 'timeout'
 //
-// Apple writes outgoing iMessage status to the message table:
-//   is_sent=1      → reached Apple servers (iMessage number confirmed)
-//   is_delivered=1 → recipient device acknowledged
-//   error != 0     → failed (Android numbers get error ~4000 within 2-3 seconds)
-function pollForDelivery(phone, beforeRowId) {
+// Apple writes outgoing status to the message table for BOTH services:
+//   is_sent=1      → left the Mac (iMessage: reached Apple servers; SMS: relayed to phone)
+//   is_delivered=1 → recipient device acknowledged (iMessage only — SMS rarely gets this)
+//   error != 0     → failed (iMessage: Android numbers get error ~4000 within 2-3 seconds;
+//                    SMS: relay failures, e.g. phone unreachable, also surface here when
+//                    chat.db records them — not guaranteed for every carrier failure mode,
+//                    but strictly better than the previous no-check-at-all behavior)
+// serviceType: 'iMessage' or 'SMS' — must match what buildScript/buildImageScript used,
+// otherwise this will never find the row it's looking for.
+function pollForDelivery(phone, beforeRowId, serviceType = 'iMessage') {
   return new Promise((resolve) => {
     let Database;
     try { Database = require('better-sqlite3'); } catch { return resolve('timeout'); }
@@ -75,11 +80,11 @@ function pollForDelivery(phone, beforeRowId) {
           JOIN handle h ON h.ROWID = m.handle_id
           WHERE h.id IN (${placeholders})
             AND m.is_from_me = 1
-            AND m.service = 'iMessage'
+            AND m.service = ?
             AND m.ROWID > ?
           ORDER BY m.ROWID DESC
           LIMIT 1
-        `).get(...phones, beforeRowId);
+        `).get(...phones, serviceType, beforeRowId);
 
         if (!row) {
           if (Date.now() >= deadline) { db.close(); return resolve('timeout'); }
@@ -163,6 +168,10 @@ end tell`;
 
 // Send image + text (if any) using the specified service.
 // stagedImgPath must already be in /tmp (use stageTmpImage before calling).
+// Throws on a confirmed send failure so the caller's existing error handling
+// (pause/retry/dead-letter logic in server.js) applies — this used to only
+// happen for iMessage; SMS sends were trusted unconditionally the moment the
+// osascript command returned, with no check that the relay actually worked.
 async function executeSend(serviceType, number, tmpFile, stagedImgPath) {
   const hasText = !!fs.readFileSync(tmpFile, 'utf8').trim();
   if (stagedImgPath && fs.existsSync(stagedImgPath)) {
@@ -171,7 +180,18 @@ async function executeSend(serviceType, number, tmpFile, stagedImgPath) {
     await new Promise(r => setTimeout(r, 800));
   }
   if (hasText) {
+    const canVerify = canReadChatDb();
+    const beforeRowId = canVerify ? getMaxMessageRowId() : 0;
     await runOsascript(['-e', buildScript(serviceType, number, tmpFile)]);
+    if (canVerify) {
+      const result = await pollForDelivery(number, beforeRowId, serviceType);
+      if (result === 'error') {
+        throw new Error(`${serviceType} delivery failed — relay reported an error`);
+      }
+      // 'delivered' → confirmed. 'timeout' → no confirmation either way within the
+      // poll window; treat as sent rather than fail a message that may have gone
+      // through — we only want to catch sends we can POSITIVELY confirm failed.
+    }
   }
 }
 
