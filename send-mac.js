@@ -399,52 +399,41 @@ module.exports = async function sendViaMac(number, message, imagePath) {
         return await executeSend('SMS', number, tmp, stagedImg, dbg('known_sms'));
       }
 
-      // ── Unknown number: iMessage-first with delivery poll ────────────────────
-      // Send image first (if any) via iMessage — osascript doesn't throw for Android
-      // numbers immediately; the error shows up in chat.db within a few seconds.
-      if (stagedImg) {
-        await runOsascript(['-e', buildImageScript('iMessage', number, stagedImg)]);
-        await new Promise(r => setTimeout(r, 800));
-      }
-
-      if (hasText) {
-        // Use text send to probe delivery and detect routing.
-        const beforeRowId = getMaxMessageRowId();
-        await runOsascript(['-e', buildScript('iMessage', number, tmp)]);
-        const probeDebug = {};
-        const result = await pollForDelivery(number, beforeRowId, 'iMessage', message, probeDebug);
-
-        if (result === 'delivered') {
-          routingCache.set(number, 'imessage');
-          return { confirmed: true, _debug: { sendId, tag: 'unknown_probe_delivered', serviceType: 'iMessage', pollResult: result, ...probeDebug } };
-        }
-
-        if (result === 'error') {
-          // iMessage failed (Android) — resend both image and text via SMS.
-          routingCache.set(number, 'sms');
-          return await executeSend('SMS', number, tmp, stagedImg, dbg('unknown_probe_error_fallback_sms'));
-        }
-
-        // Timeout — iMessage delivery unconfirmed for unknown number.
-        // Fall back to SMS to guarantee delivery rather than silently dropping the message.
-        // Risk of double-delivery is accepted; silent failure is not.
-        routingCache.set(number, 'sms');
-        return await executeSend('SMS', number, tmp, stagedImg, dbg('unknown_probe_timeout_fallback_sms'));
-      } else {
-        // Image-only send to unknown number: iMessage already attempted above.
-        // Fall back to SMS as well to match text behavior.
-        routingCache.set(number, 'sms');
-        return await executeSend('SMS', number, tmp, null, dbg('unknown_image_only_fallback_sms')); // image already sent via iMessage attempt
-      }
+      // ── Unknown number: SMS is the resilient default (2026-10-29 policy
+      // change) ──────────────────────────────────────────────────────────────
+      // This used to probe iMessage first (send it, poll chat.db up to 7s,
+      // fall back to SMS on error/timeout). That was a speculative iMessage
+      // attempt as the PRIMARY delivery path for a number we have no real
+      // evidence about — and it's exactly how a known-Android number kept
+      // going out blue and silently failing for an entire day of live
+      // testing (2026-10-29): AppleScript's iMessage send never throws for a
+      // wrong number (it just queues), so the only thing that could catch it
+      // was the chat.db poll — and when chat.db access itself wasn't working
+      // (confirmed separately, diagnostic instrumentation showed it never
+      // even ran), there was nothing left to catch the failure at all.
+      // This product's very first version (before any "smart routing" existed)
+      // used SMS exclusively for precisely this reason — see the original
+      // design note, since removed: "There is no synchronous error for 'this
+      // number isn't on iMessage.'" SMS reliably reaches both iPhone and
+      // Android when Text Message Forwarding is configured; iMessage only
+      // reaches iPhone. A number only earns the iMessage route through
+      // lookupKnownRoute's VERIFIED is_delivered=1 history above — never a
+      // live, unproven guess. The cost is iPhone recipients see a green text
+      // instead of blue on their first message from this list; the benefit is
+      // no more silent non-delivery.
+      routingCache.set(number, 'sms');
+      return await executeSend('SMS', number, tmp, stagedImg, dbg('unknown_default_sms'));
     }
 
-    // ── Fallback: no Full Disk Access — try iMessage first, SMS on error ────
-    // Prefer iMessage since it works without SMS relay. Fall back to SMS only
-    // if iMessage throws (e.g. no iMessage service configured on this profile).
+    // ── Fallback: no Full Disk Access (or chat.db otherwise unreadable) ────
+    // Same resilient-default reasoning as above, and doubly so here: with no
+    // chat.db access at all, there is no verification step of any kind — an
+    // iMessage-first attempt here has zero safety net. SMS first; iMessage
+    // only as a last resort if SMS itself isn't available on this Mac at all.
     try {
-      return await executeSend('iMessage', number, tmp, stagedImg, dbg('no_fda_imessage'));
+      return await executeSend('SMS', number, tmp, stagedImg, dbg('no_fda_sms'));
     } catch {
-      return await executeSend('SMS', number, tmp, stagedImg, dbg('no_fda_fallback_sms'));
+      return await executeSend('iMessage', number, tmp, stagedImg, dbg('no_fda_fallback_imessage'));
     }
 
   } finally {
