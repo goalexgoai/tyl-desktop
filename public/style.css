@@ -141,7 +141,7 @@ tr:hover td { background: var(--bg); }
 .pill-sent { background: var(--pill-sent); color: var(--pill-sent-text); }
 .pill-completed { background: var(--pill-completed); color: var(--pill-completed-text); }
 .pill-failed, .pill-dead { background: var(--pill-failed); color: var(--pill-failed-text); }
-.pill-paused { background: var(--pill-paused); color: var(--pill-paused-text); }
+.pill-paused, .pill-unconfirmed { background: var(--pill-paused); color: var(--pill-paused-text); }
 .pill-cancelled { background: var(--pill-pending); color: var(--text-muted); }
 .pill-draft { background: var(--pill-pending); color: var(--text-muted); }
 .pill-suppressed { background: var(--pill-failed); color: var(--pill-failed-text); }
