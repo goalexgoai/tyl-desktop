@@ -988,8 +988,9 @@ function showSendConfirmModal(previewContact, previewMessage, count, onConfirm, 
       try {
         const isMac = window.electronAPI.platform === 'darwin';
         if (!isMac) sendBtn.textContent = 'Checking Phone Link…';
+        else sendBtn.textContent = 'Opening Messages…';
         const isRunning = isMac
-          ? await window.electronAPI.checkMessagesRunning()
+          ? await window.electronAPI.checkMessagesRunning({ launch: true })
           : await window.electronAPI.checkPhoneLinkRunning({ launch: true });
         if (isRunning && !isMac && window.electronAPI.phoneLinkState) {
           let help = null;

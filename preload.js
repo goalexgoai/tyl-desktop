@@ -7,7 +7,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   isDesktop: true,
 
   // Messaging app state checks
-  checkMessagesRunning: () => ipcRenderer.invoke('check-messages-running'),
+  checkMessagesRunning: (opts) => ipcRenderer.invoke('check-messages-running', opts || {}),
   checkPhoneLinkRunning: (opts) => ipcRenderer.invoke('check-phone-link-running', opts || {}),
   phoneLinkState: () => ipcRenderer.invoke('phone-link-state'),
 

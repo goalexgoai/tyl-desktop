@@ -63,6 +63,30 @@ describe('queryDeliveryRows', () => {
   });
 });
 
+describe('queryDeliveryRows: iMessage requires is_delivered, not just is_sent', () => {
+  // Field evidence (2026-10-29): a known-Android number kept reading as
+  // "delivered" via iMessage on is_sent=1 alone, even though Messages.app's
+  // own UI showed "Not Delivered" — is_sent just means "handed to the send
+  // queue," true for Android numbers too, and Apple frequently never writes
+  // back a nonzero error for this failure mode. Only is_delivered (a real
+  // device ack) proves an iMessage actually succeeded. SMS has no such
+  // ack in practice, so is_sent remains the right signal there.
+  test('iMessage: is_sent=1, no is_delivered, no error → pending, NOT delivered', () => {
+    const rows = [{ ROWID: 101, is_delivered: 0, is_sent: 1, error: 0, text: 'hi' }];
+    expect(queryDeliveryRows(fakeDb(rows), '5551234567', 100, 'iMessage', null)).toBe('pending');
+  });
+
+  test('iMessage: is_delivered=1 → delivered', () => {
+    const rows = [{ ROWID: 101, is_delivered: 1, is_sent: 1, error: 0, text: 'hi' }];
+    expect(queryDeliveryRows(fakeDb(rows), '5551234567', 100, 'iMessage', null)).toBe('delivered');
+  });
+
+  test('SMS: is_sent=1 alone still counts as delivered (unchanged behavior)', () => {
+    const rows = [{ ROWID: 101, is_delivered: 0, is_sent: 1, error: 0, text: 'hi' }];
+    expect(queryDeliveryRows(fakeDb(rows), '5551234567', 100, 'SMS', null)).toBe('delivered');
+  });
+});
+
 describe('checkDeliveryOnce', () => {
   test('better-sqlite3 unavailable or chat.db unreadable → db_error, not a false "pending"', () => {
     // No real Messages chat.db exists on this (Linux) test environment, so
