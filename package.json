@@ -78,8 +78,9 @@
       ],
       "icon": "assets/icon.png",
       "category": "public.app-category.utilities",
-      "hardenedRuntime": false,
-      "gatekeeperAssess": false
+      "hardenedRuntime": true,
+      "gatekeeperAssess": true,
+      "notarize": true
     },
     "win": {
       "target": [
