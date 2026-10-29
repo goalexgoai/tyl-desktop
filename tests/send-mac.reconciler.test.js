@@ -9,7 +9,7 @@
  * (`.prepare(sql).all(...)`).
  */
 
-const { queryDeliveryRows, checkDeliveryOnce } = require('../send-mac.js');
+const { queryDeliveryRows, checkDeliveryOnce, buildScript, buildImageScript } = require('../send-mac.js');
 
 function fakeDb(rows) {
   return {
@@ -70,5 +70,41 @@ describe('checkDeliveryOnce', () => {
     // here without any mocking — this is exercising actual production code.
     const result = checkDeliveryOnce('5551234567', 0, 'SMS', 'hi');
     expect(result).toBe('db_error');
+  });
+});
+
+describe('buildScript / buildImageScript: honest service-selection', () => {
+  // Field evidence (2026-10-29): Messages.app silently sent iMessage ("blue")
+  // to a known-Android number that repeatedly showed "Not Delivered", even
+  // though our routing logic had decided to send SMS. Root cause: the
+  // AppleScript's `on error: set svc to first service` fallback masks a
+  // missing SMS service (e.g. Text Message Forwarding not enabled) by
+  // silently substituting whatever service IS configured — almost always
+  // iMessage — instead of failing. These tests lock in the fix: a missing
+  // service type must throw a distinguishable error, never substitute.
+  test('buildScript never falls back to "first service" on a missing service type', () => {
+    const script = buildScript('SMS', '5551234567', '/tmp/x.txt');
+    expect(script).not.toMatch(/set svc to first service\s*$/m);
+    expect(script).toMatch(/error "TYL_SERVICE_UNAVAILABLE:SMS"/);
+  });
+
+  test('buildImageScript never falls back to "first service" on a missing service type', () => {
+    const script = buildImageScript('iMessage', '5551234567', '/tmp/x.jpg');
+    expect(script).not.toMatch(/set svc to first service\s*$/m);
+    expect(script).toMatch(/error "TYL_SERVICE_UNAVAILABLE:iMessage"/);
+  });
+});
+
+describe('friendlyError: service-unavailable mapping', () => {
+  const { friendlyError } = require('../send-errors.js');
+
+  test('TYL_SERVICE_UNAVAILABLE:SMS tells the user to enable Text Message Forwarding', () => {
+    const msg = friendlyError('execution error: TYL_SERVICE_UNAVAILABLE:SMS (-2700)', 'darwin');
+    expect(msg).toMatch(/Text Message Forwarding/i);
+  });
+
+  test('TYL_SERVICE_UNAVAILABLE:iMessage tells the user to sign in to iMessage', () => {
+    const msg = friendlyError('execution error: TYL_SERVICE_UNAVAILABLE:iMessage (-2700)', 'darwin');
+    expect(msg).toMatch(/sign in/i);
   });
 });

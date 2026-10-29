@@ -189,7 +189,7 @@ tell application "Messages"
   try
     set svc to first service whose service type = ${serviceType}
   on error
-    set svc to first service
+    error "TYL_SERVICE_UNAVAILABLE:${serviceType}"
   end try
   set p to participant "${safeNum}" of svc
   send msgBody to p
@@ -204,7 +204,7 @@ function buildImageScript(serviceType, number, imagePath) {
   try
     set svc to first service whose service type = ${serviceType}
   on error
-    set svc to first service
+    error "TYL_SERVICE_UNAVAILABLE:${serviceType}"
   end try
   set p to participant "${safeNum}" of svc
   send POSIX file "${safePath}" to p
@@ -395,3 +395,5 @@ module.exports = async function sendViaMac(number, message, imagePath) {
 module.exports.checkDeliveryOnce = checkDeliveryOnce;
 module.exports.canReadChatDb = canReadChatDb;
 module.exports.queryDeliveryRows = queryDeliveryRows; // exported for unit tests (pure, DB-shape-only)
+module.exports.buildScript = buildScript; // exported for unit tests (pure string-builder)
+module.exports.buildImageScript = buildImageScript; // exported for unit tests (pure string-builder)
