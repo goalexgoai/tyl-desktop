@@ -2934,6 +2934,24 @@ if (process.env.TYL_DESKTOP) {
     } catch (_) {}
   }
 
+  // Temporary diagnostic instrumentation (2026-10-29 Android-SMS
+  // investigation): which routing branch fired and what chat.db row the
+  // delivery check actually judged, so this can be read back directly
+  // without asking the user to find/paste console logs. Last-4-digit phone
+  // identifier only. Mirrors to console.log too, since the web POST is
+  // fire-and-forget and could itself fail silently, losing the only
+  // evidence. Remove this whole function and its call sites once the live
+  // bug is resolved and confirmed.
+  function reportSendDebug(webUserId, phone, isTest, d) {
+    if (!d) return;
+    const detail = `sendId=${d.sendId ?? ''} phone=…${String(phone).slice(-4)} tag=${d.tag} svc=${d.serviceType} poll=${d.pollResult} rowsSeen=${d.rowsSeen ?? ''} matched=${d.textMatched ?? ''} rowid=${d.rowid ?? ''} is_sent=${d.is_sent ?? ''} is_delivered=${d.is_delivered ?? ''} error=${d.error ?? ''}`;
+    console.log(`[send-debug] ${detail}`);
+    desktopWebPost('/api/desktop-event', {
+      web_user_id: webUserId, platform: process.platform, app_version: APP_VERSION,
+      event: 'send_debug', is_test: !!isTest, detail: detail.slice(0, 500), count: 0,
+    }).catch(() => {});
+  }
+
   // Readiness results from the Test Send page / Send confirm, so setup
   // problems are visible even when the user never presses Send. Once per
   // state per app session.
@@ -3052,10 +3070,25 @@ if (process.env.TYL_DESKTOP) {
         if (userRow && userRow.web_user_id) {
           desktopWebPost('/api/desktop-report-sends', { web_user_id: userRow.web_user_id, count: 1, is_test: !!isTest })
             .catch(() => {}); // network failure is non-fatal
+          reportSendDebug(userRow.web_user_id, message.phone, isTest, sendResult && sendResult._debug);
         }
         log(message.user_id, message.id, message.job_id, message.phone, isUnconfirmed ? 'unconfirmed' : 'sent');
         console.log(`[desktop-sender] ${isUnconfirmed ? 'unconfirmed (will reconcile) →' : 'sent →'} ${message.phone}`);
       } catch (err) {
+        // Temporary diagnostic instrumentation (2026-10-29 Android-SMS
+        // investigation): a first pass of this only reported _debug on a
+        // successful/timeout resolve, silently losing it on exactly the
+        // case most worth seeing — a confirmed delivery failure, which
+        // throws instead of resolving. executeSend now attaches _debug to
+        // the thrown Error too; report it here regardless of which branch
+        // below ultimately handles the error.
+        if (err._debug) {
+          const userRowForDebug = db.prepare('SELECT web_user_id FROM users WHERE id = ?').get(message.user_id);
+          if (userRowForDebug && userRowForDebug.web_user_id) {
+            const isTestForDebug = !!(db.prepare('SELECT is_test FROM jobs WHERE id = ?').get(message.job_id) || {}).is_test;
+            reportSendDebug(userRowForDebug.web_user_id, message.phone, isTestForDebug, err._debug);
+          }
+        }
         // Detect messaging-app errors that should pause the job vs. hard failures.
         const isAuthError = /not authorized to send apple events/i.test(err.message);
         const isAppClosed = !isAuthError && /connection is invalid|application isn't running|phone link not found|phonelink.*not found|execution error.*messages|phone link window|could not find phone link|compose view did not open|automation timed out/i.test(err.message);

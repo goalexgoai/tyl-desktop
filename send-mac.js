@@ -71,7 +71,10 @@ function getMaxMessageRowId() {
 // Returns: 'delivered' | 'error' | 'pending' (rows exist but none settled, or
 // none found yet) | 'db_error' (the query itself failed — NOT the same as
 // "no answer yet"; callers must not treat this as a delivery outcome).
-function queryDeliveryRows(db, phone, beforeRowId, serviceType, expectedText) {
+// debugOut (optional): a plain object this mutates in place with the row it
+// actually judged, purely for diagnostic logging (2026-10-29 Android-SMS
+// investigation) — never read by any decision logic, safe to omit.
+function queryDeliveryRows(db, phone, beforeRowId, serviceType, expectedText, debugOut) {
   try {
     const normalized = phone.replace(/\D/g, '');
     const phones = [...new Set([phone, normalized, '+1' + normalized, '+' + normalized])];
@@ -90,12 +93,21 @@ function queryDeliveryRows(db, phone, beforeRowId, serviceType, expectedText) {
       LIMIT 8
     `).all(...phones, serviceType, beforeRowId);
 
-    if (!rows.length) return 'pending';
+    if (!rows.length) {
+      if (debugOut) Object.assign(debugOut, { rowsSeen: 0 });
+      return 'pending';
+    }
 
     const matched = expectedText
       ? rows.find(r => normText(r.text) === normText(expectedText))
       : null;
     const row = matched || rows[0]; // fallback = prior behavior (newest row)
+    if (debugOut) {
+      Object.assign(debugOut, {
+        rowsSeen: rows.length, textMatched: !!matched, rowid: row.ROWID,
+        is_sent: row.is_sent, is_delivered: row.is_delivered, error: row.error,
+      });
+    }
 
     if (row.error && row.error !== 0) return 'error';
     // Field evidence (2026-10-29): a known-Android number kept getting
@@ -118,7 +130,7 @@ function queryDeliveryRows(db, phone, beforeRowId, serviceType, expectedText) {
   }
 }
 
-function pollForDelivery(phone, beforeRowId, serviceType = 'iMessage', expectedText = null) {
+function pollForDelivery(phone, beforeRowId, serviceType = 'iMessage', expectedText = null, debugOut) {
   return new Promise((resolve) => {
     let Database;
     try { Database = require('better-sqlite3'); } catch { return resolve('timeout'); }
@@ -131,7 +143,7 @@ function pollForDelivery(phone, beforeRowId, serviceType = 'iMessage', expectedT
     const deadline = Date.now() + 7000; // 7 second window
 
     function check() {
-      const result = queryDeliveryRows(db, phone, beforeRowId, serviceType, expectedText);
+      const result = queryDeliveryRows(db, phone, beforeRowId, serviceType, expectedText, debugOut);
       if (result === 'delivered' || result === 'error') {
         db.close();
         return resolve(result);
@@ -238,7 +250,15 @@ end tell`;
 // way — the caller (server.js) persists chatBeforeRowId/chatService on the
 // message row so the background reconciler can re-check the SAME chat.db rows
 // later instead of re-deriving "which row was this" from phone+time.
-async function executeSend(serviceType, number, tmpFile, stagedImgPath) {
+// debugCtx (optional, diagnostic only, 2026-10-29 Android-SMS investigation):
+// { tag, sendId } — when given, attaches { _debug: { sendId, tag, serviceType,
+// pollResult, row... } } to the resolved object (or, on a confirmed delivery
+// failure, to the thrown Error as err._debug — a first pass of this omitted
+// that, silently losing diagnostics on exactly the case most worth seeing) so
+// the caller can report exactly which row this send's verification judged.
+// sendId correlates a probe attempt with its own SMS fallback as one logical
+// send. Never read by any decision logic here.
+async function executeSend(serviceType, number, tmpFile, stagedImgPath, debugCtx) {
   const rawText = fs.readFileSync(tmpFile, 'utf8');
   const hasText = !!rawText.trim();
   if (stagedImgPath && fs.existsSync(stagedImgPath)) {
@@ -251,14 +271,19 @@ async function executeSend(serviceType, number, tmpFile, stagedImgPath) {
     const beforeRowId = canVerify ? getMaxMessageRowId() : 0;
     await runOsascript(['-e', buildScript(serviceType, number, tmpFile)]);
     if (canVerify) {
-      const result = await pollForDelivery(number, beforeRowId, serviceType, rawText);
+      const rowDebug = debugCtx ? {} : undefined;
+      const result = await pollForDelivery(number, beforeRowId, serviceType, rawText, rowDebug);
+      const _debug = debugCtx ? { sendId: debugCtx.sendId, tag: debugCtx.tag, serviceType, pollResult: result, ...rowDebug } : undefined;
       if (result === 'error') {
-        throw new Error(`${serviceType} delivery failed — relay reported an error`);
+        const err = new Error(`${serviceType} delivery failed — relay reported an error`);
+        if (_debug) err._debug = _debug;
+        throw err;
       }
       if (result === 'timeout') {
-        return { confirmed: false, chatBeforeRowId: beforeRowId, chatService: serviceType };
+        return { confirmed: false, chatBeforeRowId: beforeRowId, chatService: serviceType, _debug };
       }
       // 'delivered' → confirmed.
+      return { confirmed: true, _debug };
     }
   }
   return { confirmed: true };
@@ -342,6 +367,12 @@ module.exports = async function sendViaMac(number, message, imagePath) {
   const hasText = !!(message && message.trim());
   const hasImage = !!(imagePath && fs.existsSync(imagePath));
   let stagedImg = null;
+  // Diagnostic only (2026-10-29 Android-SMS investigation): correlates a
+  // probe attempt with its own SMS fallback as one logical send, since both
+  // share the same branch tag (e.g. 'unknown_probe_timeout_fallback_sms')
+  // but are two separate executeSend calls. Remove dbg()/sendId once resolved.
+  const sendId = Math.random().toString(36).slice(2, 8);
+  const dbg = (tag) => ({ tag, sendId });
 
   try {
     if (hasImage) stagedImg = stageTmpImage(imagePath);
@@ -350,10 +381,10 @@ module.exports = async function sendViaMac(number, message, imagePath) {
     // ── Session cache (in-memory, resets on restart) ─────────────────────────
     const cached = routingCache.get(number);
     if (cached === 'imessage') {
-      return await executeSend('iMessage', number, tmp, stagedImg);
+      return await executeSend('iMessage', number, tmp, stagedImg, dbg('cached_imessage'));
     }
     if (cached === 'sms') {
-      return await executeSend('SMS', number, tmp, stagedImg);
+      return await executeSend('SMS', number, tmp, stagedImg, dbg('cached_sms'));
     }
 
     // ── Persistent chat.db handle lookup (survives restarts) ─────────────────
@@ -361,11 +392,11 @@ module.exports = async function sendViaMac(number, message, imagePath) {
       const knownRoute = lookupKnownRoute(number);
       if (knownRoute === 'imessage') {
         routingCache.set(number, 'imessage');
-        return await executeSend('iMessage', number, tmp, stagedImg);
+        return await executeSend('iMessage', number, tmp, stagedImg, dbg('known_imessage'));
       }
       if (knownRoute === 'sms') {
         routingCache.set(number, 'sms');
-        return await executeSend('SMS', number, tmp, stagedImg);
+        return await executeSend('SMS', number, tmp, stagedImg, dbg('known_sms'));
       }
 
       // ── Unknown number: iMessage-first with delivery poll ────────────────────
@@ -380,29 +411,30 @@ module.exports = async function sendViaMac(number, message, imagePath) {
         // Use text send to probe delivery and detect routing.
         const beforeRowId = getMaxMessageRowId();
         await runOsascript(['-e', buildScript('iMessage', number, tmp)]);
-        const result = await pollForDelivery(number, beforeRowId, 'iMessage', message);
+        const probeDebug = {};
+        const result = await pollForDelivery(number, beforeRowId, 'iMessage', message, probeDebug);
 
         if (result === 'delivered') {
           routingCache.set(number, 'imessage');
-          return { confirmed: true };
+          return { confirmed: true, _debug: { sendId, tag: 'unknown_probe_delivered', serviceType: 'iMessage', pollResult: result, ...probeDebug } };
         }
 
         if (result === 'error') {
           // iMessage failed (Android) — resend both image and text via SMS.
           routingCache.set(number, 'sms');
-          return await executeSend('SMS', number, tmp, stagedImg);
+          return await executeSend('SMS', number, tmp, stagedImg, dbg('unknown_probe_error_fallback_sms'));
         }
 
         // Timeout — iMessage delivery unconfirmed for unknown number.
         // Fall back to SMS to guarantee delivery rather than silently dropping the message.
         // Risk of double-delivery is accepted; silent failure is not.
         routingCache.set(number, 'sms');
-        return await executeSend('SMS', number, tmp, stagedImg);
+        return await executeSend('SMS', number, tmp, stagedImg, dbg('unknown_probe_timeout_fallback_sms'));
       } else {
         // Image-only send to unknown number: iMessage already attempted above.
         // Fall back to SMS as well to match text behavior.
         routingCache.set(number, 'sms');
-        return await executeSend('SMS', number, tmp, null); // image already sent via iMessage attempt
+        return await executeSend('SMS', number, tmp, null, dbg('unknown_image_only_fallback_sms')); // image already sent via iMessage attempt
       }
     }
 
@@ -410,9 +442,9 @@ module.exports = async function sendViaMac(number, message, imagePath) {
     // Prefer iMessage since it works without SMS relay. Fall back to SMS only
     // if iMessage throws (e.g. no iMessage service configured on this profile).
     try {
-      return await executeSend('iMessage', number, tmp, stagedImg);
+      return await executeSend('iMessage', number, tmp, stagedImg, dbg('no_fda_imessage'));
     } catch {
-      return await executeSend('SMS', number, tmp, stagedImg);
+      return await executeSend('SMS', number, tmp, stagedImg, dbg('no_fda_fallback_sms'));
     }
 
   } finally {
