@@ -268,20 +268,32 @@ function lookupKnownRoute(phone) {
     }
     const varArr = [...variants];
     const placeholders = varArr.map(() => '?').join(',');
-    // A confirmed outgoing iMessage (is_sent=1, no error) is the only reliable signal
-    // that a number is iMessage-capable. Merely having an iMessage handle is NOT enough —
-    // failed sends to Android numbers also create iMessage handles in chat.db.
-    const iMsgRow = db.prepare(`
-      SELECT 1 FROM message m
+    // Field evidence (2026-10-29): a number that was iMessage-capable in the
+    // past (recipient had an iPhone, later switched to Android) keeps old
+    // successful iMessage rows in chat.db forever. The previous query here
+    // asked "has ANY iMessage send to this number ever succeeded" with no
+    // ORDER BY — so it could match that stale old row and classify the
+    // number as iMessage-capable permanently, even after every subsequent
+    // send started failing ("Not Delivered"). Once routingCache/this lookup
+    // locks onto 'imessage' there is no re-check, so every future send kept
+    // going out as a doomed blue bubble. Fix: only trust the MOST RECENT
+    // iMessage attempt to this number — that reflects current reality, not
+    // history. A recent failure routes to SMS instead of re-asserting iMessage.
+    const lastIMsg = db.prepare(`
+      SELECT m.is_sent, m.is_delivered, m.error
+      FROM message m
       JOIN handle h ON h.ROWID = m.handle_id
       WHERE h.id IN (${placeholders})
         AND m.is_from_me = 1
         AND m.service = 'iMessage'
-        AND m.is_sent = 1
-        AND (m.error IS NULL OR m.error = 0)
+      ORDER BY m.ROWID DESC
       LIMIT 1
     `).get(...varArr);
-    if (iMsgRow) return 'imessage';
+    if (lastIMsg) {
+      const failed = !!(lastIMsg.error && lastIMsg.error !== 0);
+      if (!failed && (lastIMsg.is_delivered || lastIMsg.is_sent)) return 'imessage';
+      if (failed) return 'sms'; // most recent iMessage attempt to this number failed — don't repeat it
+    }
 
     const smsRow = db.prepare(`
       SELECT 1 FROM handle WHERE id IN (${placeholders}) AND service = 'SMS' LIMIT 1
@@ -397,3 +409,4 @@ module.exports.canReadChatDb = canReadChatDb;
 module.exports.queryDeliveryRows = queryDeliveryRows; // exported for unit tests (pure, DB-shape-only)
 module.exports.buildScript = buildScript; // exported for unit tests (pure string-builder)
 module.exports.buildImageScript = buildImageScript; // exported for unit tests (pure string-builder)
+module.exports.lookupKnownRoute = lookupKnownRoute; // exported for unit tests (mocks better-sqlite3)
