@@ -24,6 +24,8 @@ function friendlyError(raw, platform = process.platform) {
     return `${app} was too slow to respond. Make sure it's open and your phone is connected, then resend.`;
   if (/cancelled by user/i.test(e))
     return `Cancelled.`;
+  if (/delivery failed — relay reported an error/i.test(e))
+    return `This message did not go through — the carrier or Messages relay reported a failure. Double-check the number and try resending.`;
   // Unknown: first line only, never a multi-line script dump.
   const first = e.split(/\r?\n/).find(l => l.trim()) || 'Unknown error';
   return first.trim().slice(0, 200);

@@ -43,14 +43,29 @@ function getMaxMessageRowId() {
   }
 }
 
-// Poll chat.db after an iMessage send to determine if it succeeded or failed.
+// Poll chat.db after a send to determine if it succeeded or failed.
 // Returns: 'delivered' | 'error' | 'timeout'
 //
-// Apple writes outgoing iMessage status to the message table:
-//   is_sent=1      → reached Apple servers (iMessage number confirmed)
-//   is_delivered=1 → recipient device acknowledged
-//   error != 0     → failed (Android numbers get error ~4000 within 2-3 seconds)
-function pollForDelivery(phone, beforeRowId) {
+// Apple writes outgoing status to the message table for BOTH services:
+//   is_sent=1      → left the Mac (iMessage: reached Apple servers; SMS: relayed to phone)
+//   is_delivered=1 → recipient device acknowledged (iMessage only — SMS rarely gets this)
+//   error != 0     → failed (iMessage: Android numbers get error ~4000 within 2-3 seconds;
+//                    SMS: relay failures, e.g. phone unreachable, also surface here when
+//                    chat.db records them — not guaranteed for every carrier failure mode,
+//                    but strictly better than the previous no-check-at-all behavior)
+// serviceType: 'iMessage' or 'SMS' — must match what buildScript/buildImageScript used,
+// otherwise this will never find the row it's looking for.
+//
+// expectedText (optional): the exact body we just sent. We just captured beforeRowId
+// immediately before firing the send, so "newest row after beforeRowId" is normally
+// right — but if the user manually sends another text to this same number/service in
+// the few seconds we're polling, that row would sort newest and get misattributed to
+// this send. When expectedText is given, prefer the candidate row whose text matches
+// it exactly (after trim, since Messages can trim a trailing newline we didn't). If no
+// candidate matches — different quoting/encoding than we expect — fall back to the
+// newest row exactly as before, so this can only improve precision, never regress the
+// existing failure-detection into a timeout it wouldn't have hit otherwise.
+function pollForDelivery(phone, beforeRowId, serviceType = 'iMessage', expectedText = null) {
   return new Promise((resolve) => {
     let Database;
     try { Database = require('better-sqlite3'); } catch { return resolve('timeout'); }
@@ -64,27 +79,33 @@ function pollForDelivery(phone, beforeRowId) {
     const normalized = phone.replace(/\D/g, '');
     const phones = [...new Set([phone, normalized, '+1' + normalized, '+' + normalized])];
     const placeholders = phones.map(() => '?').join(',');
+    const normText = s => String(s || '').trim();
 
     const deadline = Date.now() + 7000; // 7 second window
 
     function check() {
       try {
-        const row = db.prepare(`
-          SELECT m.ROWID, m.is_delivered, m.is_sent, m.error
+        const rows = db.prepare(`
+          SELECT m.ROWID, m.is_delivered, m.is_sent, m.error, m.text
           FROM message m
           JOIN handle h ON h.ROWID = m.handle_id
           WHERE h.id IN (${placeholders})
             AND m.is_from_me = 1
-            AND m.service = 'iMessage'
+            AND m.service = ?
             AND m.ROWID > ?
           ORDER BY m.ROWID DESC
-          LIMIT 1
-        `).get(...phones, beforeRowId);
+          LIMIT 8
+        `).all(...phones, serviceType, beforeRowId);
 
-        if (!row) {
+        if (!rows.length) {
           if (Date.now() >= deadline) { db.close(); return resolve('timeout'); }
           return setTimeout(check, 400);
         }
+
+        const matched = expectedText
+          ? rows.find(r => normText(r.text) === normText(expectedText))
+          : null;
+        const row = matched || rows[0]; // fallback = prior behavior (newest row)
 
         if (row.error && row.error !== 0) {
           db.close(); return resolve('error');
@@ -163,15 +184,31 @@ end tell`;
 
 // Send image + text (if any) using the specified service.
 // stagedImgPath must already be in /tmp (use stageTmpImage before calling).
+// Throws on a confirmed send failure so the caller's existing error handling
+// (pause/retry/dead-letter logic in server.js) applies — this used to only
+// happen for iMessage; SMS sends were trusted unconditionally the moment the
+// osascript command returned, with no check that the relay actually worked.
 async function executeSend(serviceType, number, tmpFile, stagedImgPath) {
-  const hasText = !!fs.readFileSync(tmpFile, 'utf8').trim();
+  const rawText = fs.readFileSync(tmpFile, 'utf8');
+  const hasText = !!rawText.trim();
   if (stagedImgPath && fs.existsSync(stagedImgPath)) {
     await runOsascript(['-e', buildImageScript(serviceType, number, stagedImgPath)]);
     // Pause so Messages queues the image before the text bubble arrives
     await new Promise(r => setTimeout(r, 800));
   }
   if (hasText) {
+    const canVerify = canReadChatDb();
+    const beforeRowId = canVerify ? getMaxMessageRowId() : 0;
     await runOsascript(['-e', buildScript(serviceType, number, tmpFile)]);
+    if (canVerify) {
+      const result = await pollForDelivery(number, beforeRowId, serviceType, rawText);
+      if (result === 'error') {
+        throw new Error(`${serviceType} delivery failed — relay reported an error`);
+      }
+      // 'delivered' → confirmed. 'timeout' → no confirmation either way within the
+      // poll window; treat as sent rather than fail a message that may have gone
+      // through — we only want to catch sends we can POSITIVELY confirm failed.
+    }
   }
 }
 
@@ -277,7 +314,7 @@ module.exports = async function sendViaMac(number, message, imagePath) {
         // Use text send to probe delivery and detect routing.
         const beforeRowId = getMaxMessageRowId();
         await runOsascript(['-e', buildScript('iMessage', number, tmp)]);
-        const result = await pollForDelivery(number, beforeRowId);
+        const result = await pollForDelivery(number, beforeRowId, 'iMessage', message);
 
         if (result === 'delivered') {
           routingCache.set(number, 'imessage');
