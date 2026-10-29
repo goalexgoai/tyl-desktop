@@ -52,6 +52,17 @@ describe('lookupKnownRoute', () => {
     expect(lookupKnownRoute('5551234567')).toBe('imessage');
   });
 
+  test('most recent iMessage attempt is_sent=1 but NOT is_delivered, no error → falls through (not trusted as imessage)', () => {
+    // This is the exact field scenario that defeated the first (v1.0.101) fix:
+    // Android numbers get is_sent=1 immediately too, and often never get an
+    // explicit error written back. Only is_delivered proves real success.
+    // With no SMS handle on record either, this should land on 'unknown' so
+    // a fresh probe runs instead of blindly trusting the queued-not-proven send.
+    mockLastIMsgResult = { is_sent: 1, is_delivered: 0, error: 0 };
+    mockSmsRowResult = undefined;
+    expect(lookupKnownRoute('5551234567')).toBe('unknown');
+  });
+
   test('most recent iMessage attempt errored → sms, even if an OLDER send once succeeded', () => {
     // This is the exact field scenario: an old successful iMessage row sits
     // in chat.db from when the recipient had an iPhone, but the most recent

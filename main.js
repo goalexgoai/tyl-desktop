@@ -446,15 +446,33 @@ ipcMain.handle('mark-setup-done', () => {
   }
 });
 
-ipcMain.handle('check-messages-running', () => {
+// When `launch` is true and Messages isn't running, open it and wait for it
+// to come up — mirrors check-phone-link-running's launch behavior on
+// Windows. Without this, the pre-send check on Mac just reported "not
+// running" and made the user manually open Messages and click Send again,
+// even though the actual send path (send-mac.js's ensureMessagesRunning)
+// already auto-launches it (field feedback, 2026-10-29).
+ipcMain.handle('check-messages-running', (_e, opts) => {
   if (process.platform !== 'darwin') return true;
-  return new Promise((resolve) => {
-    const { execFile } = require('child_process');
+  const launch = !!(opts && opts.launch);
+  const { execFile, execSync } = require('child_process');
+  const pgrep = () => new Promise((resolve) => {
     const proc = execFile('pgrep', ['-x', 'Messages'], { timeout: 1500 }, (err, stdout) => {
       resolve(!err && stdout.trim().length > 0);
     });
     proc.on('error', () => resolve(false));
   });
+  return (async () => {
+    if (await pgrep()) return true;
+    if (!launch) return false;
+    try { execSync('open -a Messages', { timeout: 5000 }); } catch { return false; }
+    const deadline = Date.now() + 8000;
+    while (Date.now() < deadline) {
+      await new Promise(r => setTimeout(r, 500));
+      if (await pgrep()) return true;
+    }
+    return false;
+  })();
 });
 
 // Phone Link readiness. PhoneExperienceHost keeps running in the background

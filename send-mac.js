@@ -98,7 +98,20 @@ function queryDeliveryRows(db, phone, beforeRowId, serviceType, expectedText) {
     const row = matched || rows[0]; // fallback = prior behavior (newest row)
 
     if (row.error && row.error !== 0) return 'error';
-    if (row.is_delivered || row.is_sent) return 'delivered';
+    // Field evidence (2026-10-29): a known-Android number kept getting
+    // classified "delivered" via iMessage on is_sent=1 alone, even though it
+    // was never actually received ("Not Delivered" in Messages.app's own UI).
+    // is_sent=1 means "handed to the send queue" — true for Android numbers
+    // too, since iMessage queues unconditionally and Apple frequently never
+    // writes back a nonzero error for this failure mode. Only is_delivered
+    // (a real network ack from the recipient's device) proves an iMessage
+    // actually succeeded. SMS has no equivalent device-ack in practice, so
+    // is_sent remains the right (only) signal there.
+    if (serviceType === 'iMessage') {
+      if (row.is_delivered) return 'delivered';
+    } else if (row.is_delivered || row.is_sent) {
+      return 'delivered';
+    }
     return 'pending';
   } catch {
     return 'db_error';
@@ -270,15 +283,17 @@ function lookupKnownRoute(phone) {
     const placeholders = varArr.map(() => '?').join(',');
     // Field evidence (2026-10-29): a number that was iMessage-capable in the
     // past (recipient had an iPhone, later switched to Android) keeps old
-    // successful iMessage rows in chat.db forever. The previous query here
+    // successful iMessage rows in chat.db forever. The original query here
     // asked "has ANY iMessage send to this number ever succeeded" with no
     // ORDER BY — so it could match that stale old row and classify the
     // number as iMessage-capable permanently, even after every subsequent
-    // send started failing ("Not Delivered"). Once routingCache/this lookup
-    // locks onto 'imessage' there is no re-check, so every future send kept
-    // going out as a doomed blue bubble. Fix: only trust the MOST RECENT
-    // iMessage attempt to this number — that reflects current reality, not
-    // history. A recent failure routes to SMS instead of re-asserting iMessage.
+    // send started failing ("Not Delivered"). First fix (v1.0.101): only
+    // trust the MOST RECENT iMessage attempt. That alone wasn't enough —
+    // it still read is_sent=1 as "success," but is_sent just means "handed
+    // to the send queue," true for Android numbers too; Apple frequently
+    // never writes back a nonzero error for this failure mode either. Only
+    // is_delivered (a real network ack from the recipient's device) proves
+    // the most recent attempt actually succeeded.
     const lastIMsg = db.prepare(`
       SELECT m.is_sent, m.is_delivered, m.error
       FROM message m
@@ -291,8 +306,12 @@ function lookupKnownRoute(phone) {
     `).get(...varArr);
     if (lastIMsg) {
       const failed = !!(lastIMsg.error && lastIMsg.error !== 0);
-      if (!failed && (lastIMsg.is_delivered || lastIMsg.is_sent)) return 'imessage';
       if (failed) return 'sms'; // most recent iMessage attempt to this number failed — don't repeat it
+      if (lastIMsg.is_delivered) return 'imessage';
+      // is_sent=1 with no error and no is_delivered yet is inconclusive —
+      // fall through to the SMS-handle check / 'unknown', which triggers a
+      // fresh probe (iMessage attempt with a real 7s delivery poll, falling
+      // back to SMS on timeout) rather than trusting a queued-but-unproven send.
     }
 
     const smsRow = db.prepare(`
