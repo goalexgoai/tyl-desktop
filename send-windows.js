@@ -163,6 +163,27 @@
 //      to design a real correlated acceptance check (e.g. confirm the
 //      rendered recipient chip/value matches the number just sent).
 //
+//  21) LOOK UP CONTROLS BY AutomationId FIRST, Name regex only as fallback.
+//      Every new-user failure Sept–Oct 2026 was a Name mismatch, and each fix
+//      patched one string, so the next user hit the next variant:
+//        - Korean UI (bart0217, Win11 25H2, Phone Link 1.26072, 2026-10-09):
+//          every Name is Korean, so compose/Messages/To/Send never matched.
+//        - Win10 (Scott, Phone Link 1.25072, 2026-10-19): recipient Name 'To'
+//          without the colon (finding 18), and Phone Link was parked on its
+//          SETTINGS page, where Name '^Messages$' matched the Settings
+//          "Messages" expander instead of the Messages tab.
+//      The AutomationIds were identical on both machines (and ConversationPane,
+//      InputTextBox and SendMessageButton were already confirmed on Dustin's):
+//        Messages tab  TabItem  'MessagingNodeAutomationId'  (SelectionItem.Select)
+//        Compose       Button   'NewMessageButton'
+//        Recipient     Edit inside Group 'ContactSuggestionsBox' (AutoSuggestBox).
+//                      NOT the bare Id 'TextBox': the search box uses it too.
+//        Message       Edit     'InputTextBox'
+//        Send          Button   'SendMessageButton'
+//        Setup screen  Buttons  'AndroidButton' + 'iPhoneButton'
+//      If an Id is missing on some build, the old Name regex still runs, so a
+//      setup that worked before keeps working. Logs record by=id|name.
+
 // PRIOR REGRESSIONS — captured here so the same mistakes are not re-made:
 //   - v1.0.81: added foreground hardening that broke bulk sending because of
 //     points 5, 6, and 4 above.
@@ -437,11 +458,47 @@ $enabledCond = New-Object System.Windows.Automation.PropertyCondition(
 )
 $editCond = New-Object System.Windows.Automation.AndCondition($editTypeCond, $enabledCond)
 
+# Finding 21: Phone Link's AutomationIds are stable across versions, Windows
+# builds and UI languages; on-screen Names are not. Look up by Id first, Name
+# regex second.
+function Find-ById($root, $id) {
+  $c = New-Object System.Windows.Automation.PropertyCondition(
+    [System.Windows.Automation.AutomationElement]::AutomationIdProperty, $id
+  )
+  try { return $root.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $c) } catch { return $null }
+}
+
 # ── 5. Open compose: try compose button first, fall back to Ctrl+N ──────────
-$composeBtns = $window.FindAll([System.Windows.Automation.TreeScope]::Descendants, $btnCond) |
-  Where-Object { $_.Current.Name -match 'New message|Compose|New conversation' }
-$compose = $composeBtns | Select-Object -First 1
-Log "compose: matching buttons=$($composeBtns.Count), invoked=$($compose -ne $null)"
+$compose = Find-ById $window 'NewMessageButton'
+$composeBy = 'id'
+if (-not $compose) {
+  $composeBtns = $window.FindAll([System.Windows.Automation.TreeScope]::Descendants, $btnCond) |
+    Where-Object { $_.Current.Name -match 'New message|Compose|New conversation' }
+  $compose = $composeBtns | Select-Object -First 1
+  $composeBy = 'name'
+}
+Log "compose: found=$($compose -ne $null) by=$composeBy"
+if (-not $compose) {
+  # Finding 21: the Messages tab by AutomationId first. Name matching here
+  # once picked the "Messages" section of Phone Link's SETTINGS page (field log
+  # 2026-10-19) and can't work in other languages (Korean field log 2026-10-09).
+  $msgTab = Find-ById $window 'MessagingNodeAutomationId'
+  if ($msgTab) {
+    $pat = $null
+    $how = 'none'
+    try {
+      if ($msgTab.TryGetCurrentPattern([System.Windows.Automation.SelectionItemPattern]::Pattern, [ref]$pat)) { $pat.Select(); $how = 'select' }
+      elseif ($msgTab.TryGetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern, [ref]$pat)) { $pat.Invoke(); $how = 'invoke' }
+    } catch { Log "compose: Messages tab (id) activate threw: $($_.Exception.Message)" }
+    Log "compose: selected Messages tab by id via $how"
+    $tabDeadline = [datetime]::Now.AddSeconds(4)
+    while ([datetime]::Now -lt $tabDeadline -and -not $compose) {
+      Start-Sleep -Milliseconds 300
+      $compose = Find-ById $window 'NewMessageButton'
+    }
+    Log "compose: after Messages tab (id) found=$($compose -ne $null)"
+  }
+}
 if (-not $compose) {
   # Failure path only (finding 11): field logs show Phone Link parked on
   # Calls/Photos ("Search your contacts" was the only edit) or a screen with no
@@ -491,7 +548,8 @@ if (-not $compose) {
     # else falls through to the Ctrl+N path, whose failure is diagnosed by the
     # dump above (finding 13).
     $labels = @($allEls | ForEach-Object { try { $_.Current.Name } catch { '' } } | Where-Object { $_ -and $_.Length -le 40 })
-    if (($labels | Where-Object { $_ -match '^Android' }) -and ($labels | Where-Object { $_ -match '^iPhone' })) {
+    $setupById = (Find-ById $window 'AndroidButton') -and (Find-ById $window 'iPhoneButton')
+    if ($setupById -or (($labels | Where-Object { $_ -match '^Android' }) -and ($labels | Where-Object { $_ -match '^iPhone' }))) {
       Log "FATAL: Phone Link setup screen (no phone connected)"
       throw 'Phone Link not set up: no phone connected'
     }
@@ -521,6 +579,7 @@ $recipDeadline = [datetime]::Now.AddSeconds(5)
 $recipAttempts = 0
 $edits = @()
 $recipient = $null
+$recipBy = ''
 # Track the union of everything seen across polls, not just the final one —
 # a field that appears then disappears (or a transient duplicate) would
 # otherwise be invisible in the log (ChatGPT review, 2026-10-19).
@@ -537,7 +596,18 @@ while ([datetime]::Now -lt $recipDeadline -and -not $recipient) {
   # whichever edit FindAll returned first (a search box, that time),
   # silently typing the number into the wrong control. That blind grab is
   # gone: if nothing matches by name, keep polling, then fail loudly.
-  $recipient = $edits | Where-Object { $_.Current.Name -match 'Type a name|Type a number|^To:?$' } | Select-Object -First 1
+  # Finding 21: the "To" box is the Edit inside AutomationId
+  # 'ContactSuggestionsBox' (field logs: Win10 + Phone Link 1.25072, Korean
+  # Win11 + 1.26072). Never the bare Id 'TextBox': the search box uses it too.
+  $suggest = Find-ById $window 'ContactSuggestionsBox'
+  if ($suggest) {
+    try { $recipient = $suggest.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $editCond) } catch { }
+    if ($recipient) { $recipBy = 'id' }
+  }
+  if (-not $recipient) {
+    $recipient = $edits | Where-Object { $_.Current.Name -match 'Type a name|Type a number|^To:?$' } | Select-Object -First 1
+    if ($recipient) { $recipBy = 'name' }
+  }
   if (-not $recipient) { Start-Sleep -Milliseconds 300 }
 }
 $recipName = ''
@@ -548,7 +618,7 @@ try { if ($recipient) { $recipName = $recipient.Current.Name } } catch { }
 $editNames = ''
 try { $editNames = (@($edits) | ForEach-Object { "'" + $_.Current.Name + "'" }) -join ', ' } catch { }
 $allNamesStr = ($allNamesSeen | ForEach-Object { "'" + $_ + "'" }) -join ', '
-Log "recipient field: attempts=$recipAttempts, edits_found=$($edits.Count), max_edits_seen=$maxEditsSeen, picked='$recipName', all_edit_names=[$editNames], all_names_seen_across_polls=[$allNamesStr]"
+Log "recipient field: by=$recipBy, attempts=$recipAttempts, edits_found=$($edits.Count), max_edits_seen=$maxEditsSeen, picked='$recipName', all_edit_names=[$editNames], all_names_seen_across_polls=[$allNamesStr]"
 if (-not $recipient) {
   Log "FATAL: no recipient field matched by name after $recipAttempts polls"
   Log-Diagnostics $window
@@ -644,8 +714,11 @@ $textRegistered = $false
 $readyAttempts = 0
 while ([datetime]::Now -lt $readyDeadline -and -not $textRegistered) {
   $readyAttempts++
-  $candidateSendBtns = $searchRoot.FindAll([System.Windows.Automation.TreeScope]::Descendants, $btnCond) |
-    Where-Object { $_.Current.Name -match '^Send$|^Send message$' }
+  $candidateSendBtns = @(Find-ById $searchRoot 'SendMessageButton') | Where-Object { $_ }
+  if (-not $candidateSendBtns) {
+    $candidateSendBtns = $searchRoot.FindAll([System.Windows.Automation.TreeScope]::Descendants, $btnCond) |
+      Where-Object { $_.Current.Name -match '^Send$|^Send message$' }
+  }
   if (@($candidateSendBtns | Where-Object { $_.Current.IsEnabled }).Count -gt 0) { $textRegistered = $true }
   if (-not $textRegistered) { Start-Sleep -Milliseconds 200 }
 }
@@ -657,9 +730,14 @@ if (-not $textRegistered) {
 }
 
 # ── 10. Invoke Send button; fall back to Enter ──────────────────────────────
-$sendBtns = $window.FindAll([System.Windows.Automation.TreeScope]::Descendants, $btnCond) |
-  Where-Object { $_.Current.Name -match '^Send$|^Send message$' }
-$sendBtn = $sendBtns | Select-Object -First 1
+$sendBtn = Find-ById $searchRoot 'SendMessageButton'
+if (-not $sendBtn) { $sendBtn = Find-ById $window 'SendMessageButton' }
+$sendBtns = @($sendBtn) | Where-Object { $_ }
+if (-not $sendBtn) {
+  $sendBtns = $window.FindAll([System.Windows.Automation.TreeScope]::Descendants, $btnCond) |
+    Where-Object { $_.Current.Name -match '^Send$|^Send message$' }
+  $sendBtn = $sendBtns | Select-Object -First 1
+}
 if (-not $sendBtn) {
   # Send button not matched — dump all button names so we can see what the
   # Send control is actually called on this machine before we fall back to Enter.
@@ -724,5 +802,33 @@ Log "send complete (no exception thrown)"
     } catch (_) {}
     throw sendError;
   }
-  return true;
+  // Success diagnostics (finding 21): which lookup path each step used, so a
+  // successful send on a new machine/language shows whether the AutomationId
+  // path or the Name fallback did the work. Structured tokens only — never
+  // control Names (they can contain contact names / notification text).
+  let summary = '';
+  try {
+    const { readFileSync } = require('fs');
+    const log = readFileSync(join(os.tmpdir(), 'tyl-send-debug.log'), 'utf8');
+    summary = summarizeSendLog(log);
+  } catch (_) {}
+  return { confirmed: true, _debug: { tag: `win ${summary}`.trim(), serviceType: 'PhoneLink', pollResult: 'sent' } };
 };
+
+// Pure: reduce the last send's debug log to safe structured tokens.
+function summarizeSendLog(log) {
+  const parts = String(log || '').split('send start');
+  const last = parts[parts.length - 1] || '';
+  const pick = (re) => { const m = last.match(re); return m ? m[1] : '-'; };
+  return [
+    `compose=${pick(/compose: found=(?:True|False) by=(\w+)/)}`,
+    `tab=${/selected Messages tab by id/.test(last) ? 'id' : (/selected Messages nav/.test(last) ? 'name' : '-')}`,
+    `recip=${pick(/recipient field: by=(\w*)/) || '-'}`,
+    `scope=${pick(/scope: using (\w+)/)}`,
+    `msg_attempts=${pick(/message field: attempts=(\d+)/)}`,
+    `text=${pick(/text registered: attempts=\d+, confirmed=(\w+)/)}`,
+    `send=${pick(/send: matching send buttons=\d+, invoked=(\w+)/)}`,
+    `pl=${pick(/env: phonelink=([\d.]+)/)}`,
+  ].join(' ');
+}
+module.exports.summarizeSendLog = summarizeSendLog;
