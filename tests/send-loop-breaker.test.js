@@ -182,7 +182,7 @@ describe('delivery reconciler (unconfirmed-send follow-up)', () => {
     await app.locals.reconcileUnconfirmedDeliveries();
     const msg = db.prepare('SELECT status, error FROM messages WHERE id = ?').get(msgId);
     expect(msg.status).toBe('failed');
-    expect(msg.error).toMatch(/did not go through/i);
+    expect(msg.error).toMatch(/didn't go through/i);
 
     delete sendFn.canReadChatDb;
     delete sendFn.checkDeliveryOnce;

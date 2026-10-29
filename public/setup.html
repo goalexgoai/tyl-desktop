@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Text Your List — Setup</title>
+  <title>Text Your List: Setup</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -160,33 +160,24 @@
     </div>
 
     <h1>Let's get you set up</h1>
-    <p class="subtitle">Grant system access to Text Your List.</p>
+    <p class="subtitle">One quick step and you're ready to send.</p>
 
-    <!-- Step 1: Messages access -->
+    <!-- Only step: let the app use Messages. Full Disk Access (blue/green
+         bubbles) is deliberately NOT part of setup: it can't be granted
+         without System Settings → Privacy & Security, and setup must stay
+         easy. It's optional, from Account Settings + the help article. -->
     <div class="step" id="step1">
       <div class="step-header">
         <div class="step-num"><span>1</span></div>
-        <div class="step-title">Allow access to Messages</div>
+        <div class="step-title">Let Text Your List use Messages</div>
       </div>
-      <p class="step-desc">macOS will ask if Text Your List can control Messages.app. Click <strong>OK</strong> on the prompt that appears.</p>
-      <button class="btn btn-primary" id="btn-messages" onclick="grantMessages()">Authorize access</button>
+      <p class="step-desc">Your texts go out through the Messages app on this Mac, from your own number. Click below, then click <strong>OK</strong> when your Mac asks.</p>
+      <button class="btn btn-primary" id="btn-messages" onclick="grantMessages()">Allow Messages</button>
       <div class="status-msg" id="msg-messages"></div>
-    </div>
-
-    <!-- Step 2: Full Disk Access -->
-    <div class="step" id="step2">
-      <div class="step-header">
-        <div class="step-num"><span>2</span></div>
-        <div class="step-title">Grant Full Disk Access</div>
+      <div class="step-note" id="sms-tip" style="display:none">
+        <strong>One thing to check on your iPhone:</strong> to text Android phones, open <strong>Settings → Apps → Messages → Text Message Forwarding</strong> and turn on this Mac. Texts to iPhones work either way.
+        <a href="#" onclick="api.openExternal('https://textyourlist.com/help/mac#android'); return false;">Show me how</a>
       </div>
-      <p class="step-desc">Allow Text Your List to discern between iPhone and Android users. Apple requires you to grant this permission manually in System Settings.</p>
-      <button class="btn btn-primary" id="btn-fda" onclick="openFDAAndPoll()">Open System Settings</button>
-      <div class="status-msg" id="msg-fda">Click "Open System Settings," find <strong>Text Your List</strong> (or <strong>Electron</strong>) in the Full Disk Access list and toggle it on.</div>
-      <div class="step-note" id="fda-hint" style="display:none">
-        Don't see it? Click the <strong>+</strong> button in System Settings and add Text Your List from your Applications folder.
-      </div>
-      <br>
-      <button class="skip-step" onclick="skipFDA()">Skip — send as SMS instead</button>
     </div>
 
     <div class="divider"></div>
@@ -201,25 +192,23 @@
     const api = window.electronAPI;
 
     let messagesGranted = false;
-    let fdaGranted = false;
-    let fdaSkipped = false;
-    let pollTimer = null;
 
     function setStepDone(stepEl) {
       stepEl.classList.add('done');
     }
 
     function updateContinue() {
-      const ready = messagesGranted && (fdaGranted || fdaSkipped);
-      document.getElementById('btn-continue').disabled = !ready;
-      const note = document.getElementById('footer-note');
-      if (messagesGranted && fdaSkipped) {
-        note.textContent = 'Smart routing disabled — messages will send as SMS.';
-      } else if (messagesGranted && fdaGranted) {
-        note.textContent = 'All set — smart routing enabled.';
-      } else {
-        note.textContent = '';
-      }
+      document.getElementById('btn-continue').disabled = !messagesGranted;
+      document.getElementById('footer-note').textContent = messagesGranted ? "You're all set." : '';
+    }
+
+    // Quiet, non-blocking check: can this Mac send regular texts (needed for
+    // Android)? Only shows a tip when we positively know it can't.
+    async function checkSms() {
+      try {
+        const ok = await api.checkSmsService();
+        if (ok === false) document.getElementById('sms-tip').style.display = '';
+      } catch { /* never block setup on this */ }
     }
 
     async function grantMessages() {
@@ -227,98 +216,45 @@
       const msg = document.getElementById('msg-messages');
       btn.disabled = true;
       btn.textContent = 'Waiting for system dialog…';
-      msg.textContent = 'A system dialog should appear — click "Allow" when prompted. It may appear behind this window.';
+      msg.textContent = "Your Mac will ask in a moment. Click OK (or Allow). If you don't see it, it may be behind this window.";
       msg.className = 'status-msg';
       try {
         const ok = await api.triggerMessagesPermission();
         if (ok) {
           messagesGranted = true;
           localStorage.setItem('tyl_messages_granted', '1');
-          btn.textContent = 'Authorized ✓';
+          btn.textContent = 'Allowed ✓';
           setStepDone(document.getElementById('step1'));
-          msg.textContent = 'Access granted.';
+          msg.textContent = 'Done.';
           msg.className = 'status-msg ok';
+          checkSms();
         } else {
           localStorage.removeItem('tyl_messages_granted');
           btn.disabled = false;
-          btn.textContent = 'Authorize access';
-          msg.innerHTML = 'Access was not granted. Go to <strong>System Settings → Privacy &amp; Security → Automation → Text Your List</strong> and enable Messages, then try again.';
+          btn.textContent = 'Allow Messages';
+          msg.innerHTML = 'Your Mac didn\'t allow it. <a href="#" onclick="api.openExternal(\'https://textyourlist.com/help/mac#permission\'); return false;">Here\'s how to fix that</a>, then click Allow Messages again.';
           msg.className = 'status-msg err';
         }
       } catch {
         localStorage.removeItem('tyl_messages_granted');
         btn.disabled = false;
-        btn.textContent = 'Authorize access';
+        btn.textContent = 'Allow Messages';
         msg.textContent = 'Something went wrong. Try again.';
         msg.className = 'status-msg err';
       }
       updateContinue();
     }
 
-    async function openFDAAndPoll() {
-      api.openFdaSettings();
-      const msg = document.getElementById('msg-fda');
-      const hint = document.getElementById('fda-hint');
-      msg.textContent = 'System Settings opened — toggle on Text Your List (or Electron) in the Full Disk Access list.';
-      msg.className = 'status-msg';
-
-      // Show the + hint after 5 seconds so they have time to look first
-      setTimeout(() => { hint.style.display = ''; }, 5000);
-
-      // Auto-poll every 2 seconds so they don't have to click "Check"
-      if (pollTimer) clearInterval(pollTimer);
-      pollTimer = setInterval(async () => {
-        try {
-          const ok = await api.checkChatDbAccess();
-          if (ok) {
-            clearInterval(pollTimer);
-            pollTimer = null;
-            fdaGranted = true;
-            fdaSkipped = false;
-            setStepDone(document.getElementById('step2'));
-            msg.textContent = 'Full Disk Access confirmed — smart routing enabled.';
-            msg.className = 'status-msg ok';
-            hint.style.display = 'none';
-            updateContinue();
-          }
-        } catch { /* keep polling */ }
-      }, 2000);
-    }
-
-    function skipFDA() {
-      if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
-      fdaGranted = false;
-      fdaSkipped = true;
-      const msg = document.getElementById('msg-fda');
-      msg.textContent = 'Skipped — messages will send as SMS. You can enable smart routing later from Help → Manage Permissions.';
-      msg.className = 'status-msg';
-      document.getElementById('fda-hint').style.display = 'none';
-      updateContinue();
-    }
-
     async function finish() {
-      if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
       await api.markSetupDone();
       window.location.href = '/app';
     }
 
-    // Auto-check both permissions on load — avoids requiring re-authorization on every wizard visit.
+    // Auto-check the Messages permission on load — avoids requiring re-authorization on every wizard visit.
     // triggerMessagesPermission() is only called if localStorage indicates it was previously granted,
     // so we don't pop a TCC dialog on first-time visitors.
     window.addEventListener('load', async () => {
       if (!api) return;
-
-      // Step 2: FDA check (no dialog risk — fs.open either works or throws silently)
-      try {
-        const fda = await api.checkChatDbAccess();
-        if (fda) {
-          fdaGranted = true;
-          setStepDone(document.getElementById('step2'));
-          document.getElementById('msg-fda').textContent = 'Full Disk Access already granted.';
-          document.getElementById('msg-fda').className = 'status-msg ok';
-          updateContinue();
-        }
-      } catch { /* not granted */ }
 
       // Step 1: Messages permission — only silently verify if previously granted.
       // If permission was revoked, triggerMessagesPermission() returns false (no dialog since
@@ -329,12 +265,13 @@
           if (ok) {
             messagesGranted = true;
             const btn = document.getElementById('btn-messages');
-            btn.textContent = 'Authorized ✓';
+            btn.textContent = 'Allowed ✓';
             btn.disabled = true;
             setStepDone(document.getElementById('step1'));
-            document.getElementById('msg-messages').textContent = 'Access already granted.';
+            document.getElementById('msg-messages').textContent = 'Already allowed.';
             document.getElementById('msg-messages').className = 'status-msg ok';
             updateContinue();
+            checkSms();
           } else {
             localStorage.removeItem('tyl_messages_granted');
           }

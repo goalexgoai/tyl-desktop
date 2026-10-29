@@ -14,6 +14,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Setup wizard
   checkChatDbAccess: () => ipcRenderer.invoke('check-chat-db-access'),
   triggerMessagesPermission: () => ipcRenderer.invoke('trigger-messages-permission'),
+  checkSmsService: () => ipcRenderer.invoke('check-sms-service'),
   openFdaSettings: () => ipcRenderer.send('open-fda-settings'),
   markSetupDone: () => ipcRenderer.invoke('mark-setup-done'),
   isSetupDone: () => ipcRenderer.invoke('is-setup-done'),

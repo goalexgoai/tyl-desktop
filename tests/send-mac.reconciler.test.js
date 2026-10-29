@@ -132,3 +132,26 @@ describe('friendlyError: service-unavailable mapping', () => {
     expect(msg).toMatch(/sign in/i);
   });
 });
+
+describe('queryDeliveryRows: body stored only in attributedBody (newer macOS)', () => {
+  // Field evidence 2026-10-29: message.text was NULL on every send, so the
+  // exact-text match never hit (matched=false) and fell back to newest row.
+  const blob = (t) => Buffer.concat([Buffer.from([4, 11, 0x73, 0x74, 0x72]), Buffer.from(t, 'utf8'), Buffer.from([0x86, 0x84])]);
+
+  test('matches our send by attributedBody when text is NULL, even if it is not the newest row', () => {
+    const rows = [
+      { ROWID: 103, is_delivered: 0, is_sent: 0, error: 0, text: null, attributedBody: blob('something else') },
+      { ROWID: 102, is_delivered: 1, is_sent: 1, error: 0, text: null, attributedBody: blob('Hi Naomi — see you Sunday') },
+    ];
+    const dbg = {};
+    expect(queryDeliveryRows(fakeDb(rows), '5551234567', 100, 'iMessage', 'Hi Naomi — see you Sunday\n', dbg)).toBe('delivered');
+    expect(dbg).toMatchObject({ textMatched: true, rowid: 102 });
+  });
+
+  test('no attributedBody match → falls back to newest row exactly as before', () => {
+    const rows = [{ ROWID: 103, is_delivered: 0, is_sent: 1, error: 0, text: null, attributedBody: blob('other') }];
+    const dbg = {};
+    expect(queryDeliveryRows(fakeDb(rows), '5551234567', 100, 'SMS', 'mine', dbg)).toBe('delivered');
+    expect(dbg).toMatchObject({ textMatched: false, rowid: 103 });
+  });
+});

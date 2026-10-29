@@ -424,7 +424,9 @@ app.get('/reset-password', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'reset-password.html'));
 });
 
-// Change 9: Privacy/help/SEO pages are web-only, not used in desktop mode
+// Change 9: Privacy/SEO pages are web-only, not used in desktop mode.
+// Help pages live only on textyourlist.com (text-sender/public/help-*.html);
+// the app links there. Don't add local copies back.
 if (!process.env.TYL_DESKTOP) {
   app.get('/privacy', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'privacy.html'));
@@ -432,18 +434,6 @@ if (!process.env.TYL_DESKTOP) {
 
   app.get('/terms', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'terms.html'));
-  });
-
-  app.get('/help/companion', (req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'help-companion.html'));
-  });
-
-  app.get('/help/windows', (req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'help-windows.html'));
-  });
-
-  app.get('/help/mac', (req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'help-mac.html'));
   });
 
   // SEO landing pages
@@ -2742,9 +2732,6 @@ app.get('/sitemap.xml', (req, res) => {
     { url: '/login', priority: '0.5', changefreq: 'monthly' },
     { url: '/privacy', priority: '0.3', changefreq: 'monthly' },
     { url: '/terms', priority: '0.3', changefreq: 'monthly' },
-    { url: '/help/companion', priority: '0.6', changefreq: 'monthly' },
-    { url: '/help/windows', priority: '0.6', changefreq: 'monthly' },
-    { url: '/help/mac', priority: '0.6', changefreq: 'monthly' },
     { url: '/send-texts-individually', priority: '0.8', changefreq: 'monthly' },
     { url: '/church-texting-app', priority: '0.8', changefreq: 'monthly' },
     { url: '/text-from-computer', priority: '0.8', changefreq: 'monthly' },
@@ -2934,14 +2921,15 @@ if (process.env.TYL_DESKTOP) {
     } catch (_) {}
   }
 
-  // Temporary diagnostic instrumentation (2026-10-29 Android-SMS
+  // Permanent diagnostic instrumentation (added 2026-10-29, Android-SMS
   // investigation): which routing branch fired and what chat.db row the
   // delivery check actually judged, so this can be read back directly
   // without asking the user to find/paste console logs. Last-4-digit phone
   // identifier only. Mirrors to console.log too, since the web POST is
   // fire-and-forget and could itself fail silently, losing the only
-  // evidence. Remove this whole function and its call sites once the live
-  // bug is resolved and confirmed.
+  // evidence. KEEP THIS: it's how Mac blue/green routing is debugged without
+  // the user's logs, e.g. poll=chatdb_unreadable:<code> means Full Disk Access
+  // isn't really applied (see send-mac.js header, finding 7).
   function reportSendDebug(webUserId, phone, isTest, d) {
     if (!d) return;
     const detail = `sendId=${d.sendId ?? ''} phone=…${String(phone).slice(-4)} tag=${d.tag} svc=${d.serviceType} poll=${d.pollResult} rowsSeen=${d.rowsSeen ?? ''} matched=${d.textMatched ?? ''} rowid=${d.rowid ?? ''} is_sent=${d.is_sent ?? ''} is_delivered=${d.is_delivered ?? ''} error=${d.error ?? ''}`;
@@ -2950,6 +2938,26 @@ if (process.env.TYL_DESKTOP) {
       web_user_id: webUserId, platform: process.platform, app_version: APP_VERSION,
       event: 'send_debug', is_test: !!isTest, detail: detail.slice(0, 500), count: 0,
     }).catch(() => {});
+  }
+
+  // Mac setup snapshot (send-mac.js collectSetupState): reported once per
+  // job, right after its first send, when Messages is guaranteed open. Lets
+  // us diagnose a user's Mac from our side (Full Disk Access applied?
+  // Text Message Forwarding on? Messages allowed? running from the DMG?)
+  // without asking them to run anything. No message content or numbers.
+  const _setupStateReportedJobs = new Set();
+  function reportMacSetupState(webUserId, jobId, isTest) {
+    if (!sendFn.collectSetupState || _setupStateReportedJobs.has(jobId)) return;
+    _setupStateReportedJobs.add(jobId);
+    try {
+      const st = sendFn.collectSetupState();
+      const detail = Object.entries(st).map(([k, v]) => `${k}=${v}`).join(' ');
+      console.log(`[mac-setup-state] ${detail}`);
+      desktopWebPost('/api/desktop-event', {
+        web_user_id: webUserId, platform: process.platform, app_version: APP_VERSION,
+        event: 'mac_setup_state', is_test: !!isTest, detail: detail.slice(0, 500), count: 0,
+      }).catch(() => {});
+    } catch (_) {}
   }
 
   // Readiness results from the Test Send page / Send confirm, so setup
@@ -3071,11 +3079,12 @@ if (process.env.TYL_DESKTOP) {
           desktopWebPost('/api/desktop-report-sends', { web_user_id: userRow.web_user_id, count: 1, is_test: !!isTest })
             .catch(() => {}); // network failure is non-fatal
           reportSendDebug(userRow.web_user_id, message.phone, isTest, sendResult && sendResult._debug);
+          reportMacSetupState(userRow.web_user_id, message.job_id, isTest);
         }
         log(message.user_id, message.id, message.job_id, message.phone, isUnconfirmed ? 'unconfirmed' : 'sent');
         console.log(`[desktop-sender] ${isUnconfirmed ? 'unconfirmed (will reconcile) →' : 'sent →'} ${message.phone}`);
       } catch (err) {
-        // Temporary diagnostic instrumentation (2026-10-29 Android-SMS
+        // Permanent diagnostic instrumentation (added 2026-10-29, Android-SMS
         // investigation): a first pass of this only reported _debug on a
         // successful/timeout resolve, silently losing it on exactly the
         // case most worth seeing — a confirmed delivery failure, which
@@ -3089,6 +3098,10 @@ if (process.env.TYL_DESKTOP) {
             reportSendDebug(userRowForDebug.web_user_id, message.phone, isTestForDebug, err._debug);
           }
         }
+        try {
+          const u = db.prepare('SELECT web_user_id FROM users WHERE id = ?').get(message.user_id);
+          if (u && u.web_user_id) reportMacSetupState(u.web_user_id, message.job_id, !!(db.prepare('SELECT is_test FROM jobs WHERE id = ?').get(message.job_id) || {}).is_test);
+        } catch (_) {}
         // Detect messaging-app errors that should pause the job vs. hard failures.
         const isAuthError = /not authorized to send apple events/i.test(err.message);
         const isAppClosed = !isAuthError && /connection is invalid|application isn't running|phone link not found|phonelink.*not found|execution error.*messages|phone link window|could not find phone link|compose view did not open|automation timed out/i.test(err.message);

@@ -1250,7 +1250,7 @@ async function renderBulkSend(body) {
             <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;text-transform:none;letter-spacing:0;font-weight:400;margin:0;color:var(--text)">
               <input type="radio" name="bs-pace" id="bs-pace-drip" value="7" style="margin-top:3px;flex-shrink:0" />
               <div>
-                <div style="font-weight:600;font-size:13.5px">Smart Throttle <span style="font-weight:400;color:var(--text-muted)">— randomized 7–14s delay between sends</span></div>
+                <div style="font-weight:600;font-size:13.5px">Smart Throttle <span style="font-weight:400;color:var(--text-muted)">(a random 7–14 second wait between sends)</span></div>
                 <div style="font-size:12px;color:var(--text-muted);font-weight:400">Mimics natural human timing to protect your number. Recommended for larger or newer lists.</div>
               </div>
             </label>
@@ -2989,9 +2989,9 @@ function renderGettingStarted(main) {
 
         ${window.electronAPI?.platform === 'darwin' ? `
         <div class="card" style="padding:24px;margin-bottom:16px">
-          <h3 style="font-size:15px;font-weight:700;margin-bottom:10px">macOS Permissions</h3>
+          <h3 style="font-size:15px;font-weight:700;margin-bottom:10px">Sending from your Mac</h3>
           <p style="font-size:13.5px;color:var(--text-muted);line-height:1.7">
-            macOS requires two permissions: Automation (to send via Messages) and Full Disk Access (for smart iMessage vs SMS routing). If you skipped Full Disk Access, go to <strong>Account Settings → Manage Permissions</strong> to enable it.
+            Text Your List sends through the Messages app on your Mac, so it needs your OK to use Messages (you gave it during setup). By default everyone gets a regular green text. Want blue iMessages for iPhone contacts? See <strong>Account Settings → Blue bubbles for iPhone contacts</strong>.
           </p>
         </div>` : `
         <div class="card" style="padding:24px;margin-bottom:16px">
@@ -3875,11 +3875,12 @@ function renderAccount(main) {
 
       ${window.electronAPI?.platform === 'darwin' ? `
       <div class="card" style="max-width:560px;margin-bottom:20px">
-        <div class="card-header"><h3>macOS Permissions</h3></div>
+        <div class="card-header"><h3 style="text-transform:none">Blue bubbles for iPhone contacts <span style="font-size:11px;font-weight:500;color:var(--text-muted);margin-left:6px">Optional</span></h3></div>
         <div class="card-body" style="font-size:13.5px;line-height:1.6">
-          <p style="margin-bottom:10px">Text Your List needs two permissions: <strong>Automation</strong> (to send via Messages) and <strong>Full Disk Access</strong> (to detect iPhone vs Android and route to iMessage or SMS).</p>
-          <p style="margin-bottom:14px;color:var(--text-muted)">If sending isn't working or smart routing is off, click below to re-run the permissions setup.</p>
-          <button class="btn btn-primary btn-sm" id="btn-manage-permissions">Manage Permissions</button>
+          <p id="bubbles-status" style="margin-bottom:10px;color:var(--text-muted)">Checking…</p>
+          <p style="margin-bottom:14px;color:var(--text-muted)">Every text gets delivered either way. If you'd like iPhone contacts to get blue iMessages and Android contacts green texts, there's one extra Mac setting to turn on.</p>
+          <button class="btn btn-ghost btn-sm" id="btn-bubbles-help">Show me how</button>
+          <a href="#" id="btn-manage-permissions" style="font-size:12.5px;margin-left:12px;color:var(--text-muted)">Re-check Messages access</a>
         </div>
       </div>` : ''}
 
@@ -3942,7 +3943,18 @@ function renderAccount(main) {
   if (testSendBtn) testSendBtn.addEventListener('click', () => navigate('quick-send'));
 
   const managePermBtn = document.getElementById('btn-manage-permissions');
-  if (managePermBtn) managePermBtn.addEventListener('click', () => { window.location.href = '/setup'; });
+  if (managePermBtn) managePermBtn.addEventListener('click', (e) => { e.preventDefault(); window.location.href = '/setup'; });
+
+  const bubblesHelpBtn = document.getElementById('btn-bubbles-help');
+  if (bubblesHelpBtn) bubblesHelpBtn.addEventListener('click', () => window.electronAPI.openExternal('https://textyourlist.com/help/mac-blue-bubbles'));
+  const bubblesStatus = document.getElementById('bubbles-status');
+  if (bubblesStatus && window.electronAPI?.checkChatDbAccess) {
+    window.electronAPI.checkChatDbAccess().then((on) => {
+      bubblesStatus.innerHTML = on
+        ? '<strong style="color:var(--success,#16a34a)">On.</strong> iPhone contacts you\'ve texted before get blue iMessages; Android contacts get green texts.'
+        : '<strong>Off.</strong> Everyone gets a regular green text.';
+    }).catch(() => { bubblesStatus.textContent = ''; });
+  }
 
   const upgBtn = document.getElementById('acct-upgrade-btn');
   if (upgBtn) upgBtn.addEventListener('click', openBillingPage);

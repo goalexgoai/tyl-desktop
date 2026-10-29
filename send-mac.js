@@ -1,3 +1,38 @@
+// =============================================================================
+// Mac send (Messages.app) — iMessage (blue) vs SMS (green) routing.
+// DO NOT CHANGE the routing without reading this header and
+// ~/alex/knowledge/businesses/tyl.md → "MAC iMESSAGE vs SMS ROUTING — SETTLED".
+// Guarded by tests/send-mac.invariants.test.js + tests/send-mac.routing.test.js.
+// =============================================================================
+// Verified on a real Mac 2026-10-29 (v1.0.105): 2 iPhones blue + delivered,
+// 1 Android green + delivered.
+//
+// EMPIRICAL FINDINGS — these are what actually happens, not theories:
+//  1. chat.db (~/Library/Messages/chat.db) is the ONLY way to tell iPhone
+//     from Android on a Mac. No public API or AppleScript property exposes it,
+//     and AppleScript's iMessage `send` succeeds even for Android numbers (it
+//     just queues). Reading chat.db requires Full Disk Access (FDA).
+//  2. fs.accessSync/existsSync do NOT go through macOS's FDA (TCC) gate. Probe
+//     access by really opening chat.db and running a query (canReadChatDb).
+//  3. is_sent=1 proves nothing for iMessage: Android numbers get it too, often
+//     with no error ever written. Only is_delivered=1 proves blue worked.
+//  4. Our own outgoing SMS is NOT evidence the recipient is on Android (we
+//     chose SMS). Counting it locks iPhone contacts onto green forever.
+//  5. Phone switchers: old iMessage success rows stay in chat.db forever. Use
+//     the MOST RECENT conclusive evidence (classifyRoute), never "ever worked".
+//  6. Never guess iMessage for an unknown number: a wrong guess is a silent
+//     "Not Delivered". Unknown → SMS (reaches everyone).
+//  7. An FDA toggle that shows ON can still be ineffective. Most likely the
+//     entry was made for an older, differently signed build, so it doesn't
+//     match the installed app. Symptom: send_debug shows
+//     poll=chatdb_unreadable:SQLITE_CANTOPEN. This is a user-side fix, not a
+//     code bug: `tccutil reset SystemPolicyAllFiles com.textyourlist.app`,
+//     then re-add the app from /Applications in System Settings → Full Disk
+//     Access, then relaunch. FDA can't be granted or prompted for by the app.
+//  8. Sending itself needs only Automation permission (control Messages). With
+//     no FDA everything still delivers, just all green.
+// =============================================================================
+
 const { execSync, execFile } = require('child_process');
 
 function runOsascript(args, timeout = 30000) {
@@ -22,13 +57,41 @@ function chatDbPath() {
   return path.join(os.homedir(), 'Library', 'Messages', 'chat.db');
 }
 
+// Whether this process can actually read chat.db right now.
+//
+// This used to be fs.accessSync(R_OK). access() does NOT go through macOS's
+// TCC (Full Disk Access) gate — Apple DTS: "you have to actually try opening
+// the file" — so it is not a valid FDA probe. main.js's setup-wizard check
+// was switched to a real open for exactly this reason back in ec26989
+// (2026-04-20), but this copy was never updated. Field evidence (2026-10-29):
+// zero send_debug events across every Mac send on v1.0.103/104 with the FDA
+// toggle ON, i.e. this returned false every time and none of the chat.db
+// routing/verification ever ran — which is why known iPhone contacts went
+// green. Now we open chat.db the same way the real queries do and run one.
+//
+// lastChatDbError keeps the failure reason (e.g. EPERM vs SQLITE_CANTOPEN)
+// for telemetry, so a remaining access problem is diagnosable from our side.
+let lastChatDbError = null;
+let chatDbCheck = { ok: false, at: 0 };
 function canReadChatDb() {
+  // Brief cache: called per send and by the 20s reconciler. Short TTL on a
+  // failure so a fresh grant is picked up quickly.
+  const ttl = chatDbCheck.ok ? 30000 : 5000;
+  if (Date.now() - chatDbCheck.at < ttl) return chatDbCheck.ok;
+  let db;
   try {
-    fs.accessSync(chatDbPath(), fs.constants.R_OK);
-    return true;
-  } catch {
-    return false;
+    const Database = require('better-sqlite3');
+    db = new Database(chatDbPath(), { readonly: true, fileMustExist: true });
+    db.prepare('SELECT ROWID FROM message LIMIT 1').get();
+    lastChatDbError = null;
+    chatDbCheck = { ok: true, at: Date.now() };
+  } catch (err) {
+    lastChatDbError = (err && (err.code || err.message)) || 'unknown';
+    chatDbCheck = { ok: false, at: Date.now() };
+  } finally {
+    try { if (db) db.close(); } catch {}
   }
+  return chatDbCheck.ok;
 }
 
 function getMaxMessageRowId() {
@@ -82,7 +145,7 @@ function queryDeliveryRows(db, phone, beforeRowId, serviceType, expectedText, de
     const normText = s => String(s || '').trim();
 
     const rows = db.prepare(`
-      SELECT m.ROWID, m.is_delivered, m.is_sent, m.error, m.text
+      SELECT m.ROWID, m.is_delivered, m.is_sent, m.error, m.text, m.attributedBody
       FROM message m
       JOIN handle h ON h.ROWID = m.handle_id
       WHERE h.id IN (${placeholders})
@@ -98,9 +161,16 @@ function queryDeliveryRows(db, phone, beforeRowId, serviceType, expectedText, de
       return 'pending';
     }
 
-    const matched = expectedText
-      ? rows.find(r => normText(r.text) === normText(expectedText))
-      : null;
+    // Newer macOS often leaves message.text NULL and stores the body only in
+    // attributedBody (an archived NSAttributedString blob that contains the
+    // plain UTF-8 text). Field evidence 2026-10-29: matched=false on every
+    // send because of this. Match either.
+    const want = normText(expectedText);
+    const bodyMatches = (r) => {
+      if (r.text != null) return normText(r.text) === want;
+      return !!(want && r.attributedBody && Buffer.from(r.attributedBody).includes(Buffer.from(want, 'utf8')));
+    };
+    const matched = expectedText ? rows.find(bodyMatches) : null;
     const row = matched || rows[0]; // fallback = prior behavior (newest row)
     if (debugOut) {
       Object.assign(debugOut, {
@@ -289,62 +359,80 @@ async function executeSend(serviceType, number, tmpFile, stagedImgPath, debugCtx
   return { confirmed: true };
 }
 
-// Look up a number's known route from chat.db handle table.
-// Returns 'imessage' | 'sms' | 'unknown'.
-// This is a persistent cache across restarts — unlike routingCache which resets per session.
+// Decide a number's route from its chat.db history.
+// Returns 'imessage' | 'sms' | 'unknown'. Pure — exported for unit tests.
+//
+// rows: this number's recent messages, NEWEST FIRST, each
+//   { service, is_from_me, is_delivered, error, style }
+// (style = chat.style: 45 = 1:1, 43 = group; null when no chat join).
+//
+// The most recent CONCLUSIVE piece of evidence wins, in either direction —
+// so someone who switched phones is judged by what they're using now, not
+// by old history (the v1.0.101 stale-route bug), and a contact's own
+// messages count, not just ours. Since Messages syncs via iCloud, this
+// covers anyone the user has ever texted from their iPhone too.
+//   incoming iMessage                        → imessage (they're on iMessage)
+//   outgoing iMessage, is_delivered=1        → imessage (device ack)
+//   outgoing iMessage, error != 0            → sms
+//   outgoing iMessage, never delivered       → sms (the silent "Not Delivered"
+//                                              Android case — Apple often writes
+//                                              no error; is_sent alone proves
+//                                              nothing, see v1.0.102)
+//   incoming SMS/RCS in a 1:1 chat           → sms (an iPhone on iMessage would
+//                                              have sent iMessage; group MMS is
+//                                              skipped — iPhones send SMS there
+//                                              when any member is on Android)
+//   our own outgoing SMS                     → inconclusive (we chose SMS)
+// No conclusive row → 'unknown' (caller sends SMS — the safe default).
+function classifyRoute(rows) {
+  for (const r of rows || []) {
+    const svc = r.service;
+    if (r.is_from_me) {
+      if (svc !== 'iMessage') continue;
+      if (r.error && r.error !== 0) return 'sms';
+      return r.is_delivered ? 'imessage' : 'sms';
+    }
+    if (svc === 'iMessage') return 'imessage';
+    if ((svc === 'SMS' || svc === 'RCS') && r.style !== 43) return 'sms';
+  }
+  return 'unknown';
+}
+
+function phoneVariants(phone) {
+  const digits = phone.replace(/\D/g, '');
+  const variants = new Set([phone, digits]);
+  if (digits.length === 10) {
+    variants.add('+1' + digits); // US 10-digit → E.164
+  } else if (digits.length === 11 && digits.startsWith('1')) {
+    variants.add('+' + digits);  // 1XXXXXXXXXX → +1XXXXXXXXXX
+  }
+  return [...variants];
+}
+
+// Look up a number's known route from chat.db (persists across restarts,
+// unlike routingCache). Returns 'imessage' | 'sms' | 'unknown'.
 function lookupKnownRoute(phone) {
   let db;
   try {
     const Database = require('better-sqlite3');
     db = new Database(chatDbPath(), { readonly: true, fileMustExist: true });
-    const digits = phone.replace(/\D/g, '');
-    const variants = new Set([phone, digits]);
-    if (digits.length === 10) {
-      variants.add('+1' + digits); // US 10-digit → E.164
-    } else if (digits.length === 11 && digits.startsWith('1')) {
-      variants.add('+' + digits);  // 1XXXXXXXXXX → +1XXXXXXXXXX
-    }
-    const varArr = [...variants];
+    const varArr = phoneVariants(phone);
     const placeholders = varArr.map(() => '?').join(',');
-    // Field evidence (2026-10-29): a number that was iMessage-capable in the
-    // past (recipient had an iPhone, later switched to Android) keeps old
-    // successful iMessage rows in chat.db forever. The original query here
-    // asked "has ANY iMessage send to this number ever succeeded" with no
-    // ORDER BY — so it could match that stale old row and classify the
-    // number as iMessage-capable permanently, even after every subsequent
-    // send started failing ("Not Delivered"). First fix (v1.0.101): only
-    // trust the MOST RECENT iMessage attempt. That alone wasn't enough —
-    // it still read is_sent=1 as "success," but is_sent just means "handed
-    // to the send queue," true for Android numbers too; Apple frequently
-    // never writes back a nonzero error for this failure mode either. Only
-    // is_delivered (a real network ack from the recipient's device) proves
-    // the most recent attempt actually succeeded.
-    const lastIMsg = db.prepare(`
-      SELECT m.is_sent, m.is_delivered, m.error
+    // item_type = 0: real messages only (not group renames/joins etc).
+    // Ordered by m.date, not ROWID: iCloud sync can insert old messages with
+    // new ROWIDs, so ROWID isn't a reliable recency order.
+    const rows = db.prepare(`
+      SELECT m.service, m.is_from_me, m.is_delivered, m.error, c.style
       FROM message m
       JOIN handle h ON h.ROWID = m.handle_id
+      LEFT JOIN chat_message_join cmj ON cmj.message_id = m.ROWID
+      LEFT JOIN chat c ON c.ROWID = cmj.chat_id
       WHERE h.id IN (${placeholders})
-        AND m.is_from_me = 1
-        AND m.service = 'iMessage'
-      ORDER BY m.ROWID DESC
-      LIMIT 1
-    `).get(...varArr);
-    if (lastIMsg) {
-      const failed = !!(lastIMsg.error && lastIMsg.error !== 0);
-      if (failed) return 'sms'; // most recent iMessage attempt to this number failed — don't repeat it
-      if (lastIMsg.is_delivered) return 'imessage';
-      // is_sent=1 with no error and no is_delivered yet is inconclusive —
-      // fall through to the SMS-handle check / 'unknown', which triggers a
-      // fresh probe (iMessage attempt with a real 7s delivery poll, falling
-      // back to SMS on timeout) rather than trusting a queued-but-unproven send.
-    }
-
-    const smsRow = db.prepare(`
-      SELECT 1 FROM handle WHERE id IN (${placeholders}) AND service = 'SMS' LIMIT 1
-    `).get(...varArr);
-    if (smsRow) return 'sms';
-
-    return 'unknown';
+        AND (m.item_type IS NULL OR m.item_type = 0)
+      ORDER BY m.date DESC
+      LIMIT 50
+    `).all(...varArr);
+    return classifyRoute(rows);
   } catch {
     return 'unknown';
   } finally {
@@ -367,10 +455,10 @@ module.exports = async function sendViaMac(number, message, imagePath) {
   const hasText = !!(message && message.trim());
   const hasImage = !!(imagePath && fs.existsSync(imagePath));
   let stagedImg = null;
-  // Diagnostic only (2026-10-29 Android-SMS investigation): correlates a
-  // probe attempt with its own SMS fallback as one logical send, since both
-  // share the same branch tag (e.g. 'unknown_probe_timeout_fallback_sms')
-  // but are two separate executeSend calls. Remove dbg()/sendId once resolved.
+  // Diagnostic: sendId correlates an iMessage attempt with its own SMS
+  // fallback ('<tag>_error_fallback_sms') as one logical send in send_debug
+  // telemetry. Keep it: send_debug is how routing is debugged from our side
+  // (see header finding 7).
   const sendId = Math.random().toString(36).slice(2, 8);
   const dbg = (tag) => ({ tag, sendId });
 
@@ -378,62 +466,66 @@ module.exports = async function sendViaMac(number, message, imagePath) {
     if (hasImage) stagedImg = stageTmpImage(imagePath);
     await ensureMessagesRunning();
 
+    // iMessage route with a safety net. If chat.db reports the iMessage
+    // failed, or Messages has no iMessage service, resend as SMS right away
+    // (no duplicate risk — the iMessage didn't go through) and stop routing
+    // this number to iMessage. If delivery is merely unconfirmed after 7s
+    // (recipient offline, or switched phones and Apple wrote no error), keep
+    // the 'unconfirmed' result for the reconciler — an SMS on top could
+    // double-deliver — and drop the session cache so the next send re-reads
+    // chat.db, where an undelivered iMessage now counts as evidence for SMS.
+    const sendIMessage = async (tag) => {
+      try {
+        const result = await executeSend('iMessage', number, tmp, stagedImg, dbg(tag));
+        if (result && result.confirmed === false) routingCache.delete(number);
+        return result;
+      } catch (err) {
+        if (!/delivery failed|TYL_SERVICE_UNAVAILABLE:iMessage/.test(err.message)) throw err;
+        routingCache.set(number, 'sms');
+        return await executeSend('SMS', number, tmp, stagedImg, dbg(tag + '_error_fallback_sms'));
+      }
+    };
+
     // ── Session cache (in-memory, resets on restart) ─────────────────────────
     const cached = routingCache.get(number);
-    if (cached === 'imessage') {
-      return await executeSend('iMessage', number, tmp, stagedImg, dbg('cached_imessage'));
-    }
+    if (cached === 'imessage') return await sendIMessage('cached_imessage');
     if (cached === 'sms') {
       return await executeSend('SMS', number, tmp, stagedImg, dbg('cached_sms'));
     }
 
-    // ── Persistent chat.db handle lookup (survives restarts) ─────────────────
+    // ── Persistent chat.db history lookup (survives restarts) ────────────────
     if (canReadChatDb()) {
       const knownRoute = lookupKnownRoute(number);
       if (knownRoute === 'imessage') {
         routingCache.set(number, 'imessage');
-        return await executeSend('iMessage', number, tmp, stagedImg, dbg('known_imessage'));
+        return await sendIMessage('known_imessage');
       }
       if (knownRoute === 'sms') {
         routingCache.set(number, 'sms');
         return await executeSend('SMS', number, tmp, stagedImg, dbg('known_sms'));
       }
 
-      // ── Unknown number: SMS is the resilient default (2026-10-29 policy
-      // change) ──────────────────────────────────────────────────────────────
-      // This used to probe iMessage first (send it, poll chat.db up to 7s,
-      // fall back to SMS on error/timeout). That was a speculative iMessage
-      // attempt as the PRIMARY delivery path for a number we have no real
-      // evidence about — and it's exactly how a known-Android number kept
-      // going out blue and silently failing for an entire day of live
-      // testing (2026-10-29): AppleScript's iMessage send never throws for a
-      // wrong number (it just queues), so the only thing that could catch it
-      // was the chat.db poll — and when chat.db access itself wasn't working
-      // (confirmed separately, diagnostic instrumentation showed it never
-      // even ran), there was nothing left to catch the failure at all.
-      // This product's very first version (before any "smart routing" existed)
-      // used SMS exclusively for precisely this reason — see the original
-      // design note, since removed: "There is no synchronous error for 'this
-      // number isn't on iMessage.'" SMS reliably reaches both iPhone and
-      // Android when Text Message Forwarding is configured; iMessage only
-      // reaches iPhone. A number only earns the iMessage route through
-      // lookupKnownRoute's VERIFIED is_delivered=1 history above — never a
-      // live, unproven guess. The cost is iPhone recipients see a green text
-      // instead of blue on their first message from this list; the benefit is
-      // no more silent non-delivery.
-      routingCache.set(number, 'sms');
+      // ── Unknown number: SMS (v1.0.104 policy, unchanged) ───────────────────
+      // No conclusive history, so no iMessage guess: AppleScript's iMessage
+      // send never fails synchronously for a non-iMessage number, and a
+      // wrong guess is a silent non-delivery. SMS reaches everyone. Not
+      // cached: if this recipient replies from an iPhone, their reply lands
+      // in chat.db as an incoming iMessage and their next send goes blue.
       return await executeSend('SMS', number, tmp, stagedImg, dbg('unknown_default_sms'));
     }
 
-    // ── Fallback: no Full Disk Access (or chat.db otherwise unreadable) ────
-    // Same resilient-default reasoning as above, and doubly so here: with no
-    // chat.db access at all, there is no verification step of any kind — an
-    // iMessage-first attempt here has zero safety net. SMS first; iMessage
-    // only as a last resort if SMS itself isn't available on this Mac at all.
+    // ── Fallback: chat.db unreadable (no Full Disk Access) ─────────────────
+    // No verification possible, so SMS first; iMessage only if SMS itself
+    // isn't available on this Mac. Reports why chat.db was unreadable so a
+    // remaining access problem shows up in send_debug telemetry instead of
+    // as silence (which is all v1.0.103/104 could show).
+    const noDbDebug = (tag) => ({ sendId, tag, serviceType: tag.includes('imessage') ? 'iMessage' : 'SMS', pollResult: `chatdb_unreadable:${lastChatDbError}` });
     try {
-      return await executeSend('SMS', number, tmp, stagedImg, dbg('no_fda_sms'));
+      const r = await executeSend('SMS', number, tmp, stagedImg);
+      return { ...r, _debug: noDbDebug('no_fda_sms') };
     } catch {
-      return await executeSend('iMessage', number, tmp, stagedImg, dbg('no_fda_fallback_imessage'));
+      const r = await executeSend('iMessage', number, tmp, stagedImg);
+      return { ...r, _debug: noDbDebug('no_fda_fallback_imessage') };
     }
 
   } finally {
@@ -441,6 +533,48 @@ module.exports = async function sendViaMac(number, message, imagePath) {
     if (stagedImg) try { fs.unlinkSync(stagedImg); } catch (_) {}
   }
 };
+
+// Snapshot of everything that decides whether Mac sending works and whether
+// blue/green routing is active, for the 'mac_setup_state' telemetry event
+// (server.js). No message content, no phone numbers. Never triggers a macOS
+// permission prompt: the AppleScript checks only run while Messages is already
+// open (the send path opens it), and Automation was granted during setup.
+// Fields:
+//   chatdb          'ok' | error code (e.g. SQLITE_CANTOPEN = Full Disk Access not applied)
+//   messages        'running' | 'closed'
+//   automation      'ok' | 'denied' (-1743: user said no to "control Messages") | 'error' | 'skipped'
+//   sms_service     'yes' | 'no' (Text Message Forwarding off → Android unreachable) | 'unknown'
+//   imessage_service'yes' | 'no' | 'unknown'
+//   app_location    'applications' | 'dmg' (running from the installer) | 'translocated' | 'other'
+//   macos, arch
+function collectSetupState() {
+  const state = {};
+  state.chatdb = canReadChatDb() ? 'ok' : (lastChatDbError || 'unreadable');
+  try { state.macos = execSync('sw_vers -productVersion', { encoding: 'utf8', timeout: 3000 }).trim(); } catch { state.macos = os.release(); }
+  state.arch = process.arch;
+  const exe = process.execPath || '';
+  state.app_location = exe.includes('/AppTranslocation/') ? 'translocated'
+    : exe.startsWith('/Volumes/') ? 'dmg'
+    : exe.startsWith('/Applications/') ? 'applications' : 'other';
+  let running = false;
+  try { running = !!execSync(`pgrep -u ${process.getuid()} -x Messages`, { encoding: 'utf8' }).trim(); } catch {}
+  state.messages = running ? 'running' : 'closed';
+  state.automation = 'skipped';
+  state.sms_service = 'unknown';
+  state.imessage_service = 'unknown';
+  if (running) {
+    try {
+      const out = execSync(`osascript -e 'tell application "Messages" to return ((count (every service whose service type = SMS)) as text) & "," & ((count (every service whose service type = iMessage)) as text)'`, { encoding: 'utf8', timeout: 10000 }).trim();
+      const [sms, im] = out.split(',').map(n => parseInt(n, 10));
+      state.automation = 'ok';
+      state.sms_service = sms > 0 ? 'yes' : 'no';
+      state.imessage_service = im > 0 ? 'yes' : 'no';
+    } catch (err) {
+      state.automation = /-1743|not authorized/i.test(String(err && (err.stderr || err.message))) ? 'denied' : 'error';
+    }
+  }
+  return state;
+}
 
 // Used by server.js's background reconciler to re-check an 'unconfirmed'
 // message against chat.db without the module's default-export send path.
@@ -450,3 +584,6 @@ module.exports.queryDeliveryRows = queryDeliveryRows; // exported for unit tests
 module.exports.buildScript = buildScript; // exported for unit tests (pure string-builder)
 module.exports.buildImageScript = buildImageScript; // exported for unit tests (pure string-builder)
 module.exports.lookupKnownRoute = lookupKnownRoute; // exported for unit tests (mocks better-sqlite3)
+module.exports.classifyRoute = classifyRoute; // exported for unit tests (pure)
+module.exports.chatDbAccessError = () => lastChatDbError;
+module.exports.collectSetupState = collectSetupState; // 'mac_setup_state' telemetry
