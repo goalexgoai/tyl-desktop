@@ -55,7 +55,17 @@ function getMaxMessageRowId() {
 //                    but strictly better than the previous no-check-at-all behavior)
 // serviceType: 'iMessage' or 'SMS' — must match what buildScript/buildImageScript used,
 // otherwise this will never find the row it's looking for.
-function pollForDelivery(phone, beforeRowId, serviceType = 'iMessage') {
+//
+// expectedText (optional): the exact body we just sent. We just captured beforeRowId
+// immediately before firing the send, so "newest row after beforeRowId" is normally
+// right — but if the user manually sends another text to this same number/service in
+// the few seconds we're polling, that row would sort newest and get misattributed to
+// this send. When expectedText is given, prefer the candidate row whose text matches
+// it exactly (after trim, since Messages can trim a trailing newline we didn't). If no
+// candidate matches — different quoting/encoding than we expect — fall back to the
+// newest row exactly as before, so this can only improve precision, never regress the
+// existing failure-detection into a timeout it wouldn't have hit otherwise.
+function pollForDelivery(phone, beforeRowId, serviceType = 'iMessage', expectedText = null) {
   return new Promise((resolve) => {
     let Database;
     try { Database = require('better-sqlite3'); } catch { return resolve('timeout'); }
@@ -69,13 +79,14 @@ function pollForDelivery(phone, beforeRowId, serviceType = 'iMessage') {
     const normalized = phone.replace(/\D/g, '');
     const phones = [...new Set([phone, normalized, '+1' + normalized, '+' + normalized])];
     const placeholders = phones.map(() => '?').join(',');
+    const normText = s => String(s || '').trim();
 
     const deadline = Date.now() + 7000; // 7 second window
 
     function check() {
       try {
-        const row = db.prepare(`
-          SELECT m.ROWID, m.is_delivered, m.is_sent, m.error
+        const rows = db.prepare(`
+          SELECT m.ROWID, m.is_delivered, m.is_sent, m.error, m.text
           FROM message m
           JOIN handle h ON h.ROWID = m.handle_id
           WHERE h.id IN (${placeholders})
@@ -83,13 +94,18 @@ function pollForDelivery(phone, beforeRowId, serviceType = 'iMessage') {
             AND m.service = ?
             AND m.ROWID > ?
           ORDER BY m.ROWID DESC
-          LIMIT 1
-        `).get(...phones, serviceType, beforeRowId);
+          LIMIT 8
+        `).all(...phones, serviceType, beforeRowId);
 
-        if (!row) {
+        if (!rows.length) {
           if (Date.now() >= deadline) { db.close(); return resolve('timeout'); }
           return setTimeout(check, 400);
         }
+
+        const matched = expectedText
+          ? rows.find(r => normText(r.text) === normText(expectedText))
+          : null;
+        const row = matched || rows[0]; // fallback = prior behavior (newest row)
 
         if (row.error && row.error !== 0) {
           db.close(); return resolve('error');
@@ -173,7 +189,8 @@ end tell`;
 // happen for iMessage; SMS sends were trusted unconditionally the moment the
 // osascript command returned, with no check that the relay actually worked.
 async function executeSend(serviceType, number, tmpFile, stagedImgPath) {
-  const hasText = !!fs.readFileSync(tmpFile, 'utf8').trim();
+  const rawText = fs.readFileSync(tmpFile, 'utf8');
+  const hasText = !!rawText.trim();
   if (stagedImgPath && fs.existsSync(stagedImgPath)) {
     await runOsascript(['-e', buildImageScript(serviceType, number, stagedImgPath)]);
     // Pause so Messages queues the image before the text bubble arrives
@@ -184,7 +201,7 @@ async function executeSend(serviceType, number, tmpFile, stagedImgPath) {
     const beforeRowId = canVerify ? getMaxMessageRowId() : 0;
     await runOsascript(['-e', buildScript(serviceType, number, tmpFile)]);
     if (canVerify) {
-      const result = await pollForDelivery(number, beforeRowId, serviceType);
+      const result = await pollForDelivery(number, beforeRowId, serviceType, rawText);
       if (result === 'error') {
         throw new Error(`${serviceType} delivery failed — relay reported an error`);
       }
@@ -297,7 +314,7 @@ module.exports = async function sendViaMac(number, message, imagePath) {
         // Use text send to probe delivery and detect routing.
         const beforeRowId = getMaxMessageRowId();
         await runOsascript(['-e', buildScript('iMessage', number, tmp)]);
-        const result = await pollForDelivery(number, beforeRowId);
+        const result = await pollForDelivery(number, beforeRowId, 'iMessage', message);
 
         if (result === 'delivered') {
           routingCache.set(number, 'imessage');
