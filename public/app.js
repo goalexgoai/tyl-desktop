@@ -1250,7 +1250,7 @@ async function renderBulkSend(body) {
             <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;text-transform:none;letter-spacing:0;font-weight:400;margin:0;color:var(--text)">
               <input type="radio" name="bs-pace" id="bs-pace-drip" value="7" style="margin-top:3px;flex-shrink:0" />
               <div>
-                <div style="font-weight:600;font-size:13.5px">Smart Throttle <span style="font-weight:400;color:var(--text-muted)">— randomized 7–14s delay between sends</span></div>
+                <div style="font-weight:600;font-size:13.5px">Smart Throttle <span style="font-weight:400;color:var(--text-muted)">(a random 7–14 second wait between sends)</span></div>
                 <div style="font-size:12px;color:var(--text-muted);font-weight:400">Mimics natural human timing to protect your number. Recommended for larger or newer lists.</div>
               </div>
             </label>
@@ -3880,7 +3880,7 @@ function renderAccount(main) {
           <p id="bubbles-status" style="margin-bottom:10px;color:var(--text-muted)">Checking…</p>
           <p style="margin-bottom:14px;color:var(--text-muted)">Every text gets delivered either way. If you'd like iPhone contacts to get blue iMessages and Android contacts green texts, there's one extra Mac setting to turn on.</p>
           <button class="btn btn-ghost btn-sm" id="btn-bubbles-help">Show me how</button>
-          <a href="#" id="btn-manage-permissions" style="font-size:12.5px;margin-left:12px;color:var(--text-muted)">Texts not sending? Re-check Messages access</a>
+          <a href="#" id="btn-manage-permissions" style="font-size:12.5px;margin-left:12px;color:var(--text-muted)">Re-check Messages access</a>
         </div>
       </div>` : ''}
 

@@ -424,7 +424,9 @@ app.get('/reset-password', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'reset-password.html'));
 });
 
-// Change 9: Privacy/help/SEO pages are web-only, not used in desktop mode
+// Change 9: Privacy/SEO pages are web-only, not used in desktop mode.
+// Help pages live only on textyourlist.com (text-sender/public/help-*.html);
+// the app links there. Don't add local copies back.
 if (!process.env.TYL_DESKTOP) {
   app.get('/privacy', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'privacy.html'));
@@ -432,18 +434,6 @@ if (!process.env.TYL_DESKTOP) {
 
   app.get('/terms', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'terms.html'));
-  });
-
-  app.get('/help/companion', (req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'help-companion.html'));
-  });
-
-  app.get('/help/windows', (req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'help-windows.html'));
-  });
-
-  app.get('/help/mac', (req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'help-mac.html'));
   });
 
   // SEO landing pages
@@ -2742,9 +2732,6 @@ app.get('/sitemap.xml', (req, res) => {
     { url: '/login', priority: '0.5', changefreq: 'monthly' },
     { url: '/privacy', priority: '0.3', changefreq: 'monthly' },
     { url: '/terms', priority: '0.3', changefreq: 'monthly' },
-    { url: '/help/companion', priority: '0.6', changefreq: 'monthly' },
-    { url: '/help/windows', priority: '0.6', changefreq: 'monthly' },
-    { url: '/help/mac', priority: '0.6', changefreq: 'monthly' },
     { url: '/send-texts-individually', priority: '0.8', changefreq: 'monthly' },
     { url: '/church-texting-app', priority: '0.8', changefreq: 'monthly' },
     { url: '/text-from-computer', priority: '0.8', changefreq: 'monthly' },

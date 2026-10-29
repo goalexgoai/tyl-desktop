@@ -7,7 +7,9 @@ function friendlyError(raw, platform = process.platform) {
   if (/ParserError|Missing '\)' in method call|Unexpected token|string is missing the terminator/i.test(e))
     return `Text Your List couldn't prepare this message for ${app}. Update Text Your List to the latest version, then resend.`;
   if (/not authorized to send apple events|permission/i.test(e))
-    return `${app} permission wasn't granted. Open Help → Manage Permissions, grant access, then resend.`;
+    return platform === 'darwin'
+      ? `Your Mac hasn't allowed Text Your List to use Messages. In Account Settings, click "Re-check Messages access", choose OK when your Mac asks, then resend.`
+      : `Phone Link doesn't have permission to send texts. On your phone, allow Messages for Phone Link (textyourlist.com/help/phone-link), then resend.`;
   if (/phone ?link not found|could not find phone link|not found\. processes|application isn't running|isn't running/i.test(e))
     return `${app} wasn't running or wasn't ready. Open ${app}, confirm your phone is connected, then resend.`;
   if (/could not focus|foreground|receive focus/i.test(e))
@@ -25,9 +27,9 @@ function friendlyError(raw, platform = process.platform) {
   if (/cancelled by user/i.test(e))
     return `Cancelled.`;
   if (/delivery failed — relay reported an error/i.test(e))
-    return `This message did not go through — the carrier or Messages relay reported a failure. Double-check the number and try resending.`;
+    return `This message didn't go through. The carrier or Messages reported a failure. Check the number and resend.`;
   if (/TYL_SERVICE_UNAVAILABLE:SMS/.test(e))
-    return `This Mac can't send text messages (SMS) yet — only iMessage. On your iPhone: Settings → Messages → Text Message Forwarding, and turn this Mac on. Then resend.`;
+    return `This Mac can't send regular texts yet, only iMessage. On your iPhone, go to Settings → Apps → Messages → Text Message Forwarding and turn on this Mac. Then resend.`;
   if (/TYL_SERVICE_UNAVAILABLE:iMessage/.test(e))
     return `iMessage isn't signed in on this Mac. Open Messages → Settings → iMessage and sign in with your Apple ID, then resend.`;
   // Unknown: first line only, never a multi-line script dump.
