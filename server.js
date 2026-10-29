@@ -2953,6 +2953,26 @@ if (process.env.TYL_DESKTOP) {
     }).catch(() => {});
   }
 
+  // Mac setup snapshot (send-mac.js collectSetupState): reported once per
+  // job, right after its first send, when Messages is guaranteed open. Lets
+  // us diagnose a user's Mac from our side (Full Disk Access applied?
+  // Text Message Forwarding on? Messages allowed? running from the DMG?)
+  // without asking them to run anything. No message content or numbers.
+  const _setupStateReportedJobs = new Set();
+  function reportMacSetupState(webUserId, jobId, isTest) {
+    if (!sendFn.collectSetupState || _setupStateReportedJobs.has(jobId)) return;
+    _setupStateReportedJobs.add(jobId);
+    try {
+      const st = sendFn.collectSetupState();
+      const detail = Object.entries(st).map(([k, v]) => `${k}=${v}`).join(' ');
+      console.log(`[mac-setup-state] ${detail}`);
+      desktopWebPost('/api/desktop-event', {
+        web_user_id: webUserId, platform: process.platform, app_version: APP_VERSION,
+        event: 'mac_setup_state', is_test: !!isTest, detail: detail.slice(0, 500), count: 0,
+      }).catch(() => {});
+    } catch (_) {}
+  }
+
   // Readiness results from the Test Send page / Send confirm, so setup
   // problems are visible even when the user never presses Send. Once per
   // state per app session.
@@ -3072,6 +3092,7 @@ if (process.env.TYL_DESKTOP) {
           desktopWebPost('/api/desktop-report-sends', { web_user_id: userRow.web_user_id, count: 1, is_test: !!isTest })
             .catch(() => {}); // network failure is non-fatal
           reportSendDebug(userRow.web_user_id, message.phone, isTest, sendResult && sendResult._debug);
+          reportMacSetupState(userRow.web_user_id, message.job_id, isTest);
         }
         log(message.user_id, message.id, message.job_id, message.phone, isUnconfirmed ? 'unconfirmed' : 'sent');
         console.log(`[desktop-sender] ${isUnconfirmed ? 'unconfirmed (will reconcile) →' : 'sent →'} ${message.phone}`);
@@ -3090,6 +3111,10 @@ if (process.env.TYL_DESKTOP) {
             reportSendDebug(userRowForDebug.web_user_id, message.phone, isTestForDebug, err._debug);
           }
         }
+        try {
+          const u = db.prepare('SELECT web_user_id FROM users WHERE id = ?').get(message.user_id);
+          if (u && u.web_user_id) reportMacSetupState(u.web_user_id, message.job_id, !!(db.prepare('SELECT is_test FROM jobs WHERE id = ?').get(message.job_id) || {}).is_test);
+        } catch (_) {}
         // Detect messaging-app errors that should pause the job vs. hard failures.
         const isAuthError = /not authorized to send apple events/i.test(err.message);
         const isAppClosed = !isAuthError && /connection is invalid|application isn't running|phone link not found|phonelink.*not found|execution error.*messages|phone link window|could not find phone link|compose view did not open|automation timed out/i.test(err.message);

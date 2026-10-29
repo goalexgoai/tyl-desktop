@@ -145,7 +145,7 @@ function queryDeliveryRows(db, phone, beforeRowId, serviceType, expectedText, de
     const normText = s => String(s || '').trim();
 
     const rows = db.prepare(`
-      SELECT m.ROWID, m.is_delivered, m.is_sent, m.error, m.text
+      SELECT m.ROWID, m.is_delivered, m.is_sent, m.error, m.text, m.attributedBody
       FROM message m
       JOIN handle h ON h.ROWID = m.handle_id
       WHERE h.id IN (${placeholders})
@@ -161,9 +161,16 @@ function queryDeliveryRows(db, phone, beforeRowId, serviceType, expectedText, de
       return 'pending';
     }
 
-    const matched = expectedText
-      ? rows.find(r => normText(r.text) === normText(expectedText))
-      : null;
+    // Newer macOS often leaves message.text NULL and stores the body only in
+    // attributedBody (an archived NSAttributedString blob that contains the
+    // plain UTF-8 text). Field evidence 2026-10-29: matched=false on every
+    // send because of this. Match either.
+    const want = normText(expectedText);
+    const bodyMatches = (r) => {
+      if (r.text != null) return normText(r.text) === want;
+      return !!(want && r.attributedBody && Buffer.from(r.attributedBody).includes(Buffer.from(want, 'utf8')));
+    };
+    const matched = expectedText ? rows.find(bodyMatches) : null;
     const row = matched || rows[0]; // fallback = prior behavior (newest row)
     if (debugOut) {
       Object.assign(debugOut, {
@@ -527,6 +534,48 @@ module.exports = async function sendViaMac(number, message, imagePath) {
   }
 };
 
+// Snapshot of everything that decides whether Mac sending works and whether
+// blue/green routing is active, for the 'mac_setup_state' telemetry event
+// (server.js). No message content, no phone numbers. Never triggers a macOS
+// permission prompt: the AppleScript checks only run while Messages is already
+// open (the send path opens it), and Automation was granted during setup.
+// Fields:
+//   chatdb          'ok' | error code (e.g. SQLITE_CANTOPEN = Full Disk Access not applied)
+//   messages        'running' | 'closed'
+//   automation      'ok' | 'denied' (-1743: user said no to "control Messages") | 'error' | 'skipped'
+//   sms_service     'yes' | 'no' (Text Message Forwarding off → Android unreachable) | 'unknown'
+//   imessage_service'yes' | 'no' | 'unknown'
+//   app_location    'applications' | 'dmg' (running from the installer) | 'translocated' | 'other'
+//   macos, arch
+function collectSetupState() {
+  const state = {};
+  state.chatdb = canReadChatDb() ? 'ok' : (lastChatDbError || 'unreadable');
+  try { state.macos = execSync('sw_vers -productVersion', { encoding: 'utf8', timeout: 3000 }).trim(); } catch { state.macos = os.release(); }
+  state.arch = process.arch;
+  const exe = process.execPath || '';
+  state.app_location = exe.includes('/AppTranslocation/') ? 'translocated'
+    : exe.startsWith('/Volumes/') ? 'dmg'
+    : exe.startsWith('/Applications/') ? 'applications' : 'other';
+  let running = false;
+  try { running = !!execSync(`pgrep -u ${process.getuid()} -x Messages`, { encoding: 'utf8' }).trim(); } catch {}
+  state.messages = running ? 'running' : 'closed';
+  state.automation = 'skipped';
+  state.sms_service = 'unknown';
+  state.imessage_service = 'unknown';
+  if (running) {
+    try {
+      const out = execSync(`osascript -e 'tell application "Messages" to return ((count (every service whose service type = SMS)) as text) & "," & ((count (every service whose service type = iMessage)) as text)'`, { encoding: 'utf8', timeout: 10000 }).trim();
+      const [sms, im] = out.split(',').map(n => parseInt(n, 10));
+      state.automation = 'ok';
+      state.sms_service = sms > 0 ? 'yes' : 'no';
+      state.imessage_service = im > 0 ? 'yes' : 'no';
+    } catch (err) {
+      state.automation = /-1743|not authorized/i.test(String(err && (err.stderr || err.message))) ? 'denied' : 'error';
+    }
+  }
+  return state;
+}
+
 // Used by server.js's background reconciler to re-check an 'unconfirmed'
 // message against chat.db without the module's default-export send path.
 module.exports.checkDeliveryOnce = checkDeliveryOnce;
@@ -537,3 +586,4 @@ module.exports.buildImageScript = buildImageScript; // exported for unit tests (
 module.exports.lookupKnownRoute = lookupKnownRoute; // exported for unit tests (mocks better-sqlite3)
 module.exports.classifyRoute = classifyRoute; // exported for unit tests (pure)
 module.exports.chatDbAccessError = () => lastChatDbError;
+module.exports.collectSetupState = collectSetupState; // 'mac_setup_state' telemetry

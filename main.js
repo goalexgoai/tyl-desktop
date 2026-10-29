@@ -409,16 +409,24 @@ ipcMain.on('set-tray-status', (_, status) => {
 // ── Setup wizard IPC ──────────────────────────────────────────────────────────
 
 ipcMain.handle('check-chat-db-access', () => {
-  const os = require('os');
-  const dbPath = path.join(os.homedir(), 'Library', 'Messages', 'chat.db');
+  // Same probe the sender uses (real open + query of chat.db). access() and
+  // a bare open() aren't trustworthy FDA checks — see send-mac.js header.
+  if (process.platform !== 'darwin') return false;
+  try { return require('./send-mac.js').canReadChatDb(); } catch { return false; }
+});
+
+// Whether Messages on this Mac can send regular (green) texts, i.e. Text
+// Message Forwarding is on for this Mac on the user's iPhone. Without it the
+// sender falls back to iMessage, which reaches iPhones but not Android.
+// Returns true / false, or null if it couldn't tell (never blocks setup).
+ipcMain.handle('check-sms-service', async () => {
+  if (process.platform !== 'darwin') return null;
   try {
-    // Use openSync + closeSync rather than accessSync — this actually exercises
-    // the TCC read gate and gives a reliable answer in the packaged Electron context.
-    const fd = fs.openSync(dbPath, 'r');
-    fs.closeSync(fd);
-    return true;
+    const { execFileSync } = require('child_process');
+    const out = execFileSync('osascript', ['-e', 'tell application "Messages" to count (every service whose service type = SMS)'], { timeout: 15000, encoding: 'utf8' });
+    return parseInt(out.trim(), 10) > 0;
   } catch {
-    return false;
+    return null;
   }
 });
 
