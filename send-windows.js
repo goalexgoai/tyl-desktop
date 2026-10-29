@@ -204,7 +204,7 @@
 // =============================================================================
 
 const { execFile } = require('child_process');
-const { writeFileSync, unlinkSync } = require('fs');
+const { writeFileSync, unlinkSync, readFileSync } = require('fs');
 const { join } = require('path');
 const os = require('os');
 
@@ -808,9 +808,7 @@ Log "send complete (no exception thrown)"
   // control Names (they can contain contact names / notification text).
   let summary = '';
   try {
-    const { readFileSync } = require('fs');
-    const log = readFileSync(join(os.tmpdir(), 'tyl-send-debug.log'), 'utf8');
-    summary = summarizeSendLog(log);
+    summary = summarizeSendLog(readFileSync(join(os.tmpdir(), 'tyl-send-debug.log'), 'utf8'));
   } catch (_) {}
   return { confirmed: true, _debug: { tag: `win ${summary}`.trim(), serviceType: 'PhoneLink', pollResult: 'sent' } };
 };
