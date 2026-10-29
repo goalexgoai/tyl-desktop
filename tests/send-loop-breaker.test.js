@@ -120,3 +120,97 @@ test('Phone Link setup problem on a test send fails it instead of pausing', asyn
   expect(db.prepare('SELECT status FROM jobs WHERE id = ?').get(jobId).status).toBe('completed');
   expect(db.prepare('SELECT error FROM messages WHERE job_id = ?').get(jobId).error).toMatch(/isn't connected to your phone yet/);
 });
+
+describe('delivery reconciler (unconfirmed-send follow-up)', () => {
+  // The reconciler's query is portfolio-wide by design (it has to catch up
+  // leftovers from a crash/restart too), so it isn't scoped to one job/test.
+  // Clear any unconfirmed rows a prior test in this file left behind so each
+  // reconciler test sees exactly the row it created.
+  beforeEach(() => {
+    db.prepare("DELETE FROM messages WHERE status = 'unconfirmed'").run();
+  });
+
+  test('a timed-out-but-not-thrown send is recorded unconfirmed, not silently "sent"', async () => {
+    sendFn.mockReset().mockResolvedValue({ confirmed: false, chatBeforeRowId: 555, chatService: 'SMS' });
+    const jobId = makeJob(1);
+    await runLoop(1);
+    const msg = db.prepare('SELECT * FROM messages WHERE job_id = ?').get(jobId);
+    expect(msg.status).toBe('unconfirmed');
+    expect(msg.chat_before_rowid).toBe(555);
+    expect(msg.chat_service).toBe('SMS');
+    // The job itself is done sending (nothing left pending/sending) even though
+    // this message's delivery outcome is still open — that's the reconciler's job.
+    expect(db.prepare('SELECT status FROM jobs WHERE id = ?').get(jobId).status).toBe('completed');
+  });
+
+  test('legacy resolve shape ({} or true, e.g. Windows) is still treated as confirmed sent', async () => {
+    sendFn.mockReset().mockResolvedValue(true);
+    const jobId = makeJob(1);
+    await runLoop(1);
+    expect(db.prepare('SELECT status FROM messages WHERE job_id = ?').get(jobId).status).toBe('sent');
+  });
+
+  test('reconciler finalizes an unconfirmed message once chat.db settles', async () => {
+    sendFn.mockReset().mockResolvedValue({ confirmed: false, chatBeforeRowId: 777, chatService: 'SMS' });
+    sendFn.canReadChatDb = jest.fn().mockReturnValue(true);
+    sendFn.checkDeliveryOnce = jest.fn()
+      .mockReturnValueOnce('pending')   // first tick: still nothing — must NOT change status
+      .mockReturnValueOnce('delivered'); // second tick: now confirmed
+    const jobId = makeJob(1);
+    await runLoop(1);
+    const msgId = db.prepare('SELECT id FROM messages WHERE job_id = ?').get(jobId).id;
+
+    await app.locals.reconcileUnconfirmedDeliveries();
+    expect(db.prepare('SELECT status FROM messages WHERE id = ?').get(msgId).status).toBe('unconfirmed');
+
+    await app.locals.reconcileUnconfirmedDeliveries();
+    expect(db.prepare('SELECT status FROM messages WHERE id = ?').get(msgId).status).toBe('sent');
+    expect(db.prepare('SELECT status FROM jobs WHERE id = ?').get(jobId).status).toBe('completed');
+
+    delete sendFn.canReadChatDb;
+    delete sendFn.checkDeliveryOnce;
+  });
+
+  test('reconciler moves an unconfirmed message to failed when chat.db later reports an error', async () => {
+    sendFn.mockReset().mockResolvedValue({ confirmed: false, chatBeforeRowId: 888, chatService: 'SMS' });
+    sendFn.canReadChatDb = jest.fn().mockReturnValue(true);
+    sendFn.checkDeliveryOnce = jest.fn().mockReturnValue('error');
+    const jobId = makeJob(1);
+    await runLoop(1);
+    const msgId = db.prepare('SELECT id FROM messages WHERE job_id = ?').get(jobId).id;
+
+    await app.locals.reconcileUnconfirmedDeliveries();
+    const msg = db.prepare('SELECT status, error FROM messages WHERE id = ?').get(msgId);
+    expect(msg.status).toBe('failed');
+    expect(msg.error).toMatch(/did not go through/i);
+
+    delete sendFn.canReadChatDb;
+    delete sendFn.checkDeliveryOnce;
+  });
+
+  test('a db_error probe leaves the message unconfirmed instead of guessing an outcome', async () => {
+    sendFn.mockReset().mockResolvedValue({ confirmed: false, chatBeforeRowId: 999, chatService: 'SMS' });
+    sendFn.canReadChatDb = jest.fn().mockReturnValue(true);
+    sendFn.checkDeliveryOnce = jest.fn().mockReturnValue('db_error');
+    const jobId = makeJob(1);
+    await runLoop(1);
+    const msgId = db.prepare('SELECT id FROM messages WHERE job_id = ?').get(jobId).id;
+
+    await app.locals.reconcileUnconfirmedDeliveries();
+    expect(db.prepare('SELECT status FROM messages WHERE id = ?').get(msgId).status).toBe('unconfirmed');
+
+    delete sendFn.canReadChatDb;
+    delete sendFn.checkDeliveryOnce;
+  });
+
+  test('reconciler is a no-op when the active sendFn has no reconciliation capability (e.g. Windows)', async () => {
+    sendFn.mockReset().mockResolvedValue({ confirmed: false, chatBeforeRowId: 111, chatService: 'SMS' });
+    // Deliberately NOT attaching canReadChatDb/checkDeliveryOnce to sendFn here.
+    const jobId = makeJob(1);
+    await runLoop(1);
+    const msgId = db.prepare('SELECT id FROM messages WHERE job_id = ?').get(jobId).id;
+
+    await expect(app.locals.reconcileUnconfirmedDeliveries()).resolves.toBeUndefined();
+    expect(db.prepare('SELECT status FROM messages WHERE id = ?').get(msgId).status).toBe('unconfirmed');
+  });
+});

@@ -292,4 +292,15 @@ try {
   db.exec(`ALTER TABLE jobs ADD COLUMN image_path TEXT`);
 } catch (_) {}
 
+// Delivery-reconciler columns — persist the chat.db anchor a Mac send used so
+// the background reconciler (server.js) can re-check the SAME chat.db rows by
+// ROWID later instead of re-deriving "which row was this" from phone+time,
+// which breaks across app restarts and near other sends to the same number.
+try {
+  db.exec(`ALTER TABLE messages ADD COLUMN chat_before_rowid INTEGER`);
+} catch (_) {}
+try {
+  db.exec(`ALTER TABLE messages ADD COLUMN chat_service TEXT`);
+} catch (_) {}
+
 module.exports = db;

@@ -3028,11 +3028,26 @@ if (process.env.TYL_DESKTOP) {
       try {
         // Expose process handle so cancel endpoint can kill it mid-send
         global.__registerSendProc = (proc) => { _currentSendProc = proc; };
-        await sendFn(message.phone, message.body, message.image_path || null);
+        const sendResult = await sendFn(message.phone, message.body, message.image_path || null);
         _currentSendProc = null;
         _sendProgress.connecting = false;
         _sendProgress.sent = (_sendProgress.sent || 0) + 1;
-        db.prepare("UPDATE messages SET status='sent', sent_at=datetime('now'), error=NULL WHERE id=?").run(message.id);
+        // sendFn resolves undefined on Windows (legacy — always treated as
+        // confirmed) or { confirmed, chatBeforeRowId?, chatService? } on Mac.
+        // confirmed === false means the 7s delivery poll timed out with no
+        // settled answer — record it as 'unconfirmed' instead of guessing
+        // 'sent', and persist the chat.db anchor so the reconciler can re-check
+        // the SAME rows later (see reconcileUnconfirmedDeliveries below).
+        const isUnconfirmed = sendResult && sendResult.confirmed === false;
+        if (isUnconfirmed) {
+          db.prepare(`
+            UPDATE messages SET status='unconfirmed', sent_at=datetime('now'), error=NULL,
+              chat_before_rowid=?, chat_service=?
+            WHERE id=?
+          `).run(sendResult.chatBeforeRowId, sendResult.chatService, message.id);
+        } else {
+          db.prepare("UPDATE messages SET status='sent', sent_at=datetime('now'), error=NULL WHERE id=?").run(message.id);
+        }
         _failStreak = { jobId: null, sig: null, ids: [] };
         const jobRow = db.prepare("SELECT is_test FROM jobs WHERE id = ?").get(message.job_id);
         const isTest = jobRow && jobRow.is_test;
@@ -3043,8 +3058,8 @@ if (process.env.TYL_DESKTOP) {
           desktopWebPost('/api/desktop-report-sends', { web_user_id: userRow.web_user_id, count: 1, is_test: !!isTest })
             .catch(() => {}); // network failure is non-fatal
         }
-        log(message.user_id, message.id, message.job_id, message.phone, 'sent');
-        console.log(`[desktop-sender] sent → ${message.phone}`);
+        log(message.user_id, message.id, message.job_id, message.phone, isUnconfirmed ? 'unconfirmed' : 'sent');
+        console.log(`[desktop-sender] ${isUnconfirmed ? 'unconfirmed (will reconcile) →' : 'sent →'} ${message.phone}`);
       } catch (err) {
         // Detect messaging-app errors that should pause the job vs. hard failures.
         const isAuthError = /not authorized to send apple events/i.test(err.message);
@@ -3145,6 +3160,73 @@ if (process.env.TYL_DESKTOP) {
       if (process.env.TYL_DESKTOP) process.stdout.write('__TRAY:gray__\n');
     } finally {
       desktopSendLoop._running = false;
+    }
+  }
+
+  // ── Delivery reconciler (Mac only) ──────────────────────────────────────────
+  // A message lands as 'unconfirmed' when send-mac.js's 7s chat.db poll timed
+  // out with no settled answer (see desktopSendLoop above). This re-checks it
+  // on a slower cadence using the SAME chat.db anchor the send used
+  // (chat_before_rowid/chat_service), so a result that lands after the 7s
+  // window still reaches the user's history instead of being lost once the
+  // send loop moves on. Deliberately reporting-only: never resends on a
+  // later-confirmed failure — the recipient may have actually gotten it
+  // despite the ambiguity, and a blind retry risks a duplicate delivery.
+  // Past UNCONFIRMED_RECONCILE_WINDOW_MINUTES with still no answer, a message
+  // just stays 'unconfirmed' for good — an honest ceiling, not a guarantee.
+  const UNCONFIRMED_RECONCILE_WINDOW_MINUTES = 10;
+  async function reconcileUnconfirmedDeliveries() {
+    // Capability-based, not platform-based: send-windows.js exposes neither
+    // checkDeliveryOnce nor canReadChatDb, so this is naturally a no-op there
+    // without hardcoding process.platform (which also makes it mockable/testable).
+    if (!sendFn.checkDeliveryOnce || !sendFn.canReadChatDb) return;
+    if (reconcileUnconfirmedDeliveries._running) return;
+    reconcileUnconfirmedDeliveries._running = true;
+    try {
+      if (!sendFn.canReadChatDb()) return; // no Full Disk Access right now
+      const rows = db.prepare(`
+        SELECT id, phone, body, chat_before_rowid, chat_service
+        FROM messages
+        WHERE status = 'unconfirmed'
+          AND chat_before_rowid IS NOT NULL
+          AND sent_at >= datetime('now', ?)
+        LIMIT 50
+      `).all(`-${UNCONFIRMED_RECONCILE_WINDOW_MINUTES} minutes`);
+
+      for (const row of rows) {
+        const result = sendFn.checkDeliveryOnce(row.phone, row.chat_before_rowid, row.chat_service, row.body);
+        // 'pending' = no settled row yet, genuinely unknown — leave as-is, try
+        // again next tick. 'db_error' = the probe itself failed (lock, TCC
+        // revoked, etc.) — NOT a delivery outcome, must not be treated as one.
+        if (result === 'pending' || result === 'db_error') continue;
+
+        // recountJob keeps the job's sent/failed tally and 'completed' status
+        // correct even when this resolves after the job already finished
+        // sending (the common case — the job moves on in ~seconds, this
+        // reconciler runs on a ~20s/10min horizon).
+        const msgRow = db.prepare('SELECT m.attempts, m.job_id, j.user_id FROM messages m JOIN jobs j ON j.id = m.job_id WHERE m.id = ?').get(row.id);
+        if (result === 'delivered') {
+          const changed = db.prepare("UPDATE messages SET status='sent', error=NULL WHERE id=? AND status='unconfirmed'").run(row.id);
+          if (changed.changes) {
+            log(null, row.id, msgRow ? msgRow.job_id : null, row.phone, 'sent', '(reconciled)');
+            console.log(`[delivery-reconciler] confirmed delivered → ${row.phone}`);
+            if (msgRow) recountJob(msgRow.job_id);
+          }
+        } else if (result === 'error') {
+          const newStatus = (msgRow && msgRow.attempts >= 3) ? 'dead' : 'failed';
+          const shown = friendlyError(`${row.chat_service} delivery failed — relay reported an error`);
+          const changed = db.prepare("UPDATE messages SET status=?, error=? WHERE id=? AND status='unconfirmed'").run(newStatus, shown, row.id);
+          if (changed.changes && msgRow) {
+            log(msgRow.user_id, row.id, msgRow.job_id, row.phone, newStatus, '(reconciled) relay reported an error');
+            console.warn(`[delivery-reconciler] confirmed failed → ${row.phone}`);
+            recountJob(msgRow.job_id);
+          }
+        }
+      }
+    } catch (err) {
+      console.error('[delivery-reconciler] error:', err.message);
+    } finally {
+      reconcileUnconfirmedDeliveries._running = false;
     }
   }
 
@@ -3260,8 +3342,11 @@ if (process.env.TYL_DESKTOP) {
   setInterval(desktopSendLoop, 5000);
   app.locals.desktopSendLoop = desktopSendLoop; // exposed for tests
   setInterval(webApiPollLoop, 5000);
+  setInterval(reconcileUnconfirmedDeliveries, 20000);
+  app.locals.reconcileUnconfirmedDeliveries = reconcileUnconfirmedDeliveries; // exposed for tests
   console.log('[desktop-sender] embedded sender active');
   console.log('[web-poll] web API poll loop active');
+  if (process.platform === 'darwin') console.log('[delivery-reconciler] active');
 }
 
 // ─── Start ───────────────────────────────────────────────────────────────────

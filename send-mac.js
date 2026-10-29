@@ -65,6 +65,46 @@ function getMaxMessageRowId() {
 // candidate matches — different quoting/encoding than we expect — fall back to the
 // newest row exactly as before, so this can only improve precision, never regress the
 // existing failure-detection into a timeout it wouldn't have hit otherwise.
+// Shared row-matching logic between the live 7s poll and the one-shot
+// reconciler check (checkDeliveryOnce). Both need to pick the SAME row out of
+// chat.db for the same send, so this lives in one place.
+// Returns: 'delivered' | 'error' | 'pending' (rows exist but none settled, or
+// none found yet) | 'db_error' (the query itself failed — NOT the same as
+// "no answer yet"; callers must not treat this as a delivery outcome).
+function queryDeliveryRows(db, phone, beforeRowId, serviceType, expectedText) {
+  try {
+    const normalized = phone.replace(/\D/g, '');
+    const phones = [...new Set([phone, normalized, '+1' + normalized, '+' + normalized])];
+    const placeholders = phones.map(() => '?').join(',');
+    const normText = s => String(s || '').trim();
+
+    const rows = db.prepare(`
+      SELECT m.ROWID, m.is_delivered, m.is_sent, m.error, m.text
+      FROM message m
+      JOIN handle h ON h.ROWID = m.handle_id
+      WHERE h.id IN (${placeholders})
+        AND m.is_from_me = 1
+        AND m.service = ?
+        AND m.ROWID > ?
+      ORDER BY m.ROWID DESC
+      LIMIT 8
+    `).all(...phones, serviceType, beforeRowId);
+
+    if (!rows.length) return 'pending';
+
+    const matched = expectedText
+      ? rows.find(r => normText(r.text) === normText(expectedText))
+      : null;
+    const row = matched || rows[0]; // fallback = prior behavior (newest row)
+
+    if (row.error && row.error !== 0) return 'error';
+    if (row.is_delivered || row.is_sent) return 'delivered';
+    return 'pending';
+  } catch {
+    return 'db_error';
+  }
+}
+
 function pollForDelivery(phone, beforeRowId, serviceType = 'iMessage', expectedText = null) {
   return new Promise((resolve) => {
     let Database;
@@ -75,56 +115,45 @@ function pollForDelivery(phone, beforeRowId, serviceType = 'iMessage', expectedT
       db = new Database(chatDbPath(), { readonly: true, fileMustExist: true });
     } catch { return resolve('timeout'); }
 
-    // Try multiple number formats: raw, digits-only, +1XXXXXXXXXX, +XXXXXXXXXX
-    const normalized = phone.replace(/\D/g, '');
-    const phones = [...new Set([phone, normalized, '+1' + normalized, '+' + normalized])];
-    const placeholders = phones.map(() => '?').join(',');
-    const normText = s => String(s || '').trim();
-
     const deadline = Date.now() + 7000; // 7 second window
 
     function check() {
-      try {
-        const rows = db.prepare(`
-          SELECT m.ROWID, m.is_delivered, m.is_sent, m.error, m.text
-          FROM message m
-          JOIN handle h ON h.ROWID = m.handle_id
-          WHERE h.id IN (${placeholders})
-            AND m.is_from_me = 1
-            AND m.service = ?
-            AND m.ROWID > ?
-          ORDER BY m.ROWID DESC
-          LIMIT 8
-        `).all(...phones, serviceType, beforeRowId);
-
-        if (!rows.length) {
-          if (Date.now() >= deadline) { db.close(); return resolve('timeout'); }
-          return setTimeout(check, 400);
-        }
-
-        const matched = expectedText
-          ? rows.find(r => normText(r.text) === normText(expectedText))
-          : null;
-        const row = matched || rows[0]; // fallback = prior behavior (newest row)
-
-        if (row.error && row.error !== 0) {
-          db.close(); return resolve('error');
-        }
-        if (row.is_delivered || row.is_sent) {
-          db.close(); return resolve('delivered');
-        }
-
-        // Found but outcome not yet settled
-        if (Date.now() >= deadline) { db.close(); return resolve('timeout'); }
-        setTimeout(check, 400);
-      } catch {
-        try { db.close(); } catch {}
-        resolve('timeout');
+      const result = queryDeliveryRows(db, phone, beforeRowId, serviceType, expectedText);
+      if (result === 'delivered' || result === 'error') {
+        db.close();
+        return resolve(result);
       }
+      // 'pending' or 'db_error' — keep polling until the deadline, then give up
+      // as 'timeout'. A mid-poll db_error is usually transient (lock contention);
+      // worth retrying within the same 7s window rather than failing fast.
+      if (Date.now() >= deadline) {
+        try { db.close(); } catch {}
+        return resolve('timeout');
+      }
+      setTimeout(check, 400);
     }
 
     check();
   });
+}
+
+// One-shot (non-looping) check used by the background reconciler in server.js.
+// Opens its own short-lived read-only connection, asks once, closes. Distinct
+// from pollForDelivery: no 7s wait loop — the reconciler itself is the loop,
+// running on its own ~20s cadence across many messages.
+// Returns: 'delivered' | 'error' | 'pending' | 'db_error'
+function checkDeliveryOnce(phone, beforeRowId, serviceType, expectedText) {
+  let Database;
+  try { Database = require('better-sqlite3'); } catch { return 'db_error'; }
+  let db;
+  try {
+    db = new Database(chatDbPath(), { readonly: true, fileMustExist: true });
+  } catch { return 'db_error'; }
+  try {
+    return queryDeliveryRows(db, phone, beforeRowId, serviceType, expectedText);
+  } finally {
+    try { db.close(); } catch {}
+  }
 }
 
 async function ensureMessagesRunning() {
@@ -188,6 +217,14 @@ end tell`;
 // (pause/retry/dead-letter logic in server.js) applies — this used to only
 // happen for iMessage; SMS sends were trusted unconditionally the moment the
 // osascript command returned, with no check that the relay actually worked.
+//
+// Resolves { confirmed: true } when chat.db positively confirmed delivery (or
+// verification wasn't possible at all, e.g. no Full Disk Access — nothing to
+// be unconfirmed about). Resolves { confirmed: false, chatBeforeRowId,
+// chatService } when the 7s poll window closed with no settled answer either
+// way — the caller (server.js) persists chatBeforeRowId/chatService on the
+// message row so the background reconciler can re-check the SAME chat.db rows
+// later instead of re-deriving "which row was this" from phone+time.
 async function executeSend(serviceType, number, tmpFile, stagedImgPath) {
   const rawText = fs.readFileSync(tmpFile, 'utf8');
   const hasText = !!rawText.trim();
@@ -205,11 +242,13 @@ async function executeSend(serviceType, number, tmpFile, stagedImgPath) {
       if (result === 'error') {
         throw new Error(`${serviceType} delivery failed — relay reported an error`);
       }
-      // 'delivered' → confirmed. 'timeout' → no confirmation either way within the
-      // poll window; treat as sent rather than fail a message that may have gone
-      // through — we only want to catch sends we can POSITIVELY confirm failed.
+      if (result === 'timeout') {
+        return { confirmed: false, chatBeforeRowId: beforeRowId, chatService: serviceType };
+      }
+      // 'delivered' → confirmed.
     }
   }
+  return { confirmed: true };
 }
 
 // Look up a number's known route from chat.db handle table.
@@ -280,12 +319,10 @@ module.exports = async function sendViaMac(number, message, imagePath) {
     // ── Session cache (in-memory, resets on restart) ─────────────────────────
     const cached = routingCache.get(number);
     if (cached === 'imessage') {
-      await executeSend('iMessage', number, tmp, stagedImg);
-      return true;
+      return await executeSend('iMessage', number, tmp, stagedImg);
     }
     if (cached === 'sms') {
-      await executeSend('SMS', number, tmp, stagedImg);
-      return true;
+      return await executeSend('SMS', number, tmp, stagedImg);
     }
 
     // ── Persistent chat.db handle lookup (survives restarts) ─────────────────
@@ -293,13 +330,11 @@ module.exports = async function sendViaMac(number, message, imagePath) {
       const knownRoute = lookupKnownRoute(number);
       if (knownRoute === 'imessage') {
         routingCache.set(number, 'imessage');
-        await executeSend('iMessage', number, tmp, stagedImg);
-        return true;
+        return await executeSend('iMessage', number, tmp, stagedImg);
       }
       if (knownRoute === 'sms') {
         routingCache.set(number, 'sms');
-        await executeSend('SMS', number, tmp, stagedImg);
-        return true;
+        return await executeSend('SMS', number, tmp, stagedImg);
       }
 
       // ── Unknown number: iMessage-first with delivery poll ────────────────────
@@ -318,28 +353,25 @@ module.exports = async function sendViaMac(number, message, imagePath) {
 
         if (result === 'delivered') {
           routingCache.set(number, 'imessage');
-          return true;
+          return { confirmed: true };
         }
 
         if (result === 'error') {
           // iMessage failed (Android) — resend both image and text via SMS.
           routingCache.set(number, 'sms');
-          await executeSend('SMS', number, tmp, stagedImg);
-          return true;
+          return await executeSend('SMS', number, tmp, stagedImg);
         }
 
         // Timeout — iMessage delivery unconfirmed for unknown number.
         // Fall back to SMS to guarantee delivery rather than silently dropping the message.
         // Risk of double-delivery is accepted; silent failure is not.
         routingCache.set(number, 'sms');
-        await executeSend('SMS', number, tmp, stagedImg);
-        return true;
+        return await executeSend('SMS', number, tmp, stagedImg);
       } else {
         // Image-only send to unknown number: iMessage already attempted above.
         // Fall back to SMS as well to match text behavior.
         routingCache.set(number, 'sms');
-        await executeSend('SMS', number, tmp, null); // image already sent via iMessage attempt
-        return true;
+        return await executeSend('SMS', number, tmp, null); // image already sent via iMessage attempt
       }
     }
 
@@ -347,14 +379,19 @@ module.exports = async function sendViaMac(number, message, imagePath) {
     // Prefer iMessage since it works without SMS relay. Fall back to SMS only
     // if iMessage throws (e.g. no iMessage service configured on this profile).
     try {
-      await executeSend('iMessage', number, tmp, stagedImg);
+      return await executeSend('iMessage', number, tmp, stagedImg);
     } catch {
-      await executeSend('SMS', number, tmp, stagedImg);
+      return await executeSend('SMS', number, tmp, stagedImg);
     }
-    return true;
 
   } finally {
     try { fs.unlinkSync(tmp); } catch (_) {}
     if (stagedImg) try { fs.unlinkSync(stagedImg); } catch (_) {}
   }
 };
+
+// Used by server.js's background reconciler to re-check an 'unconfirmed'
+// message against chat.db without the module's default-export send path.
+module.exports.checkDeliveryOnce = checkDeliveryOnce;
+module.exports.canReadChatDb = canReadChatDb;
+module.exports.queryDeliveryRows = queryDeliveryRows; // exported for unit tests (pure, DB-shape-only)
