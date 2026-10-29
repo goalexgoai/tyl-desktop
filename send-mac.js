@@ -1,3 +1,38 @@
+// =============================================================================
+// Mac send (Messages.app) — iMessage (blue) vs SMS (green) routing.
+// DO NOT CHANGE the routing without reading this header and
+// ~/alex/knowledge/businesses/tyl.md → "MAC iMESSAGE vs SMS ROUTING — SETTLED".
+// Guarded by tests/send-mac.invariants.test.js + tests/send-mac.routing.test.js.
+// =============================================================================
+// Verified on a real Mac 2026-10-29 (v1.0.105): 2 iPhones blue + delivered,
+// 1 Android green + delivered.
+//
+// EMPIRICAL FINDINGS — these are what actually happens, not theories:
+//  1. chat.db (~/Library/Messages/chat.db) is the ONLY way to tell iPhone
+//     from Android on a Mac. No public API or AppleScript property exposes it,
+//     and AppleScript's iMessage `send` succeeds even for Android numbers (it
+//     just queues). Reading chat.db requires Full Disk Access (FDA).
+//  2. fs.accessSync/existsSync do NOT go through macOS's FDA (TCC) gate. Probe
+//     access by really opening chat.db and running a query (canReadChatDb).
+//  3. is_sent=1 proves nothing for iMessage: Android numbers get it too, often
+//     with no error ever written. Only is_delivered=1 proves blue worked.
+//  4. Our own outgoing SMS is NOT evidence the recipient is on Android (we
+//     chose SMS). Counting it locks iPhone contacts onto green forever.
+//  5. Phone switchers: old iMessage success rows stay in chat.db forever. Use
+//     the MOST RECENT conclusive evidence (classifyRoute), never "ever worked".
+//  6. Never guess iMessage for an unknown number: a wrong guess is a silent
+//     "Not Delivered". Unknown → SMS (reaches everyone).
+//  7. An FDA toggle that shows ON can still be ineffective. Most likely the
+//     entry was made for an older, differently signed build, so it doesn't
+//     match the installed app. Symptom: send_debug shows
+//     poll=chatdb_unreadable:SQLITE_CANTOPEN. This is a user-side fix, not a
+//     code bug: `tccutil reset SystemPolicyAllFiles com.textyourlist.app`,
+//     then re-add the app from /Applications in System Settings → Full Disk
+//     Access, then relaunch. FDA can't be granted or prompted for by the app.
+//  8. Sending itself needs only Automation permission (control Messages). With
+//     no FDA everything still delivers, just all green.
+// =============================================================================
+
 const { execSync, execFile } = require('child_process');
 
 function runOsascript(args, timeout = 30000) {
@@ -413,10 +448,10 @@ module.exports = async function sendViaMac(number, message, imagePath) {
   const hasText = !!(message && message.trim());
   const hasImage = !!(imagePath && fs.existsSync(imagePath));
   let stagedImg = null;
-  // Diagnostic only (2026-10-29 Android-SMS investigation): correlates a
-  // probe attempt with its own SMS fallback as one logical send, since both
-  // share the same branch tag (e.g. 'unknown_probe_timeout_fallback_sms')
-  // but are two separate executeSend calls. Remove dbg()/sendId once resolved.
+  // Diagnostic: sendId correlates an iMessage attempt with its own SMS
+  // fallback ('<tag>_error_fallback_sms') as one logical send in send_debug
+  // telemetry. Keep it: send_debug is how routing is debugged from our side
+  // (see header finding 7).
   const sendId = Math.random().toString(36).slice(2, 8);
   const dbg = (tag) => ({ tag, sendId });
 

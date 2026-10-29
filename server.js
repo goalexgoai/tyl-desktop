@@ -2934,14 +2934,15 @@ if (process.env.TYL_DESKTOP) {
     } catch (_) {}
   }
 
-  // Temporary diagnostic instrumentation (2026-10-29 Android-SMS
+  // Permanent diagnostic instrumentation (added 2026-10-29, Android-SMS
   // investigation): which routing branch fired and what chat.db row the
   // delivery check actually judged, so this can be read back directly
   // without asking the user to find/paste console logs. Last-4-digit phone
   // identifier only. Mirrors to console.log too, since the web POST is
   // fire-and-forget and could itself fail silently, losing the only
-  // evidence. Remove this whole function and its call sites once the live
-  // bug is resolved and confirmed.
+  // evidence. KEEP THIS: it's how Mac blue/green routing is debugged without
+  // the user's logs, e.g. poll=chatdb_unreadable:<code> means Full Disk Access
+  // isn't really applied (see send-mac.js header, finding 7).
   function reportSendDebug(webUserId, phone, isTest, d) {
     if (!d) return;
     const detail = `sendId=${d.sendId ?? ''} phone=…${String(phone).slice(-4)} tag=${d.tag} svc=${d.serviceType} poll=${d.pollResult} rowsSeen=${d.rowsSeen ?? ''} matched=${d.textMatched ?? ''} rowid=${d.rowid ?? ''} is_sent=${d.is_sent ?? ''} is_delivered=${d.is_delivered ?? ''} error=${d.error ?? ''}`;
@@ -3075,7 +3076,7 @@ if (process.env.TYL_DESKTOP) {
         log(message.user_id, message.id, message.job_id, message.phone, isUnconfirmed ? 'unconfirmed' : 'sent');
         console.log(`[desktop-sender] ${isUnconfirmed ? 'unconfirmed (will reconcile) →' : 'sent →'} ${message.phone}`);
       } catch (err) {
-        // Temporary diagnostic instrumentation (2026-10-29 Android-SMS
+        // Permanent diagnostic instrumentation (added 2026-10-29, Android-SMS
         // investigation): a first pass of this only reported _debug on a
         // successful/timeout resolve, silently losing it on exactly the
         // case most worth seeing — a confirmed delivery failure, which
