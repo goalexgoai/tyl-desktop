@@ -300,15 +300,28 @@ function resetPeriodIfNeeded(user) {
   return user;
 }
 
+// Cancellation rule (Dustin, 2026-10-29), same as the web server: a user who
+// cancels keeps their paid plan until the paid period ends, then moves to the
+// free plan. The web server applies it too, so license-sync stays consistent.
+function lapseIfExpired(user) {
+  if (!user || user.subscription_status !== 'cancelled') return user;
+  const end = user.billing_period_end ? new Date(user.billing_period_end) : null;
+  if (end && !isNaN(end) && end > new Date()) return user;
+  db.prepare("UPDATE users SET plan = 'free', subscription_status = 'free', billing_period_end = NULL WHERE id = ?").run(user.id);
+  return { ...user, plan: 'free', subscription_status: 'free', billing_period_end: null };
+}
+
 function checkSendLimit(user, count = 1) {
   // Admin users bypass all limits
   if (user.is_admin) return { allowed: true, remaining: Infinity, limit: Infinity, plan: user.plan };
   // Manual accounts bypass limits
   if (user.manual_account) return { allowed: true, remaining: Infinity, limit: Infinity, plan: user.plan };
-  // Block cancelled/past_due subscriptions (but not free or manual)
-  if (user.subscription_status === 'cancelled' || user.subscription_status === 'past_due') {
+  // Cancelled: paid plan until the paid period ends, then free.
+  user = lapseIfExpired(user);
+  // Block past_due subscriptions (failed payment)
+  if (user.subscription_status === 'past_due') {
     return { allowed: false, remaining: 0, limit: 0, plan: user.plan, blocked: true,
-      blockReason: 'Your subscription has expired. Upgrade to continue sending.' };
+      blockReason: 'Your subscription payment failed. Update your card to continue sending.' };
   }
   const fresh = resetPeriodIfNeeded(user);
   const plan = PLANS[fresh.plan] || PLANS.free;
@@ -805,15 +818,7 @@ app.get('/api/auth/me', requireAuth, async (req, res) => {
     await Promise.race([syncLicenseFromWeb(user.id, user.email), new Promise(r => setTimeout(r, 3000))]);
     user = db.prepare('SELECT * FROM users WHERE id = ?').get(user.id);
   } catch (_) { /* use cached plan on sync failure */ }
-  // Change 8: check if billing_period_end has passed and downgrade if so
-  if (user.subscription_status === 'cancelled' && user.billing_period_end) {
-    if (new Date(user.billing_period_end) < new Date()) {
-      db.prepare("UPDATE users SET plan = 'free', subscription_status = 'free', billing_period_end = NULL WHERE id = ?").run(user.id);
-      user.plan = 'free';
-      user.subscription_status = 'free';
-      user.billing_period_end = null;
-    }
-  }
+  user = lapseIfExpired(user); // paid plan until the paid period ends, then free
   const fresh = resetPeriodIfNeeded(user);
   const plan = PLANS[fresh.plan] || PLANS.free;
   // Admins and manual accounts get unlimited everything
