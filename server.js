@@ -79,16 +79,11 @@ const PLANS = {
 // Falls back to __dirname/data for the hosted web server where __dirname is writable.
 const dataDir = process.env.TYL_DATA_DIR || path.join(__dirname, 'data');
 fs.mkdirSync(dataDir, { recursive: true });
-
-if (process.env.TYL_DESKTOP) {
-  // Clear stale sessions on restart — prevents old session from mapping to wrong user
-  const sessionsDir = path.join(dataDir, 'sessions');
-  if (fs.existsSync(sessionsDir)) {
-    for (const f of fs.readdirSync(sessionsDir)) {
-      try { fs.unlinkSync(path.join(sessionsDir, f)); } catch (_) {}
-    }
-  }
-}
+// Sessions used to be wiped on every desktop-app restart ("prevents old
+// session from mapping to wrong user") from when dataDir lived inside the
+// app bundle (__dirname/data) and could get confused across reinstalls.
+// dataDir is now the stable Electron userData path, so that risk is gone —
+// the 30-day cookie below can actually keep users logged in across restarts.
 
 app.use(session({
   store: new FileStore({ path: path.join(dataDir, 'sessions'), ttl: 30 * 24 * 60 * 60 }),

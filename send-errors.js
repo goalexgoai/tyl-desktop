@@ -26,6 +26,10 @@ function friendlyError(raw, platform = process.platform) {
     return `Cancelled.`;
   if (/delivery failed — relay reported an error/i.test(e))
     return `This message did not go through — the carrier or Messages relay reported a failure. Double-check the number and try resending.`;
+  if (/TYL_SERVICE_UNAVAILABLE:SMS/.test(e))
+    return `This Mac can't send text messages (SMS) yet — only iMessage. On your iPhone: Settings → Messages → Text Message Forwarding, and turn this Mac on. Then resend.`;
+  if (/TYL_SERVICE_UNAVAILABLE:iMessage/.test(e))
+    return `iMessage isn't signed in on this Mac. Open Messages → Settings → iMessage and sign in with your Apple ID, then resend.`;
   // Unknown: first line only, never a multi-line script dump.
   const first = e.split(/\r?\n/).find(l => l.trim()) || 'Unknown error';
   return first.trim().slice(0, 200);
