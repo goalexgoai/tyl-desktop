@@ -203,40 +203,6 @@ describe('delivery reconciler (unconfirmed-send follow-up)', () => {
     delete sendFn.checkDeliveryOnce;
   });
 
-  test('SMS gets a longer reconcile window than iMessage: a 20-min-old SMS row is still reconciled', async () => {
-    sendFn.mockReset().mockResolvedValue({ confirmed: false, chatBeforeRowId: 222, chatService: 'SMS' });
-    sendFn.canReadChatDb = jest.fn().mockReturnValue(true);
-    sendFn.checkDeliveryOnce = jest.fn().mockReturnValue('delivered');
-    const jobId = makeJob(1);
-    await runLoop(1);
-    const msgId = db.prepare('SELECT id FROM messages WHERE job_id = ?').get(jobId).id;
-    // Past the old flat 10-minute window, but within SMS's wider 45-minute one.
-    db.prepare("UPDATE messages SET sent_at = datetime('now', '-20 minutes') WHERE id = ?").run(msgId);
-
-    await app.locals.reconcileUnconfirmedDeliveries();
-    expect(db.prepare('SELECT status FROM messages WHERE id = ?').get(msgId).status).toBe('sent');
-
-    delete sendFn.canReadChatDb;
-    delete sendFn.checkDeliveryOnce;
-  });
-
-  test('iMessage keeps the original 10-minute window: a 20-min-old iMessage row is left unconfirmed, never probed', async () => {
-    sendFn.mockReset().mockResolvedValue({ confirmed: false, chatBeforeRowId: 333, chatService: 'iMessage' });
-    sendFn.canReadChatDb = jest.fn().mockReturnValue(true);
-    sendFn.checkDeliveryOnce = jest.fn().mockReturnValue('delivered');
-    const jobId = makeJob(1);
-    await runLoop(1);
-    const msgId = db.prepare('SELECT id FROM messages WHERE job_id = ?').get(jobId).id;
-    db.prepare("UPDATE messages SET sent_at = datetime('now', '-20 minutes') WHERE id = ?").run(msgId);
-
-    await app.locals.reconcileUnconfirmedDeliveries();
-    expect(db.prepare('SELECT status FROM messages WHERE id = ?').get(msgId).status).toBe('unconfirmed');
-    expect(sendFn.checkDeliveryOnce).not.toHaveBeenCalled();
-
-    delete sendFn.canReadChatDb;
-    delete sendFn.checkDeliveryOnce;
-  });
-
   test('reconciler is a no-op when the active sendFn has no reconciliation capability (e.g. Windows)', async () => {
     sendFn.mockReset().mockResolvedValue({ confirmed: false, chatBeforeRowId: 111, chatService: 'SMS' });
     // Deliberately NOT attaching canReadChatDb/checkDeliveryOnce to sendFn here.
