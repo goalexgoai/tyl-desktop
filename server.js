@@ -3213,9 +3213,19 @@ if (process.env.TYL_DESKTOP) {
   // send loop moves on. Deliberately reporting-only: never resends on a
   // later-confirmed failure — the recipient may have actually gotten it
   // despite the ambiguity, and a blind retry risks a duplicate delivery.
-  // Past UNCONFIRMED_RECONCILE_WINDOW_MINUTES with still no answer, a message
-  // just stays 'unconfirmed' for good — an honest ceiling, not a guarantee.
-  const UNCONFIRMED_RECONCILE_WINDOW_MINUTES = 10;
+  // Past its window with still no answer, a message just stays 'unconfirmed'
+  // for good — an honest ceiling, not a guarantee.
+  //
+  // SMS gets a longer window than iMessage. Field evidence 2026-10-30: a live
+  // batch run showed genuine SMS deliveries (confirmed sent in Messages.app
+  // itself) whose chat.db row hadn't landed within 10 minutes. SMS to Android
+  // relays through Text Message Forwarding (this Mac -> paired iPhone ->
+  // carrier) before Messages.app ever writes the row, so it can lag well
+  // behind a direct iMessage send. iMessage keeps the original 10-minute
+  // window — its write path is direct, so a longer wait there would only
+  // delay a real failure from surfacing.
+  const UNCONFIRMED_RECONCILE_WINDOW_MINUTES = { iMessage: 10, SMS: 45 };
+  const DEFAULT_RECONCILE_WINDOW_MINUTES = UNCONFIRMED_RECONCILE_WINDOW_MINUTES.iMessage;
   async function reconcileUnconfirmedDeliveries() {
     // Capability-based, not platform-based: send-windows.js exposes neither
     // checkDeliveryOnce nor canReadChatDb, so this is naturally a no-op there
@@ -3225,14 +3235,20 @@ if (process.env.TYL_DESKTOP) {
     reconcileUnconfirmedDeliveries._running = true;
     try {
       if (!sendFn.canReadChatDb()) return; // no Full Disk Access right now
+      // Window is applied per-row by chat_service in SQL (not in JS after the
+      // fact) so there's no date-string parsing of SQLite's datetime() output
+      // to get wrong — sent_at never leaves SQLite's own clock.
       const rows = db.prepare(`
         SELECT id, phone, body, chat_before_rowid, chat_service
         FROM messages
         WHERE status = 'unconfirmed'
           AND chat_before_rowid IS NOT NULL
-          AND sent_at >= datetime('now', ?)
+          AND sent_at >= datetime('now', CASE WHEN chat_service = 'SMS' THEN ? ELSE ? END)
         LIMIT 50
-      `).all(`-${UNCONFIRMED_RECONCILE_WINDOW_MINUTES} minutes`);
+      `).all(
+        `-${UNCONFIRMED_RECONCILE_WINDOW_MINUTES.SMS} minutes`,
+        `-${DEFAULT_RECONCILE_WINDOW_MINUTES} minutes`
+      );
 
       for (const row of rows) {
         const result = sendFn.checkDeliveryOnce(row.phone, row.chat_before_rowid, row.chat_service, row.body);

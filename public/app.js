@@ -117,13 +117,17 @@ function pill(status) {
   return `<span class="pill pill-${status}">${status.replace('_', ' ')}</span>`;
 }
 
-// 'unconfirmed' is only still actively being checked for ~10 minutes after
-// sent_at (matches UNCONFIRMED_RECONCILE_WINDOW_MINUTES in server.js) — past
-// that, the reconciler has given up and this message will never resolve on
-// its own, so the copy must stop implying it's still in progress.
-function unconfirmedNote(sentAt) {
+// 'unconfirmed' is only still actively being checked for a window after
+// sent_at that matches UNCONFIRMED_RECONCILE_WINDOW_MINUTES in server.js —
+// longer for SMS (its chat.db write lags further behind, relayed through
+// Text Message Forwarding) than for iMessage (a direct write). Past that
+// window, the reconciler has given up and this message will never resolve
+// on its own, so the copy must stop implying it's still in progress.
+const UNCONFIRMED_STILL_CHECKING_MINUTES = { iMessage: 10, SMS: 45 };
+function unconfirmedNote(sentAt, chatService) {
   const sentAgoMs = sentAt ? Date.now() - new Date(sentAt + (sentAt.includes('T') ? '' : 'Z')).getTime() : 0;
-  const stillChecking = sentAgoMs < 10 * 60 * 1000;
+  const windowMinutes = UNCONFIRMED_STILL_CHECKING_MINUTES[chatService] || UNCONFIRMED_STILL_CHECKING_MINUTES.iMessage;
+  const stillChecking = sentAgoMs < windowMinutes * 60 * 1000;
   const text = stillChecking
     ? 'Still verifying delivery — this updates automatically once confirmed.'
     : 'Could not confirm delivery. It may still have gone through.';
@@ -2754,7 +2758,7 @@ async function refreshJobDetail(jobId) {
             ${messages.map(m => `<tr>
               <td style="font-family:var(--mono);font-size:13px">${escHtml(m.phone)}</td>
               <td>${escHtml([m.first_name, m.last_name].filter(Boolean).join(' ')) || '—'}</td>
-              <td>${pill(m.status)}${m.error && ['failed','dead'].includes(m.status) ? `<div style="font-size:11.5px;color:var(--text-muted);margin-top:4px;max-width:340px;line-height:1.4">${escHtml(m.error.split('\n')[0].slice(0, 220))}</div>` : ''}${m.status === 'unconfirmed' ? unconfirmedNote(m.sent_at) : ''}</td>
+              <td>${pill(m.status)}${m.error && ['failed','dead'].includes(m.status) ? `<div style="font-size:11.5px;color:var(--text-muted);margin-top:4px;max-width:340px;line-height:1.4">${escHtml(m.error.split('\n')[0].slice(0, 220))}</div>` : ''}${m.status === 'unconfirmed' ? unconfirmedNote(m.sent_at, m.chat_service) : ''}</td>
               <td>${m.attempts}</td>
               <td>${fmt(m.sent_at)}</td>
             </tr>`).join('')}
