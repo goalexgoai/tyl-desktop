@@ -155,3 +155,41 @@ describe('queryDeliveryRows: body stored only in attributedBody (newer macOS)', 
     expect(dbg).toMatchObject({ textMatched: false, rowid: 103 });
   });
 });
+
+// Real SQLite, real SQL: an SMS-service send that chat.db records as 'RCS'
+// (iPhone reaching Android over RCS) must still be found and confirmed.
+describe('queryDeliveryRows against a real chat.db schema', () => {
+  const Database = require('better-sqlite3');
+  function chatDb(rows) {
+    const db = new Database(':memory:');
+    db.exec(`CREATE TABLE handle (ROWID INTEGER PRIMARY KEY, id TEXT);
+             CREATE TABLE message (ROWID INTEGER PRIMARY KEY, handle_id INTEGER, is_from_me INTEGER,
+               service TEXT, is_sent INTEGER, is_delivered INTEGER, error INTEGER, text TEXT, attributedBody BLOB);
+             INSERT INTO handle (ROWID, id) VALUES (1, '+15551234567');`);
+    const ins = db.prepare('INSERT INTO message (ROWID, handle_id, is_from_me, service, is_sent, is_delivered, error, text) VALUES (?,1,1,?,?,?,?,?)');
+    for (const r of rows) ins.run(r.rowid, r.service, r.is_sent, r.is_delivered || 0, r.error || 0, r.text);
+    return db;
+  }
+  test('SMS send recorded as RCS + is_sent → delivered', () => {
+    const db = chatDb([{ rowid: 101, service: 'RCS', is_sent: 1, text: 'hi there' }]);
+    expect(queryDeliveryRows(db, '+15551234567', 100, 'SMS', 'hi there')).toBe('delivered');
+  });
+  test('SMS send recorded as RCS with error → error', () => {
+    const db = chatDb([{ rowid: 101, service: 'RCS', is_sent: 0, error: 4, text: 'hi there' }]);
+    expect(queryDeliveryRows(db, '+15551234567', 100, 'SMS', 'hi there')).toBe('error');
+  });
+  test('plain SMS row still works', () => {
+    const db = chatDb([{ rowid: 101, service: 'SMS', is_sent: 1, text: 'hi there' }]);
+    expect(queryDeliveryRows(db, '+15551234567', 100, 'SMS', 'hi there')).toBe('delivered');
+  });
+  test('iMessage send never matches an RCS/SMS row (blue/green logic unchanged)', () => {
+    const db = chatDb([{ rowid: 101, service: 'RCS', is_sent: 1, is_delivered: 1, text: 'hi there' }]);
+    expect(queryDeliveryRows(db, '+15551234567', 100, 'iMessage', 'hi there')).toBe('pending');
+  });
+  test('no-match reports which services did get a row', () => {
+    const db = chatDb([{ rowid: 101, service: 'iMessage', is_sent: 1, text: 'hi there' }]);
+    const dbg = {};
+    expect(queryDeliveryRows(db, '+15551234567', 100, 'SMS', 'hi there', dbg)).toBe('pending');
+    expect(dbg.otherServices).toBe('iMessage');
+  });
+});

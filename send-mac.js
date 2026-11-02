@@ -144,20 +144,39 @@ function queryDeliveryRows(db, phone, beforeRowId, serviceType, expectedText, de
     const placeholders = phones.map(() => '?').join(',');
     const normText = s => String(s || '').trim();
 
+    // A text sent through the SMS service can land in chat.db as 'RCS': when
+    // the paired iPhone (iOS 18+) reaches an Android number over RCS, the
+    // relayed row is written with service='RCS', not 'SMS'. Field evidence
+    // 2026-10-30: every Android send stuck at 'unconfirmed' had rowsSeen=0
+    // under service='SMS' while Messages.app showed it sent. classifyRoute
+    // already treats RCS as the SMS class; this makes delivery checks match.
+    // iMessage sends are unchanged (still service='iMessage' only).
+    const services = serviceType === 'SMS' ? ['SMS', 'RCS'] : [serviceType];
     const rows = db.prepare(`
-      SELECT m.ROWID, m.is_delivered, m.is_sent, m.error, m.text, m.attributedBody
+      SELECT m.ROWID, m.is_delivered, m.is_sent, m.error, m.text, m.attributedBody, m.service
       FROM message m
       JOIN handle h ON h.ROWID = m.handle_id
       WHERE h.id IN (${placeholders})
         AND m.is_from_me = 1
-        AND m.service = ?
+        AND m.service IN (${services.map(() => '?').join(',')})
         AND m.ROWID > ?
       ORDER BY m.ROWID DESC
       LIMIT 8
-    `).all(...phones, serviceType, beforeRowId);
+    `).all(...phones, ...services, beforeRowId);
 
     if (!rows.length) {
-      if (debugOut) Object.assign(debugOut, { rowsSeen: 0 });
+      if (debugOut) {
+        Object.assign(debugOut, { rowsSeen: 0 });
+        // Diagnostic only: which services DID get a row for this number after
+        // the send, so a future no-match explains itself.
+        try {
+          const other = db.prepare(`
+            SELECT DISTINCT m.service FROM message m JOIN handle h ON h.ROWID = m.handle_id
+            WHERE h.id IN (${placeholders}) AND m.is_from_me = 1 AND m.ROWID > ?
+          `).all(...phones, beforeRowId).map(r => r.service);
+          debugOut.otherServices = other.join('|');
+        } catch (_) {}
+      }
       return 'pending';
     }
 
@@ -174,7 +193,7 @@ function queryDeliveryRows(db, phone, beforeRowId, serviceType, expectedText, de
     const row = matched || rows[0]; // fallback = prior behavior (newest row)
     if (debugOut) {
       Object.assign(debugOut, {
-        rowsSeen: rows.length, textMatched: !!matched, rowid: row.ROWID,
+        rowsSeen: rows.length, textMatched: !!matched, rowid: row.ROWID, rowService: row.service,
         is_sent: row.is_sent, is_delivered: row.is_delivered, error: row.error,
       });
     }

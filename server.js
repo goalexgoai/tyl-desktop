@@ -2932,7 +2932,7 @@ if (process.env.TYL_DESKTOP) {
   // isn't really applied (see send-mac.js header, finding 7).
   function reportSendDebug(webUserId, phone, isTest, d) {
     if (!d) return;
-    const detail = `sendId=${d.sendId ?? ''} phone=…${String(phone).slice(-4)} tag=${d.tag} svc=${d.serviceType} poll=${d.pollResult} rowsSeen=${d.rowsSeen ?? ''} matched=${d.textMatched ?? ''} rowid=${d.rowid ?? ''} is_sent=${d.is_sent ?? ''} is_delivered=${d.is_delivered ?? ''} error=${d.error ?? ''}`;
+    const detail = `sendId=${d.sendId ?? ''} phone=…${String(phone).slice(-4)} tag=${d.tag} svc=${d.serviceType} poll=${d.pollResult} rowsSeen=${d.rowsSeen ?? ''} matched=${d.textMatched ?? ''} rowid=${d.rowid ?? ''} is_sent=${d.is_sent ?? ''} is_delivered=${d.is_delivered ?? ''} error=${d.error ?? ''} rowSvc=${d.rowService ?? ''} otherSvc=${d.otherServices ?? ''}`;
     console.log(`[send-debug] ${detail}`);
     desktopWebPost('/api/desktop-event', {
       web_user_id: webUserId, platform: process.platform, app_version: APP_VERSION,
