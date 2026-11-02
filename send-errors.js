@@ -19,7 +19,7 @@ function friendlyError(raw, platform = process.platform) {
   if (/Phone Link pairing incomplete/i.test(e))
     return `Phone Link couldn't finish pairing with your phone over Bluetooth. Keep your phone near your PC with Bluetooth on, click "Try Bluetooth pairing again" in Phone Link, and tap Allow on every prompt on your phone.`;
   if (/Message text did not register/i.test(e))
-    return `${app} didn't pick up the message text. Make sure ${app} is in front and visible (not minimized), then resend.`;
+    return `${app} didn't pick up the message text. Make sure ${app} is in front and visible (not minimized) and the number is correct, including its country code if it's outside your country. Then resend.`;
   if (/recipient field|message field|compose|new message|did not open/i.test(e))
     return `${app} didn't open a new message. In ${app}, click the Messages tab and confirm your phone is connected, then resend.`;
   if (/timed out|timeout/i.test(e))

@@ -227,6 +227,10 @@ async function startServer() {
   process.env.TYL_WEB_URL = process.env.TYL_WEB_URL || 'https://app.textyourlist.com';
   process.env.DESKTOP_LICENSE_SECRET = process.env.DESKTOP_LICENSE_SECRET || 'cd69e5f72254cff5b33050350de14925296a19a35b18bf92d3677eddaf17dc7f';
 
+  // Computer's region (e.g. "FR"), the default country for phone numbers
+  // typed without a country code until the user picks one.
+  try { process.env.TYL_LOCALE_COUNTRY = process.env.TYL_LOCALE_COUNTRY || app.getLocaleCountryCode() || ''; } catch (_) {}
+
   // Run server in-process — avoids all ABI/WASM issues with spawned child.
   // better-sqlite3 native bindings work fine in Electron's main process.
   require('./server');

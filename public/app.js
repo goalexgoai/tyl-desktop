@@ -189,6 +189,9 @@ function upgradePrompt(msg) {
 // ── Merge field chips ──────────────────────────────────────────────────────
 
 // Sanitize a CSV column name into a safe merge token: lowercase, non-alphanumeric → underscore
+// Keep in sync with csv-intl.js PHONE_COLUMN_RE (server side).
+const PHONE_COLUMN_RE = /phone|mobile|cell|number|t[ée]l[ée]?phone|\btel\b|\bt[ée]l\.?$|portable|num[ée]ro|handy|telefon|tel[ée]fono|celular|m[oó]vil|movil|cellulare|telemovel|telem[oó]vel|gsm|whats ?app|\bnummer\b|mobil/i;
+
 function sanitizeToken(col) {
   return col.toLowerCase().trim().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
 }
@@ -207,8 +210,13 @@ function mergeChipsHtml(textareaId) {
 function updateMergeChips(textareaId, columnMap) {
   const container = document.getElementById(`merge-chips-${textareaId}`);
   if (!container) return;
-  const tokens = Object.keys(columnMap).filter(k => k !== 'phone');
-  if (!tokens.length) return;
+  const byColumn = new Map();
+  for (const [k, col] of Object.entries(columnMap)) {
+    if (k === 'phone' || !col) continue;
+    if (!byColumn.has(col) || k === 'first_name' || k === 'last_name') byColumn.set(col, k);
+  }
+  const tokens = [...byColumn.values()];
+  if (!tokens.length) { container.outerHTML = mergeChipsHtml(textareaId); bindMergeChips(); return; }
   container.innerHTML = `
     <span class="merge-chip-label">Insert field &rarr;</span>
     ${tokens.map(t => `<span class="merge-chip" data-field="{${t}}" data-target="${textareaId}" title="{${escHtml(t)}}">${escHtml(abbreviateColumnLabel(`{${t}}`))}</span>`).join('')}`;
@@ -1181,6 +1189,11 @@ async function renderBulkSend(body) {
           </div>
         </div>
         <div id="bs-csv-status" style="margin-top:12px"></div>
+        <div class="form-row" style="margin-top:14px;margin-bottom:0">
+          <label>Numbers without a country code are from</label>
+          <select id="bs-country"><option value="">Loading…</option></select>
+          <div id="bs-phone-check" style="font-size:12.5px;margin-top:6px;color:var(--text-muted)"></div>
+        </div>
       </div>
 
       <!-- Section 2: Write message -->
@@ -1273,6 +1286,56 @@ async function renderBulkSend(body) {
   // State
   const bsState = { csvRaw: null, csvRows: [], csvColumns: [], columnMap: { phone: '', first_name: '', last_name: '', special: '' }, isNewList: false, totalCount: 0, imageFile: null, imageName: null };
 
+  // ── Phone country + up-front number check ──
+  // Numbers without a country code are read as this country. Anything that
+  // isn't a valid number for it is listed here and skipped, never sent.
+  let bsPhoneCheck = null, bsPhonePending = null, bsPhoneGen = 0, bsPhoneAccepted = false;
+  function runBsPhoneCheck() { bsPhonePending = doBsPhoneCheck(); return bsPhonePending; }
+  async function doBsPhoneCheck() {
+    const gen = ++bsPhoneGen;
+    bsPhoneCheck = null; bsPhoneAccepted = false;
+    const el = document.getElementById('bs-phone-check');
+    if (!el) return;
+    if (!bsState.csvRaw || !bsState.columnMap.phone) { el.textContent = ''; return; }
+    el.textContent = 'Checking numbers…';
+    try {
+      const r = await post('/api/phone-check', { rows: bsState.csvRaw, columnMap: { phone: bsState.columnMap.phone } });
+      if (gen !== bsPhoneGen) return; // superseded by a newer list/country choice
+      bsPhoneCheck = r;
+      const ex = r.samples[0];
+      let html = `${r.valid} number${r.valid===1?'':'s'} ready` + (ex ? ` &mdash; e.g. ${escHtml(ex.raw)} &rarr; <strong>${escHtml(ex.phone)}</strong>` : '');
+      if (r.invalid_count) {
+        html += `<div style="color:var(--danger);margin-top:4px">${r.invalid_count} number${r.invalid_count===1?' isn&rsquo;t':'s aren&rsquo;t'} valid and won&rsquo;t be sent:</div>` +
+          `<ul style="margin:4px 0 0 18px;color:var(--danger)">${r.invalid.slice(0, 5).map(x =>
+            `<li>Row ${x.row}: ${escHtml(x.raw || '(blank)')} &mdash; ${escHtml(x.reason)}</li>`).join('')}` +
+          `${r.invalid_count > 5 ? `<li>&hellip;and ${r.invalid_count - 5} more</li>` : ''}</ul>`;
+      }
+      el.innerHTML = html;
+    } catch (_) { if (gen === bsPhoneGen) el.textContent = ''; }
+  }
+  {
+    const sel = document.getElementById('bs-country');
+    get('/api/phone-country').then(pc => {
+      sel.innerHTML = pc.countries.map(c => `<option value="${c.code}" ${c.code === pc.country ? 'selected' : ''}>${escHtml(c.name)}</option>`).join('');
+    }).catch(() => { sel.innerHTML = '<option value="">Unavailable</option>'; });
+    sel.addEventListener('change', () => {
+      bsPhonePending = post('/api/phone-country', { country: sel.value }).catch(() => {}).then(() => runBsPhoneCheck());
+    });
+  }
+
+  // A CSV uploaded on the Send screen is also saved to Contacts > Lists, so
+  // it can be reused. Skipped if an identical list (same name + rows) is
+  // already saved, so re-uploading the same file doesn't pile up copies.
+  async function saveUploadAsList(fileName, data) {
+    const name = (fileName || 'Uploaded list').replace(/\.(csv|vcf)$/i, '').slice(0, 100) || 'Uploaded list';
+    try {
+      const existing = await get('/api/lists');
+      if (existing.some(l => l.name === name && Number(l.row_count) === Number(data.total))) return;
+      await post('/api/lists', { name, csv_data: data.raw, columns: data.columns, row_count: data.total });
+      showToast(`Saved to your lists as "${name}"`, 3000);
+    } catch (_) { /* saving is a convenience; never block the send */ }
+  }
+
   function showListLoaded(listName, rowCount) {
     document.getElementById('bs-csv-status').innerHTML = `<div class="alert alert-success" style="margin:0;display:flex;justify-content:space-between;align-items:center">&#10003; List "${escHtml(listName)}" loaded — ${rowCount} contacts <button id="bs-saved-clear-btn" class="btn btn-ghost btn-sm" style="padding:2px 8px;font-size:12px">Change list</button></div>`;
     document.getElementById('bs-saved-clear-btn').addEventListener('click', () => {
@@ -1280,6 +1343,8 @@ async function renderBulkSend(body) {
       const sel = document.getElementById('bs-saved-list');
       if (sel) sel.value = '';
       Object.assign(bsState, { csvRaw: null, csvRows: [], csvColumns: [], columnMap: { phone: '', first_name: '', last_name: '', special: '' }, isNewList: false, totalCount: 0 });
+      refreshMergeState();
+      runBsPhoneCheck();
       updateEstimate();
     });
   }
@@ -1431,19 +1496,7 @@ async function renderBulkSend(body) {
     const segs = Math.ceil(len / 160) || 1;
     charEl.textContent = `${len} chars · ${segs} segment${segs>1?'s':''}`;
     charEl.className = 'char-count' + (len > 306 ? ' char-danger' : len > 160 ? ' char-warn' : '');
-    refreshBsPreview();
-    // Merge field mismatch warning
-    const mergeWarnEl = document.getElementById('bs-merge-warning');
-    if (mergeWarnEl && bsState.columnMap) {
-      const tokens = [...msgEl.value.matchAll(/\{([^}]+)\}/g)].map(m => m[1]);
-      const missing = tokens.filter(t => !(t in bsState.columnMap));
-      if (missing.length) {
-        mergeWarnEl.style.display = 'block';
-        mergeWarnEl.textContent = `Warning: ${missing.map(t => '{'+t+'}').join(', ')} ${missing.length===1?'is':'are'} not in your contact list — will send as literal text.`;
-      } else {
-        mergeWarnEl.style.display = 'none';
-      }
-    }
+    refreshMergeState();
   });
 
   // Pace + estimate
@@ -1512,11 +1565,14 @@ async function renderBulkSend(body) {
         document.getElementById('bs-csv-status').innerHTML = '';
         document.getElementById('bs-file').value = '';
         Object.assign(bsState, { csvRaw: null, csvRows: [], csvColumns: [], columnMap: { phone: '', first_name: '', last_name: '', special: '' }, isNewList: false });
+        refreshMergeState();
+        runBsPhoneCheck();
       });
       document.getElementById('bs-csv-status').innerHTML = `<div style="font-size:13px;color:var(--text-muted)">Columns: ${data.columns.map(c => `<code title="${escHtml(c)}" style="font-family:var(--mono);font-size:12px;background:rgba(0,0,0,0.06);padding:1px 4px;border-radius:3px">${escHtml(abbreviateColumnLabel(c))}</code>`).join(', ')}</div>`;
-      updateMergeChips('bs-message', bsState.columnMap);
+      refreshMergeState();
+      runBsPhoneCheck();
       document.getElementById('bs-new-list-note').style.display = 'none';
-      refreshBsPreview();
+      saveUploadAsList(file.name, data);
       // Auto-fill campaign name
       const nameEl = document.getElementById('bs-campaign-name');
       if (nameEl && !nameEl.value) nameEl.value = file.name.replace(/\.(csv|vcf)$/i,'') + ' — ' + new Date().toLocaleDateString();
@@ -1553,9 +1609,9 @@ async function renderBulkSend(body) {
         } catch (_) {}
         autoDetectColumns(bsState);
         showListLoaded(list.name, list.row_count);
-        updateMergeChips('bs-message', bsState.columnMap);
+        refreshMergeState();
+        runBsPhoneCheck();
         const nameEl = document.getElementById('bs-campaign-name');
-        refreshBsPreview();
         if (nameEl && !nameEl.value) nameEl.value = list.name + ' — ' + new Date().toLocaleDateString();
         updateEstimate();
       } catch (err) {
@@ -1568,7 +1624,7 @@ async function renderBulkSend(body) {
     if (!state.csvColumns) return;
     const cols = state.csvColumns;
     // Detect phone column — do not offer as a merge field
-    const phoneCol = cols.find(c => /phone|mobile|cell|number/i.test(c)) || cols[0] || '';
+    const phoneCol = cols.find(c => PHONE_COLUMN_RE.test(c)) || cols[0] || '';
     state.columnMap = { phone: phoneCol };
     // Every other column becomes a merge token (sanitized to alphanumeric + underscore)
     for (const col of cols) {
@@ -1576,6 +1632,42 @@ async function renderBulkSend(body) {
       const token = sanitizeToken(col);
       if (token) state.columnMap[token] = col;
     }
+    // Keep the standard {first_name}/{last_name} fields working when the list
+    // names those columns differently ("First", "Given Name", "Prénom"...).
+    const others = cols.filter(c => c !== phoneCol);
+    if (!state.columnMap.first_name) {
+      const f = others.find(c => /^(first|fname|given|pr[ée]nom|nombre|vorname)\b|first.?name|given.?name/i.test(c.trim()));
+      if (f) state.columnMap.first_name = f;
+    }
+    if (!state.columnMap.last_name) {
+      const l = others.find(c => /^(last|lname|surname|family|nom|apellido|nachname)\b|last.?name|family.?name/i.test(c.trim()));
+      if (l) state.columnMap.last_name = l;
+    }
+  }
+
+  // Re-check the message's {fields} against the loaded list. Runs on every
+  // list load/clear, not just on typing, so a message written before the
+  // list was picked is checked too.
+  function unmatchedMergeFields() {
+    if (!bsState.csvColumns || !bsState.csvColumns.length) return [];
+    const tokens = [...msgEl.value.matchAll(/\{(\w+)\}/g)].map(m => m[1]);
+    return [...new Set(tokens.filter(t => !(t in bsState.columnMap) && !bsState.csvColumns.includes(t)))];
+  }
+  function refreshMergeState() {
+    updateMergeChips('bs-message', bsState.columnMap);
+    const firstToken = Object.keys(bsState.columnMap).find(k => k !== 'phone' && bsState.columnMap[k]);
+    msgEl.placeholder = bsState.csvColumns && bsState.csvColumns.length
+      ? (bsState.columnMap.first_name ? 'Hi {first_name}, just wanted to reach out...' : firstToken ? `Hi, a note about {${firstToken}}...` : 'Write your message...')
+      : 'Hi {first_name}, just wanted to reach out...';
+    const mergeWarnEl = document.getElementById('bs-merge-warning');
+    const missing = unmatchedMergeFields();
+    if (mergeWarnEl) {
+      mergeWarnEl.style.display = missing.length ? 'block' : 'none';
+      mergeWarnEl.textContent = missing.length
+        ? `Warning: ${missing.map(t => '{'+t+'}').join(', ')} ${missing.length===1?'is':'are'} not in this contact list and would send as literal text. Use the field buttons above to pick from this list's columns.`
+        : '';
+    }
+    refreshBsPreview();
   }
 
   // Preview & Send
@@ -1592,6 +1684,22 @@ async function renderBulkSend(body) {
     if (!bsState.columnMap.phone) { alertEl.innerHTML = '<div class="alert alert-error">No phone column detected. Check your CSV.</div>'; return; }
     if (!template) { alertEl.innerHTML = '<div class="alert alert-error">Message cannot be empty.</div>'; return; }
     if (!name) { alertEl.innerHTML = '<div class="alert alert-error">Campaign name is required.</div>'; return; }
+
+    const missingFields = unmatchedMergeFields();
+    if (missingFields.length) {
+      alertEl.innerHTML = `<div class="alert alert-error">${missingFields.map(t => escHtml('{'+t+'}')).join(', ')} ${missingFields.length===1?'isn&rsquo;t a column':'aren&rsquo;t columns'} in this list, so ${missingFields.length===1?'it':'they'} would be texted as-is. Fix the message using the field buttons above.</div>`;
+      return;
+    }
+    if (bsPhonePending) { try { await bsPhonePending; } catch (_) {} }
+    if (bsPhoneCheck && bsPhoneCheck.valid === 0) {
+      alertEl.innerHTML = '<div class="alert alert-error">None of the numbers in this list are valid for the selected country. Check the country setting in step 1, or add country codes (like +33) to the numbers.</div>';
+      return;
+    }
+    if (queueNow && bsPhoneCheck && bsPhoneCheck.invalid_count && !bsPhoneAccepted) {
+      bsPhoneAccepted = true;
+      alertEl.innerHTML = `<div class="alert alert-warn">${bsPhoneCheck.invalid_count} number${bsPhoneCheck.invalid_count===1?' isn&rsquo;t':'s aren&rsquo;t'} valid and will be skipped (listed in step 1). Click again to send to the rest.</div>`;
+      return;
+    }
 
     // Personalization nudge — soft warning if no merge fields and sending to multiple contacts
     const hasPersonalization = /\{[\w_]+\}/.test(template);
@@ -3576,6 +3684,11 @@ function openWizard(prefillCsv) {
         <select id="map-phone">${noneOpt}${colOpts(state.columnMap.phone)}</select>
       </div>
       <div class="form-row">
+        <label>Numbers without a country code are from</label>
+        <select id="map-country"><option value="">Loading…</option></select>
+        <div id="phone-check" style="font-size:12.5px;margin-top:6px;color:var(--text-muted)"></div>
+      </div>
+      <div class="form-row">
         <label>Special (link, coupon, custom text)</label>
         <select id="map-special">${noneOpt}${colOpts(state.columnMap.special)}</select>
       </div>
@@ -3591,11 +3704,68 @@ function openWizard(prefillCsv) {
     const specialG = state.csvColumns.find(c => /special|coupon|link|url/i.test(c));
     if (specialG && !state.columnMap.special) document.getElementById('map-special').value = specialG;
 
+    // Phone country + up-front number check. Numbers without a country code
+    // are read as belonging to this country; anything that isn't a valid
+    // number for it is listed here and skipped, never sent.
+    let phoneCheck = null;
+    let phoneCheckPending = null;
+    let phoneCheckGen = 0;
+    let acceptedInvalid = false;
+    const countrySel = document.getElementById('map-country');
+    const checkEl = document.getElementById('phone-check');
+    function runPhoneCheck() {
+      phoneCheckPending = doPhoneCheck();
+      return phoneCheckPending;
+    }
+    async function doPhoneCheck() {
+      const gen = ++phoneCheckGen;
+      phoneCheck = null; acceptedInvalid = false;
+      const col = document.getElementById('map-phone').value;
+      if (!col) { checkEl.textContent = ''; return; }
+      checkEl.textContent = 'Checking numbers…';
+      try {
+        const result = await post('/api/phone-check', { rows: state.csvRaw, columnMap: { phone: col } });
+        if (gen !== phoneCheckGen) return; // a newer country/column choice superseded this check
+        phoneCheck = result;
+        const ex = phoneCheck.samples[0];
+        let html = `${phoneCheck.valid} number${phoneCheck.valid===1?'':'s'} ready` +
+          (ex ? ` &mdash; e.g. ${escHtml(ex.raw)} &rarr; <strong>${escHtml(ex.phone)}</strong>` : '');
+        if (phoneCheck.invalid_count) {
+          html += `<div style="color:var(--danger);margin-top:4px">${phoneCheck.invalid_count} number${phoneCheck.invalid_count===1?' isn&rsquo;t':'s aren&rsquo;t'} valid and won&rsquo;t be sent:</div>` +
+            `<ul style="margin:4px 0 0 18px;color:var(--danger)">${phoneCheck.invalid.slice(0, 5).map(r =>
+              `<li>Row ${r.row}: ${escHtml(r.raw || '(blank)')} &mdash; ${escHtml(r.reason)}</li>`).join('')}` +
+            `${phoneCheck.invalid_count > 5 ? `<li>&hellip;and ${phoneCheck.invalid_count - 5} more</li>` : ''}</ul>`;
+        }
+        checkEl.innerHTML = html;
+      } catch (err) { if (gen === phoneCheckGen) checkEl.textContent = ''; }
+    }
+    get('/api/phone-country').then(pc => {
+      countrySel.innerHTML = pc.countries.map(c =>
+        `<option value="${c.code}" ${c.code === pc.country ? 'selected' : ''}>${escHtml(c.name)}</option>`).join('');
+      runPhoneCheck();
+    }).catch(() => { countrySel.innerHTML = '<option value="">Unavailable</option>'; });
+    countrySel.addEventListener('change', () => {
+      // Save first, then check, as one pending step so Next waits for both.
+      phoneCheckPending = post('/api/phone-country', { country: countrySel.value })
+        .catch(() => {}).then(() => runPhoneCheck());
+    });
+    document.getElementById('map-phone').addEventListener('change', runPhoneCheck);
+
     actions.innerHTML = `<button class="btn btn-primary" id="wiz-next">Next &rarr;</button>`;
-    document.getElementById('wiz-next').addEventListener('click', () => {
+    document.getElementById('wiz-next').addEventListener('click', async () => {
       const phone = document.getElementById('map-phone').value;
       if (!phone) {
         document.getElementById('step2-alert').innerHTML = `<div class="alert alert-error">Phone column is required.</div>`;
+        return;
+      }
+      if (phoneCheckPending) { try { await phoneCheckPending; } catch (_) {} }
+      if (phoneCheck && phoneCheck.valid === 0) {
+        document.getElementById('step2-alert').innerHTML = `<div class="alert alert-error">None of these numbers are valid for the selected country. Check the country above, or add country codes (like +33) to the numbers.</div>`;
+        return;
+      }
+      if (phoneCheck && phoneCheck.invalid_count && !acceptedInvalid) {
+        acceptedInvalid = true;
+        document.getElementById('step2-alert').innerHTML = `<div class="alert alert-error">${phoneCheck.invalid_count} number${phoneCheck.invalid_count===1?'':'s'} will be skipped (listed above). Click Next again to continue without ${phoneCheck.invalid_count===1?'it':'them'}.</div>`;
         return;
       }
       state.columnMap.first_name = document.getElementById('map-first').value;
@@ -3790,6 +3960,7 @@ function openWizard(prefillCsv) {
 
         currentUser = await get('/api/auth/me');
         updateUserBadge();
+        if (result.skipped_invalid > 0) showToast(`Queued — skipped ${result.skipped_invalid} invalid number${result.skipped_invalid===1?'':'s'}`, 6000);
         closeWizard();
         navigate('history');
         setTimeout(() => openJobDetail(result.job_id), 300);

@@ -37,6 +37,11 @@ const CORPUS = [
   ['invisible characters', 'zero​width non breaking rtl‏mark bom﻿'],
   ['accents and other scripts', 'José Müller Здравствуй 你好 مرحبا'],
   ['dashes and ellipsis', 'Wait — really – yes…'],
+  ['URL with query', 'RSVP: https://example.com/e?id=12&ref=a+b#top, merci.'],
+  ['French typography (nbsp before : ; ! ?)', 'Bonjour\u00a0! Rendez-vous\u202f: 18h\u202f; «\u00a0merci\u00a0» ?'],
+  ['French accents and ligatures', 'Désolé, ça coûte 5\u00a0€ — œuvre, Noël, à bientôt'],
+  ['German/Spanish/Turkish', 'Größe ß ¿Qué tal? ¡Hola! ñ İstanbul ğ ş'],
+  ['currency and symbols', '£5 ¥100 ₹50 € © ® ™ ° ± × ÷ § ¶'],
   ['empty message', ''],
   ['only quotes', "''''"],
 ];
