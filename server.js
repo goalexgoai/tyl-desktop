@@ -222,13 +222,23 @@ async function syncLicenseFromWeb(userId, email) {
   }
 }
 
-function normalizePhone(raw) {
-  if (!raw) return null;
-  const digits = String(raw).replace(/\D/g, '');
-  if (digits.length === 10) return '+1' + digits;
-  if (digits.length === 11 && digits[0] === '1') return '+' + digits;
-  if (digits.length > 7) return '+' + digits;
-  return null;
+const phoneLib = require('./phone');
+
+// The country used for numbers typed without a country code: the user's own
+// choice if they've made one, else the computer's region (set by main.js),
+// else US.
+function userCountry(user) {
+  return phoneLib.resolveCountry(user && user.phone_country)
+    || phoneLib.resolveCountry(process.env.TYL_LOCALE_COUNTRY)
+    || phoneLib.DEFAULT_COUNTRY;
+}
+function userCountryById(userId) {
+  if (!userId) return userCountry(null);
+  try { return userCountry(db.prepare('SELECT phone_country FROM users WHERE id = ?').get(userId)); }
+  catch (_) { return userCountry(null); }
+}
+function normalizePhone(raw, country) {
+  return phoneLib.normalizePhone(raw, country || userCountry(null));
 }
 
 function renderTemplate(template, row) {
@@ -242,12 +252,12 @@ function renderTemplate(template, row) {
     .replace(/\{\{?special\}?\}/gi, row.special || '');
 }
 
-function renderDynamicTemplate(template, row, columnMap) {
+function renderDynamicTemplate(template, row, columnMap, country) {
   // Render any {ColumnName} placeholder from the CSV row
   let result = renderTemplate(template, {
     first_name: columnMap.first_name ? (row[columnMap.first_name] || '') : '',
     last_name: columnMap.last_name ? (row[columnMap.last_name] || '') : '',
-    phone: normalizePhone(row[columnMap.phone]) || row[columnMap.phone] || '',
+    phone: normalizePhone(row[columnMap.phone], country) || row[columnMap.phone] || '',
     link: columnMap.link ? (row[columnMap.link] || '') : '',
     special: columnMap.special ? (row[columnMap.special] || '') : '',
   });
@@ -1158,6 +1168,7 @@ app.post('/api/jobs', requireAuth, (req, res) => {
     return res.status(400).json({ error: 'Image not found — upload it before creating the job.' });
   }
 
+  const country = userCountry(req.user);
   const jobId = uuidv4();
   const insertJob = db.prepare('INSERT INTO jobs (id, user_id, name, template, pace_seconds, image_path) VALUES (?, ?, ?, ?, ?, ?)');
   const insertMsg = db.prepare(
@@ -1183,7 +1194,7 @@ app.post('/api/jobs', requireAuth, (req, res) => {
     const seenPhones = new Set();
     for (const row of parsedRows) {
       const rawPhone = row[columnMap.phone];
-      const phone = normalizePhone(rawPhone);
+      const phone = normalizePhone(rawPhone, country);
       if (!phone) { skippedInvalid++; continue; }
       if (seenPhones.has(phone)) { skippedDuplicate++; continue; }
       seenPhones.add(phone);
@@ -1195,7 +1206,7 @@ app.post('/api/jobs', requireAuth, (req, res) => {
         phone,
         link: columnMap.link ? (row[columnMap.link] || '') : '',
       };
-      const body = renderDynamicTemplate(template, row, columnMap);
+      const body = renderDynamicTemplate(template, row, columnMap, country);
       insertMsg.run(uuidv4(), jobId, phone, mapped.first_name, mapped.last_name, mapped.link, body, 'pending');
       queued++;
     }
@@ -1224,7 +1235,9 @@ app.post('/api/jobs', requireAuth, (req, res) => {
     skipped_invalid: skippedInvalid,
     skipped_duplicate: skippedDuplicate,
     truncated_count: truncatedCount,
+    phone_country: country,
   });
+  console.log(`[jobs] ${jobId} country=${country} queued=${queued} invalid=${skippedInvalid} dup=${skippedDuplicate} suppressed=${skippedSuppress}`);
 });
 
 app.patch('/api/jobs/:id/status', requireAuth, (req, res) => {
@@ -1254,13 +1267,53 @@ app.post('/api/preview', requireAuth, (req, res) => {
     const mapped = {
       first_name: columnMap.first_name ? (row[columnMap.first_name] || '') : '',
       last_name: columnMap.last_name ? (row[columnMap.last_name] || '') : '',
-      phone: normalizePhone(row[columnMap.phone]) || row[columnMap.phone] || '',
+      phone: normalizePhone(row[columnMap.phone], userCountry(req.user)) || row[columnMap.phone] || '',
       link: columnMap.link ? (row[columnMap.link] || '') : '',
     };
-    const body = renderDynamicTemplate(template, row, columnMap);
+    const body = renderDynamicTemplate(template, row, columnMap, userCountry(req.user));
     return { ...mapped, body };
   });
   res.json(previews);
+});
+
+// Checks every number in an upload against the user's country before they
+// send, so a wrong country shows up as a list of rejected numbers up front
+// instead of as failed or misdirected texts. Raw numbers stay on this
+// machine; nothing here is reported anywhere.
+app.post('/api/phone-check', requireAuth, (req, res) => {
+  const { rows, columnMap } = req.body || {};
+  if (!columnMap?.phone) return res.status(400).json({ error: 'columnMap.phone is required' });
+  let parsedRows = rows;
+  try { if (typeof rows === 'string') parsedRows = parse(rows, { columns: true, skip_empty_lines: true, trim: true }); }
+  catch (err) { return res.status(400).json({ error: 'Failed to parse rows: ' + err.message }); }
+  if (!Array.isArray(parsedRows)) return res.status(400).json({ error: 'rows must be a list' });
+  const country = userCountry(req.user);
+  let valid = 0;
+  const invalid = [];
+  const samples = [];
+  parsedRows.forEach((row, i) => {
+    const raw = row[columnMap.phone];
+    const r = phoneLib.parsePhone(raw, country);
+    if (r.phone) { valid++; if (samples.length < 3) samples.push({ raw: String(raw), phone: r.phone }); }
+    else invalid.push({ row: i + 2, raw: String(raw == null ? '' : raw), reason: r.reason });
+  });
+  res.json({ country, valid, invalid_count: invalid.length, invalid: invalid.slice(0, 50), samples });
+});
+
+app.get('/api/phone-country', requireAuth, (req, res) => {
+  res.json({
+    country: userCountry(req.user),
+    chosen: !!phoneLib.resolveCountry(req.user.phone_country),
+    detected: phoneLib.resolveCountry(process.env.TYL_LOCALE_COUNTRY),
+    countries: phoneLib.countryList(),
+  });
+});
+
+app.post('/api/phone-country', requireAuth, (req, res) => {
+  const code = phoneLib.resolveCountry(req.body && req.body.country);
+  if (!code) return res.status(400).json({ error: 'Pick a country from the list.' });
+  db.prepare('UPDATE users SET phone_country = ? WHERE id = ?').run(code, req.user.id);
+  res.json({ ok: true, country: code });
 });
 
 // ─── Companion Polling ───────────────────────────────────────────────────────
@@ -1376,7 +1429,7 @@ app.post('/api/ack', requireApiKey, (req, res) => {
 // ─── Single Send ─────────────────────────────────────────────────────────────
 
 function queueSingleSend(userId, rawPhone, message, label, source, defaultPace, isTest, imagePath) {
-  const phone = normalizePhone(rawPhone);
+  const phone = normalizePhone(rawPhone, userCountryById(userId));
   if (!phone) return { error: 'Invalid phone number' };
   if ((!message || !message.trim()) && !imagePath) return { error: 'message or image is required' };
 
@@ -1562,12 +1615,12 @@ app.post('/api/make/send-to-list', apiSendLimiter, requireApiKey, (req, res) => 
     const seenPhones = new Set();
     for (const row of parsedRows) {
       const rawPhone = row[columnMap.phone];
-      const phone = normalizePhone(rawPhone);
+      const phone = normalizePhone(rawPhone, userCountry(req.user));
       if (!phone) { skippedInvalid++; continue; }
       if (seenPhones.has(phone)) { skippedDuplicate++; continue; }
       seenPhones.add(phone);
       if (suppressedSet.has(phone)) { skippedSuppress++; continue; }
-      const body = renderDynamicTemplate(templateBody, row, columnMap);
+      const body = renderDynamicTemplate(templateBody, row, columnMap, userCountry(req.user));
       insertMsg.run(uuidv4(), jobId, phone, columnMap.first_name ? (row[columnMap.first_name] || '') : '', columnMap.last_name ? (row[columnMap.last_name] || '') : '', columnMap.link ? (row[columnMap.link] || '') : '', body, 'pending');
       queued++;
     }
@@ -1634,7 +1687,7 @@ app.get('/api/suppression', requireAuth, (req, res) => {
 
 app.post('/api/suppression', requireAuth, (req, res) => {
   const { phone: rawPhone, reason } = req.body;
-  const phone = normalizePhone(rawPhone);
+  const phone = normalizePhone(rawPhone, userCountry(req.user));
   if (!phone) return res.status(400).json({ error: 'Invalid phone number' });
   try {
     db.prepare('INSERT OR IGNORE INTO suppression_list (user_id, phone, reason) VALUES (?, ?, ?)').run(req.user.id, phone, reason || null);
@@ -1645,7 +1698,7 @@ app.post('/api/suppression', requireAuth, (req, res) => {
 });
 
 app.delete('/api/suppression/:phone', requireAuth, (req, res) => {
-  const phone = normalizePhone(decodeURIComponent(req.params.phone)) || decodeURIComponent(req.params.phone);
+  const phone = normalizePhone(decodeURIComponent(req.params.phone), userCountry(req.user)) || decodeURIComponent(req.params.phone);
   db.prepare('DELETE FROM suppression_list WHERE phone = ? AND user_id = ?').run(phone, req.user.id);
   res.json({ ok: true });
 });
@@ -1694,7 +1747,7 @@ app.post('/api/suppression/import', requireAuth, upload.single('file'), (req, re
       for (let i = startIdx; i < lines.length; i++) {
         const cols = parseCSVRow(lines[i]);
         const raw = (cols[phoneColIdx] || '').replace(/^"|"$/g, '').trim();
-        const phone = normalizePhone(raw);
+        const phone = normalizePhone(raw, userCountry(req.user));
         if (!phone) continue;
         const existing = db.prepare('SELECT id FROM suppression_list WHERE user_id = ? AND phone = ?').get(req.user.id, phone);
         if (existing) { already_suppressed++; continue; }

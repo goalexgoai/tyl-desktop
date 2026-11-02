@@ -3576,6 +3576,11 @@ function openWizard(prefillCsv) {
         <select id="map-phone">${noneOpt}${colOpts(state.columnMap.phone)}</select>
       </div>
       <div class="form-row">
+        <label>Numbers without a country code are from</label>
+        <select id="map-country"><option value="">Loading…</option></select>
+        <div id="phone-check" style="font-size:12.5px;margin-top:6px;color:var(--text-muted)"></div>
+      </div>
+      <div class="form-row">
         <label>Special (link, coupon, custom text)</label>
         <select id="map-special">${noneOpt}${colOpts(state.columnMap.special)}</select>
       </div>
@@ -3591,11 +3596,68 @@ function openWizard(prefillCsv) {
     const specialG = state.csvColumns.find(c => /special|coupon|link|url/i.test(c));
     if (specialG && !state.columnMap.special) document.getElementById('map-special').value = specialG;
 
+    // Phone country + up-front number check. Numbers without a country code
+    // are read as belonging to this country; anything that isn't a valid
+    // number for it is listed here and skipped, never sent.
+    let phoneCheck = null;
+    let phoneCheckPending = null;
+    let phoneCheckGen = 0;
+    let acceptedInvalid = false;
+    const countrySel = document.getElementById('map-country');
+    const checkEl = document.getElementById('phone-check');
+    function runPhoneCheck() {
+      phoneCheckPending = doPhoneCheck();
+      return phoneCheckPending;
+    }
+    async function doPhoneCheck() {
+      const gen = ++phoneCheckGen;
+      phoneCheck = null; acceptedInvalid = false;
+      const col = document.getElementById('map-phone').value;
+      if (!col) { checkEl.textContent = ''; return; }
+      checkEl.textContent = 'Checking numbers…';
+      try {
+        const result = await post('/api/phone-check', { rows: state.csvRaw, columnMap: { phone: col } });
+        if (gen !== phoneCheckGen) return; // a newer country/column choice superseded this check
+        phoneCheck = result;
+        const ex = phoneCheck.samples[0];
+        let html = `${phoneCheck.valid} number${phoneCheck.valid===1?'':'s'} ready` +
+          (ex ? ` &mdash; e.g. ${escHtml(ex.raw)} &rarr; <strong>${escHtml(ex.phone)}</strong>` : '');
+        if (phoneCheck.invalid_count) {
+          html += `<div style="color:var(--danger);margin-top:4px">${phoneCheck.invalid_count} number${phoneCheck.invalid_count===1?' isn&rsquo;t':'s aren&rsquo;t'} valid and won&rsquo;t be sent:</div>` +
+            `<ul style="margin:4px 0 0 18px;color:var(--danger)">${phoneCheck.invalid.slice(0, 5).map(r =>
+              `<li>Row ${r.row}: ${escHtml(r.raw || '(blank)')} &mdash; ${escHtml(r.reason)}</li>`).join('')}` +
+            `${phoneCheck.invalid_count > 5 ? `<li>&hellip;and ${phoneCheck.invalid_count - 5} more</li>` : ''}</ul>`;
+        }
+        checkEl.innerHTML = html;
+      } catch (err) { if (gen === phoneCheckGen) checkEl.textContent = ''; }
+    }
+    get('/api/phone-country').then(pc => {
+      countrySel.innerHTML = pc.countries.map(c =>
+        `<option value="${c.code}" ${c.code === pc.country ? 'selected' : ''}>${escHtml(c.name)}</option>`).join('');
+      runPhoneCheck();
+    }).catch(() => { countrySel.innerHTML = '<option value="">Unavailable</option>'; });
+    countrySel.addEventListener('change', () => {
+      // Save first, then check, as one pending step so Next waits for both.
+      phoneCheckPending = post('/api/phone-country', { country: countrySel.value })
+        .catch(() => {}).then(() => runPhoneCheck());
+    });
+    document.getElementById('map-phone').addEventListener('change', runPhoneCheck);
+
     actions.innerHTML = `<button class="btn btn-primary" id="wiz-next">Next &rarr;</button>`;
-    document.getElementById('wiz-next').addEventListener('click', () => {
+    document.getElementById('wiz-next').addEventListener('click', async () => {
       const phone = document.getElementById('map-phone').value;
       if (!phone) {
         document.getElementById('step2-alert').innerHTML = `<div class="alert alert-error">Phone column is required.</div>`;
+        return;
+      }
+      if (phoneCheckPending) { try { await phoneCheckPending; } catch (_) {} }
+      if (phoneCheck && phoneCheck.valid === 0) {
+        document.getElementById('step2-alert').innerHTML = `<div class="alert alert-error">None of these numbers are valid for the selected country. Check the country above, or add country codes (like +33) to the numbers.</div>`;
+        return;
+      }
+      if (phoneCheck && phoneCheck.invalid_count && !acceptedInvalid) {
+        acceptedInvalid = true;
+        document.getElementById('step2-alert').innerHTML = `<div class="alert alert-error">${phoneCheck.invalid_count} number${phoneCheck.invalid_count===1?'':'s'} will be skipped (listed above). Click Next again to continue without ${phoneCheck.invalid_count===1?'it':'them'}.</div>`;
         return;
       }
       state.columnMap.first_name = document.getElementById('map-first').value;
@@ -3790,6 +3852,7 @@ function openWizard(prefillCsv) {
 
         currentUser = await get('/api/auth/me');
         updateUserBadge();
+        if (result.skipped_invalid > 0) showToast(`Queued — skipped ${result.skipped_invalid} invalid number${result.skipped_invalid===1?'':'s'}`, 6000);
         closeWizard();
         navigate('history');
         setTimeout(() => openJobDetail(result.job_id), 300);

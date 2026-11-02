@@ -240,6 +240,12 @@ try {
   db.exec(`ALTER TABLE users ADD COLUMN api_default_pace INTEGER`);
 } catch (_) {}
 
+// Country for phone numbers typed without a country code (ISO alpha-2).
+// NULL = not chosen yet; server falls back to the computer's region, then US.
+try {
+  db.exec(`ALTER TABLE users ADD COLUMN phone_country TEXT`);
+} catch (_) {}
+
 // API key hashing — store SHA-256 hash for auth instead of plaintext lookup
 try {
   db.exec(`ALTER TABLE api_keys ADD COLUMN key_hash TEXT`);
