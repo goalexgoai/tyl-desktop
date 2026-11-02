@@ -189,6 +189,9 @@ function upgradePrompt(msg) {
 // ── Merge field chips ──────────────────────────────────────────────────────
 
 // Sanitize a CSV column name into a safe merge token: lowercase, non-alphanumeric → underscore
+// Keep in sync with csv-intl.js PHONE_COLUMN_RE (server side).
+const PHONE_COLUMN_RE = /phone|mobile|cell|number|t[ée]l[ée]?phone|\btel\b|\bt[ée]l\.?$|portable|num[ée]ro|handy|telefon|tel[ée]fono|celular|m[oó]vil|movil|cellulare|telemovel|telem[oó]vel|gsm|whats ?app|\bnummer\b|mobil/i;
+
 function sanitizeToken(col) {
   return col.toLowerCase().trim().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
 }
@@ -1621,7 +1624,7 @@ async function renderBulkSend(body) {
     if (!state.csvColumns) return;
     const cols = state.csvColumns;
     // Detect phone column — do not offer as a merge field
-    const phoneCol = cols.find(c => /phone|mobile|cell|number/i.test(c)) || cols[0] || '';
+    const phoneCol = cols.find(c => PHONE_COLUMN_RE.test(c)) || cols[0] || '';
     state.columnMap = { phone: phoneCol };
     // Every other column becomes a merge token (sanitized to alphanumeric + underscore)
     for (const col of cols) {

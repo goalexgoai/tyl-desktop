@@ -287,9 +287,11 @@ function validateCsvUpload(file) {
 
 // Returns CSV text for the uploaded file, converting a vCard contacts export first if needed.
 // Throws on a vCard with no usable contacts — caller should surface err.message to the user.
+const { normalizeCsvBuffer, PHONE_COLUMN_RE } = require('./csv-intl');
+
 function csvTextFromUpload(file) {
   if (isVCard(file)) return vcardBufferToCsv(file.buffer);
-  return file.buffer.toString('utf8');
+  return normalizeCsvBuffer(file.buffer);
 }
 
 function validateCsvRows(rows) {
@@ -947,7 +949,7 @@ app.post('/api/upload', requireAuth, upload.single('file'), (req, res) => {
     const columns = Object.keys(rows[0]);
 
     // Warn if no recognizable phone column
-    const phoneCol = columns.find(c => /phone|mobile|cell|number/i.test(c));
+    const phoneCol = columns.find(c => PHONE_COLUMN_RE.test(c));
     const noPhoneColumn = !phoneCol;
 
     // Count duplicates
@@ -1567,7 +1569,7 @@ app.post('/api/make/send-to-list', apiSendLimiter, requireApiKey, (req, res) => 
   if (!parsedRows.length) return res.status(400).json({ error: 'Contact list is empty.' });
 
   const columns = Object.keys(parsedRows[0]);
-  const phoneCol = columns.find(c => /phone|mobile|cell|number/i.test(c)) || columns[0] || '';
+  const phoneCol = columns.find(c => PHONE_COLUMN_RE.test(c)) || columns[0] || '';
   if (!phoneCol) return res.status(400).json({ error: 'Could not detect a phone column in the list.' });
   const columnMap = { phone: phoneCol };
   for (const col of columns) {
@@ -1713,7 +1715,7 @@ app.post('/api/suppression/import', requireAuth, upload.single('file'), (req, re
   const fileError = validateCsvUpload(req.file);
   if (fileError) return res.status(400).json({ error: fileError });
   try {
-    const text = req.file.buffer.toString('utf8');
+    const text = normalizeCsvBuffer(req.file.buffer);
     const lines = text.trim().split(/\r?\n/).filter(l => l.trim());
     if (!lines.length) return res.status(400).json({ error: 'CSV has no data rows' });
     if (lines.length - 1 > 10000) return res.status(400).json({ error: 'CSV cannot have more than 10,000 rows' });

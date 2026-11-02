@@ -55,6 +55,7 @@
       "send-errors.js",
       "vcard.js",
       "phone.js",
+      "csv-intl.js",
       "assets/**",
       "node_modules/**"
     ],
@@ -68,6 +69,7 @@
       "send-errors.js",
       "vcard.js",
       "phone.js",
+      "csv-intl.js",
       "assets/**",
       "public/**",
       "companion/**",
