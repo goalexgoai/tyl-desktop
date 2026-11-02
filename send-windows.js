@@ -624,14 +624,46 @@ if (-not $msgField) {
     $edits2Names = (@($edits2) | ForEach-Object { "'" + $_.Current.Name + "'" }) -join ', '
   } catch { }
   Log "FATAL: no message field after $msgAttempts polls; post-enter_edit_names=[$edits2Names]"
-  Log-Diagnostics $window
+  Log-Diagnostics $searchRoot
   throw 'Message field not found'
 }
 
-$msgField.SetFocus()
-Start-Sleep -Milliseconds 300
+# Field-level SetFocus — unlike the window-level SetFocus in step 3, this was
+# NOT guarded until now. This same machine class already threw "target element
+# cannot receive focus" twice on the window-level call earlier in this script
+# (caught there); if the identical exception hits here it previously crashed
+# the whole PowerShell process uncaught, silently eating the send with no Log
+# line and no diagnosable error — distinguish that from a real message-text
+# problem instead of conflating both into "did not register in the field".
+$msgFocusOk = $false
+try {
+  $msgField.SetFocus()
+  Start-Sleep -Milliseconds 300
+  $msgFocusOk = $true
+} catch {
+  Log "message field: SetFocus threw: $($_.Exception.Message); retrying once"
+  Start-Sleep -Milliseconds 300
+  try { $msgField.SetFocus(); Start-Sleep -Milliseconds 300; $msgFocusOk = $true }
+  catch { Log "message field: retry SetFocus threw: $($_.Exception.Message)" }
+}
+if (-not $msgFocusOk) {
+  Log "FATAL: could not focus message field after retry"
+  Log-Diagnostics $searchRoot
+  throw 'Could not focus the message field'
+}
 [System.Windows.Forms.SendKeys]::SendWait('${safeMessage}')
 Start-Sleep -Milliseconds 500
+
+# Diagnostic-only (never gates pass/fail): the field's own reported text
+# length right after typing, read via ValuePattern. This is BEFORE Send is
+# invoked — the stale-after-send trap finding 5 documents is about reading
+# ValuePattern AFTER Send, which this is not — so it's safe here and tells us
+# directly whether the keystrokes actually landed, instead of only inferring
+# it from whether the Send button happened to enable.
+try {
+  $vp = $msgField.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern)
+  Log "message field after typing: value_len=$($vp.Current.Value.Length) sent_len=$('${safeMessage}'.Length)"
+} catch { Log "message field after typing: ValuePattern unavailable: $($_.Exception.Message)" }
 
 # ── 9. Confirm the text actually registered before clicking Send (finding
 #      17) — poll the Send button's IsEnabled state (not ValuePattern.Value;
@@ -652,7 +684,17 @@ while ([datetime]::Now -lt $readyDeadline -and -not $textRegistered) {
 Log "text registered: attempts=$readyAttempts, confirmed=$textRegistered"
 if (-not $textRegistered) {
   Log "FATAL: Send stayed disabled after typing — message text likely did not register"
-  Log-Diagnostics $window
+  # Dump every button in the scoped search root by name/id/enabled — not the
+  # generic 150-element Log-Diagnostics walk, which (confirmed from a real
+  # failure capture) gets entirely consumed by the conversation-list sidebar
+  # before ever reaching the compose pane. This always shows the Send
+  # candidates regardless of how deep they sit in the tree.
+  try {
+    $allBtnsHere = $searchRoot.FindAll([System.Windows.Automation.TreeScope]::Descendants, $btnCond)
+    $btnDump = (@($allBtnsHere) | ForEach-Object { "id='$($_.Current.AutomationId)' name='$($_.Current.Name)' enabled=$($_.Current.IsEnabled)" }) -join ' | '
+    Log "send-area buttons in scope: [$btnDump]"
+  } catch { Log "send-area button dump failed: $($_.Exception.Message)" }
+  Log-Diagnostics $searchRoot
   throw 'Message text did not register in the field'
 }
 

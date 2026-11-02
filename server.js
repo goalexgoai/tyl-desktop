@@ -3183,7 +3183,13 @@ if (process.env.TYL_DESKTOP) {
               // Message text never leaves the machine; its character fingerprint does.
               error_message: `${err.message}\n[message fingerprint, text removed] ${inputFingerprint(message.body)}`,
               debug_log: err.debugLog || '',
-            }).catch(() => {});
+            }).catch((postErr) => {
+              // This was a bare swallow before — a POST failure here means a real
+              // failure's evidence vanishes with zero trace anywhere, server or
+              // local. Not fixing the underlying transport; just making the loss
+              // visible in the local console/log instead of silent.
+              console.error(`[desktop-sender] error-report POST failed for job ${message.job_id}:`, postErr.message);
+            });
           }
         }
       }
