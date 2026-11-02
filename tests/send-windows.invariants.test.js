@@ -163,7 +163,7 @@ describe('send-windows.js empirical-findings invariants', () => {
     };
     try {
       const send = require('../send-windows');
-      return expect(send('+15551234567', 'Hello world 👋')).resolves.toBe(true);
+      return expect(send('+15551234567', 'Hello world 👋')).resolves.toMatchObject({ confirmed: true });
     } finally {
       cp.execFile = realExecFile;
     }
@@ -206,5 +206,64 @@ describe('escapePowerShell handles every PowerShell single-quote variant', () =>
     const r = parsePsLiteral(escapePowerShell(msg));
     expect(r.closedAtEnd).toBe(true);
     expect(r.value).toBe(msg);
+  });
+});
+
+describe('Finding 21: AutomationId-first lookups (language/version independent)', () => {
+  const fs = require('fs');
+  const path = require('path');
+  const src = fs.readFileSync(path.join(__dirname, '..', 'send-windows.js'), 'utf8');
+  const idx = (s) => src.indexOf(s);
+
+  test('compose: NewMessageButton by id before the Name regex', () => {
+    expect(idx("Find-ById $window 'NewMessageButton'")).toBeGreaterThan(-1);
+    expect(idx("Find-ById $window 'NewMessageButton'")).toBeLessThan(idx("-match 'New message|Compose|New conversation'"));
+  });
+
+  test('Messages tab by MessagingNodeAutomationId before any Name "Messages" match', () => {
+    expect(idx("'MessagingNodeAutomationId'")).toBeGreaterThan(-1);
+    expect(idx("'MessagingNodeAutomationId'")).toBeLessThan(idx("-match '^Messages$'"));
+  });
+
+  test('recipient: Edit inside ContactSuggestionsBox first, never the bare TextBox id', () => {
+    expect(idx("Find-ById $window 'ContactSuggestionsBox'")).toBeGreaterThan(-1);
+    expect(idx("Find-ById $window 'ContactSuggestionsBox'")).toBeLessThan(idx("'Type a name|Type a number|^To:?$'"));
+    expect(src).not.toMatch(/Find-ById \$\w+ 'TextBox'/);
+  });
+
+  test('send gate and send invoke use SendMessageButton by id first', () => {
+    const gate = src.indexOf('Confirm the text actually registered');
+    const gateBlock = src.slice(gate, src.indexOf('Invoke Send button'));
+    expect(gateBlock.indexOf("'SendMessageButton'")).toBeGreaterThan(-1);
+    expect(gateBlock.indexOf("'SendMessageButton'")).toBeLessThan(gateBlock.indexOf("'^Send$|^Send message$'"));
+    const inv = src.slice(src.indexOf('Invoke Send button'));
+    expect(inv.indexOf("'SendMessageButton'")).toBeLessThan(inv.indexOf("'^Send$|^Send message$'"));
+  });
+
+  test('setup screen detected by AndroidButton + iPhoneButton ids, not only English labels', () => {
+    expect(src).toMatch(/Find-ById \$window 'AndroidButton'\) -and \(Find-ById \$window 'iPhoneButton'/);
+  });
+});
+
+describe('success diagnostics (summarizeSendLog)', () => {
+  const { summarizeSendLog } = require('../send-windows.js');
+  const log = [
+    '[a] -------- send start (v1.1.0) --------',
+    "[a] recipient field: by=name, attempts=9, picked='To'",
+    '[b] -------- send start (v1.1.1) --------',
+    '[b] compose: found=True by=id',
+    "[b] recipient field: by=id, attempts=2, edits_found=3, picked='To', all_edit_names=['To', 'Send a message, Conversation with Jane Doe']",
+    '[b] scope: using ConversationPane for field search (attempts=1)',
+    "[b] message field: attempts=1, picked='Send a message, Conversation with Jane Doe'",
+    '[b] text registered: attempts=2, confirmed=True',
+    '[b] send: matching send buttons=1, invoked=True',
+  ].join('\n');
+
+  test('summarizes only the LAST send, with which path each step used', () => {
+    expect(summarizeSendLog(log)).toBe('compose=id tab=- recip=id scope=ConversationPane msg_attempts=1 text=True send=True pl=-');
+  });
+
+  test('never includes control names (contact names / notification text)', () => {
+    expect(summarizeSendLog(log)).not.toMatch(/Jane|Conversation with|To'/);
   });
 });
