@@ -14,6 +14,42 @@ describe('API integration', () => {
     cookies = await loginAs(app, request, user);
   });
 
+  // ── Phone country (international numbers) ─────────────────────────────────
+  describe('Phone country', () => {
+    const csv = 'Phone,First\n06 22 92 26 52,Ana\n+44 7911 123456,Ben\n12345,Bad\n';
+    test('set FR → national French numbers become +33, bad ones listed', async () => {
+      const set = await request(app).post('/api/phone-country').set('Cookie', cookies).send({ country: 'FR' });
+      expect(set.status).toBe(200);
+      const res = await request(app).post('/api/phone-check').set('Cookie', cookies)
+        .send({ rows: csv, columnMap: { phone: 'Phone' } });
+      expect(res.status).toBe(200);
+      expect(res.body.country).toBe('FR');
+      expect(res.body.valid).toBe(2);
+      expect(res.body.invalid_count).toBe(1);
+      expect(res.body.samples[0].phone).toBe('+33622922652');
+    });
+    test('job created under FR stores +33, never +1 0…', async () => {
+      const res = await request(app).post('/api/jobs').set('Cookie', cookies)
+        .send({ name: 'fr', template: 'Bonjour {first_name}', rows: csv, columnMap: { phone: 'Phone', first_name: 'First' } });
+      expect(res.status).toBe(201);
+      expect(res.body.queued).toBe(2);
+      expect(res.body.skipped_invalid).toBe(1);
+      const phones = db.prepare('SELECT phone FROM messages WHERE job_id = ?').all(res.body.job_id).map(r => r.phone).sort();
+      expect(phones).toEqual(['+33622922652', '+447911123456']);
+    });
+    test('US country rejects French national format instead of prefixing +1', async () => {
+      await request(app).post('/api/phone-country').set('Cookie', cookies).send({ country: 'US' });
+      const res = await request(app).post('/api/phone-check').set('Cookie', cookies)
+        .send({ rows: csv, columnMap: { phone: 'Phone' } });
+      expect(res.body.valid).toBe(1);
+      expect(res.body.invalid.map(r => r.raw)).toContain('06 22 92 26 52');
+    });
+    test('invalid country code → 400', async () => {
+      const res = await request(app).post('/api/phone-country').set('Cookie', cookies).send({ country: 'ZZ' });
+      expect(res.status).toBe(400);
+    });
+  });
+
   // ── Health ──────────────────────────────────────────────────────────────────
   describe('Health', () => {
     test('GET /health → 200 ok:true', async () => {
