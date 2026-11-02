@@ -2960,6 +2960,19 @@ if (process.env.TYL_DESKTOP) {
   }
 
   // Funnel telemetry (bulk started / finished / paused). Fire-and-forget.
+  // "country=FR intl=2": the user's phone country and how many of the job's
+  // numbers are outside it. No digits leave the machine. The web server uses
+  // country= to read API/Make/Zapier numbers the same way the app does.
+  function jobCountryDetail(jobId) {
+    try {
+      const job = db.prepare('SELECT user_id FROM jobs WHERE id = ?').get(jobId);
+      const country = userCountryById(job && job.user_id);
+      const code = '+' + require('libphonenumber-js').getCountryCallingCode(country);
+      const intl = db.prepare('SELECT COUNT(*) AS c FROM messages WHERE job_id = ? AND phone NOT LIKE ?').get(jobId, code + '%').c;
+      return `country=${country} intl=${intl}`;
+    } catch (_) { return ''; }
+  }
+
   function reportDesktopEvent(jobId, event, detail) {
     try {
       const row = db.prepare('SELECT u.web_user_id, j.is_test, j.total FROM jobs j JOIN users u ON u.id = j.user_id WHERE j.id = ?').get(jobId);
@@ -3071,7 +3084,7 @@ if (process.env.TYL_DESKTOP) {
         ).get(message.job_id)?.c || 1;
         _sendProgress = { jobId: message.job_id, total: jobTotal, current: 0, phone: '', done: false, sent: 0, failed: 0 };
         if (global.tylEvents) global.tylEvents.emit('send-start', { total: jobTotal, jobId: message.job_id });
-        reportDesktopEvent(message.job_id, 'job_started', '');
+        reportDesktopEvent(message.job_id, 'job_started', jobCountryDetail(message.job_id));
       }
       // Pace enforcement with jitter — carriers flag perfectly rhythmic sends
       if (message.pace_seconds > 0) {
