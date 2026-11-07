@@ -108,6 +108,9 @@
     .footer-link a, .back-link { color: #111; font-weight: 600; text-decoration: none; cursor: pointer; }
     .footer-link a:hover, .back-link:hover { text-decoration: underline; }
     .divider { border: none; border-top: 1px solid #eee; margin: 16px 0; }
+    .terms-accept { display: flex; align-items: flex-start; gap: 9px; font-size: 13px; color: #4b5563; line-height: 1.5; margin: 4px 0 14px; cursor: pointer; font-weight: 400; text-transform: none; letter-spacing: normal; }
+    .terms-accept input { width: 16px; height: 16px; margin-top: 2px; flex-shrink: 0; accent-color: #C44A76; cursor: pointer; }
+    .terms-accept a { color: #C44A76; font-weight: 600; }
   </style>
 </head>
 <body>
@@ -202,6 +205,10 @@
       <div class="pw-strength-bar" id="ps4"></div>
     </div>
     <div class="pw-hint" id="pw-hint">8+ characters, one letter, one number, one special character (!@#$%^&amp;* etc.)</div>
+    <label class="terms-accept">
+      <input type="checkbox" id="accept-terms" />
+      <span>I agree to the <a href="https://textyourlist.com/terms" target="_blank">Terms of Use and Software License</a> and have read the <a href="https://textyourlist.com/privacy" target="_blank">Privacy Policy</a>.</span>
+    </label>
     <button type="submit" class="btn" id="btn">Create free account</button>
   </form>
   <div class="footer-link" style="margin-top:12px">
@@ -327,6 +334,12 @@
       return;
     }
 
+    if (!document.getElementById('accept-terms').checked) {
+      err.textContent = 'Please agree to the Terms of Use to create your account.';
+      err.style.display = 'block';
+      return;
+    }
+
     err.style.display = 'none';
     btn.disabled = true;
     btn.textContent = 'Creating account...';
@@ -337,6 +350,7 @@
         body: JSON.stringify({
           email: document.getElementById('email').value.trim(),
           password: pw,
+          accept_terms: true,
         }),
       });
       const data = await res.json();

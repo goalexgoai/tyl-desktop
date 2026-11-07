@@ -437,16 +437,13 @@ app.get('/reset-password', (req, res) => {
 });
 
 // Change 9: Privacy/SEO pages are web-only, not used in desktop mode.
+// Terms and Privacy have one copy, on textyourlist.com (2026-11-07); the app links there.
 // Help pages live only on textyourlist.com (text-sender/public/help-*.html);
 // the app links there. Don't add local copies back.
 if (!process.env.TYL_DESKTOP) {
-  app.get('/privacy', (req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'privacy.html'));
-  });
+  app.get('/privacy', (req, res) => res.redirect(302, 'https://textyourlist.com/privacy'));
 
-  app.get('/terms', (req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'terms.html'));
-  });
+  app.get('/terms', (req, res) => res.redirect(302, 'https://textyourlist.com/terms'));
 
   // SEO landing pages
   app.get('/send-texts-individually', (req, res) => {
@@ -647,8 +644,8 @@ async function webAuthAndUpsertUser(email, password) {
 }
 
 // Web signup helper — creates account on the web server, upserts local user row.
-async function webSignupAndUpsertUser(email, password) {
-  const data = await desktopWebPost('/api/desktop-signup', { email, password });
+async function webSignupAndUpsertUser(email, password, acceptTerms) {
+  const data = await desktopWebPost('/api/desktop-signup', { email, password, accept_terms: acceptTerms === true, app_version: APP_VERSION });
 
   if (data.status === 409) throw Object.assign(new Error(data.body.error || 'Account already exists'), { status: 409 });
   if (data.status === 400) throw Object.assign(new Error(data.body.error || 'Invalid email or password'), { status: 400 });
@@ -660,10 +657,10 @@ async function webSignupAndUpsertUser(email, password) {
 }
 
 app.post('/api/auth/signup', authLimiter, async (req, res) => {
-  const { email, password } = req.body;
+  const { email, password, accept_terms } = req.body;
   if (!email || !password) return res.status(400).json({ error: 'Email and password required' });
   try {
-    const user = await webSignupAndUpsertUser(email, password);
+    const user = await webSignupAndUpsertUser(email, password, accept_terms);
     req.session.regenerate((err) => {
       if (err) return res.status(500).json({ error: 'Session error' });
       req.session.userId = user.localId;
@@ -886,6 +883,32 @@ app.post('/api/desktop-ping', requireAuth, (req, res) => {
       .catch(() => {});
   }
   res.json({ ok: true });
+});
+
+// Terms of Use acceptance (2026-11-07). The web heartbeat reports the current Terms
+// version and the version this account last accepted (from the download page, signup,
+// or this screen). Fails open: if the web is unreachable or the account isn't linked,
+// the app never blocks on this.
+app.get('/api/terms-status', requireAuth, async (req, res) => {
+  if (!req.user.web_user_id) return res.json({ needs_accept: false });
+  try {
+    const r = await desktopWebPost('/api/desktop-heartbeat', { web_user_id: req.user.web_user_id, version: APP_VERSION, platform: process.platform, os_release: require('os').release() });
+    const current = r.status === 200 && r.body && r.body.terms_version;
+    if (!current) return res.json({ needs_accept: false });
+    res.json({ needs_accept: r.body.terms_accepted_version !== current, version: current });
+  } catch {
+    res.json({ needs_accept: false });
+  }
+});
+
+app.post('/api/terms-accept', requireAuth, async (req, res) => {
+  if (!req.user.web_user_id) return res.status(400).json({ error: 'Not connected to web account' });
+  try {
+    const r = await desktopWebPost('/api/desktop-terms-accept', { web_user_id: req.user.web_user_id, version: req.body && req.body.version, app_version: APP_VERSION });
+    res.status(r.status === 200 ? 200 : 502).json(r.body || {});
+  } catch (err) {
+    res.status(502).json({ error: 'Could not reach Text Your List. Please try again.' });
+  }
 });
 
 // User settings — Pro users can set api_default_pace and api_send_platform
