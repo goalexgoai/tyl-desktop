@@ -93,6 +93,34 @@ describe('API integration', () => {
     });
   });
 
+  // ── Terms of Use acceptance ─────────────────────────────────────────────────
+  describe('Terms acceptance', () => {
+    test('terms-status fails open when the web is unreachable', async () => {
+      const res = await request(app).get('/api/terms-status').set('Cookie', cookies);
+      expect(res.status).toBe(200);
+      expect(res.body.needs_accept).toBe(false);
+    });
+
+    test('terms-accept reports 502 (not a crash) when the web is unreachable', async () => {
+      const res = await request(app).post('/api/terms-accept').set('Cookie', cookies).send({ version: '2026-11-07' });
+      expect(res.status).toBe(502);
+    });
+
+    test('terms-status requires login', async () => {
+      const res = await request(app).get('/api/terms-status');
+      expect(res.status).toBe(401);
+    });
+
+    test('/terms and /privacy point to the website copy', async () => {
+      const t = await request(app).get('/terms');
+      expect(t.status).toBe(302);
+      expect(t.headers.location).toBe('https://textyourlist.com/terms');
+      const p = await request(app).get('/privacy');
+      expect(p.status).toBe(302);
+      expect(p.headers.location).toBe('https://textyourlist.com/privacy');
+    });
+  });
+
   // ── Templates ───────────────────────────────────────────────────────────────
   describe('Templates CRUD', () => {
     let templateId;
