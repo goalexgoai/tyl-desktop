@@ -261,10 +261,6 @@ async function init() {
     const footerEl = document.getElementById('app-footer');
     if (footerEl) {
       footerEl.style.display = 'block';
-      if (window.electronAPI?.isDesktop) {
-        const webLinks = document.getElementById('footer-web-links');
-        if (webLinks) webLinks.style.display = 'none';
-      }
     }
 
     // Handle new signup or billing success
@@ -301,6 +297,11 @@ async function init() {
     if (fresh) { currentUser = fresh; updateUserBadge(); }
     const pending = currentUser.pending_api_count || 0;
     if (pending > 0) setTimeout(() => showPendingApiPrompt(pending), 400);
+  }).catch(() => {});
+
+  // Terms of Use: ask once per Terms version if this account hasn't accepted it yet.
+  get('/api/terms-status').then(t => {
+    if (t && t.needs_accept) setTimeout(() => showTermsPrompt(t.version), 300);
   }).catch(() => {});
 
   // Startup queued-messages gate — prompt before auto-resuming any in-progress jobs
@@ -412,6 +413,41 @@ function showPendingApiPrompt(count) {
     } catch (err) {
       showToast('Could not cancel: ' + err.message);
     }
+  });
+}
+
+function showTermsPrompt(version) {
+  if (document.getElementById('terms-overlay')) return;
+  const overlay = document.createElement('div');
+  overlay.id = 'terms-overlay';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.45);display:flex;align-items:center;justify-content:center;z-index:10000';
+  overlay.innerHTML = `
+    <div style="background:var(--bg,#fff);border-radius:14px;padding:28px 32px;max-width:440px;width:90%;box-shadow:0 20px 60px rgba(0,0,0,0.25)">
+      <h3 style="font-size:17px;font-weight:700;margin-bottom:8px;text-transform:none">We've updated our Terms</h3>
+      <p style="font-size:13.5px;color:var(--text-muted,#666);margin-bottom:14px;line-height:1.6">
+        Please review the <a href="https://textyourlist.com/terms" target="_blank" style="color:#C44A76;font-weight:600">Terms of Use and Software License</a>
+        and the <a href="https://textyourlist.com/privacy" target="_blank" style="color:#C44A76;font-weight:600">Privacy Policy</a>.
+        They explain your license to use the app, your responsibility for having consent before you text anyone, and what information the app sends us.
+      </p>
+      <label style="display:flex;gap:9px;align-items:flex-start;font-size:13.5px;line-height:1.5;margin-bottom:18px;cursor:pointer;text-transform:none;letter-spacing:normal;font-weight:400;color:inherit">
+        <input type="checkbox" id="terms-agree-box" style="width:16px;height:16px;margin-top:2px;flex-shrink:0;accent-color:#C44A76" />
+        <span>I agree to the Terms of Use and Software License and have read the Privacy Policy.</span>
+      </label>
+      <button id="terms-agree-btn" class="btn btn-primary" style="font-size:14px;padding:10px;width:100%" disabled>Continue</button>
+    </div>`;
+  document.body.appendChild(overlay);
+  const box = document.getElementById('terms-agree-box');
+  const btn = document.getElementById('terms-agree-btn');
+  box.addEventListener('change', () => { btn.disabled = !box.checked; });
+  btn.addEventListener('click', async () => {
+    btn.disabled = true;
+    try {
+      await post('/api/terms-accept', { version });
+    } catch (err) {
+      // Never lock someone out of the app over this; it asks again next launch.
+      showToast('Could not save your acceptance. We will ask again next time.');
+    }
+    overlay.remove();
   });
 }
 
