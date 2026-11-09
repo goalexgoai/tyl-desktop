@@ -111,7 +111,21 @@ jobs:
         run: npx electron-builder install-app-deps
 
       - name: Build Windows
+        # Signed via Azure Artifact Signing (account tylsigning, profile tylwindows,
+        # East US). electron-builder reads these env vars for the service principal.
+        env:
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
         run: npx electron-builder --win --publish never
+
+      - name: Verify Windows signature
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem dist/*.exe | Select-Object -First 1
+          $sig = Get-AuthenticodeSignature $exe.FullName
+          Write-Host "$($exe.Name): $($sig.Status) / $($sig.SignerCertificate.Subject)"
+          if ($sig.Status -ne 'Valid') { exit 1 }
 
       - name: Upload Windows artifacts
         uses: actions/upload-artifact@v4

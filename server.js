@@ -658,7 +658,7 @@ async function webAuthAndUpsertUser(email, password) {
 
 // Web signup helper — creates account on the web server, upserts local user row.
 async function webSignupAndUpsertUser(email, password, acceptTerms) {
-  const data = await desktopWebPost('/api/desktop-signup', { email, password, accept_terms: acceptTerms === true, app_version: APP_VERSION });
+  const data = await desktopWebPost('/api/desktop-signup', { email, password, accept_terms: acceptTerms === true, app_version: APP_VERSION, platform: process.platform });
 
   if (data.status === 409) throw Object.assign(new Error(data.body.error || 'Account already exists'), { status: 409 });
   if (data.status === 400) throw Object.assign(new Error(data.body.error || 'Invalid email or password'), { status: 400 });
