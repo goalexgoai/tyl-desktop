@@ -947,7 +947,10 @@ function showSendConfirmModal(previewContact, previewMessage, count, onConfirm, 
   const modal = document.createElement('div');
   modal.className = 'confirm-modal';
 
-  const showWarning = count > 200;
+  // Warn on the day's total, not just this send: three 150-contact sends in
+  // one evening never tripped a per-send check.
+  const sentToday = (currentUser && currentUser.daily_sends) || 0;
+  const showWarning = count > 1 && sentToday + count > 200;
   const { freeTruncated, freeTruncatedFrom, imageName } = opts;
 
   // Build preview rows HTML — show up to 10, scrollable, highlight empty merge fields
@@ -975,7 +978,7 @@ function showSendConfirmModal(previewContact, previewMessage, count, onConfirm, 
     ${freeTruncated ? `<div class="alert alert-warn" style="margin-bottom:12px">Free plan sends are limited to <strong>${count} contacts</strong>. Only the first ${count} contacts in your list will receive this message. <button class="btn btn-primary btn-sm" onclick="document.getElementById('wizard-root').innerHTML='';navigate('billing')">Upgrade for the full list</button></div>` : ''}
     ${imageName ? `<div style="font-size:13px;margin-bottom:10px;padding:8px 10px;background:#f0f9ff;border:1px solid #bae6fd;border-radius:6px;color:var(--text)">&#128206; <strong>Attachment:</strong> ${escHtml(imageName)}</div>` : ''}
     ${previewHtml ? `<div style="font-size:12px;color:var(--text-muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em">Message preview</div>${previewHtml}` : ''}
-    ${showWarning ? `<div class="alert alert-warn" style="margin:12px 0 0">Sending to ${count} contacts. We recommend no more than 200/day to keep your number healthy.</div>` : ''}
+    ${showWarning ? `<div class="alert alert-warn" style="margin:12px 0 0">${sentToday > 0 ? `You've sent ${sentToday} today, so this send brings today's total to ${sentToday + count}.` : `Sending to ${count} contacts.`} We recommend no more than 200/day to keep your number healthy.</div>` : ''}
     <div id="confirm-app-warn" style="display:none" class="alert alert-error" style="margin:10px 0 0"></div>
     ${count > 1 && window.electronAPI?.isDesktop && currentUser && currentUser.has_successful_send === false
       ? `<div class="alert alert-warn" style="margin:12px 0 0">You haven't sent a message from this computer yet. We recommend a <a href="#" onclick="document.getElementById('wizard-root').innerHTML='';navigate('quick-send');return false" style="color:inherit;text-decoration:underline;font-weight:600">test to your own phone</a> first. It takes 30 seconds and confirms ${window.electronAPI?.platform === 'darwin' ? 'Messages' : 'Phone Link'} is set up.</div>`
@@ -1392,6 +1395,7 @@ async function renderBulkSend(body) {
     try {
       const fresh = await get('/api/auth/me');
       const n = fresh.daily_sends || 0;
+      if (currentUser) currentUser.daily_sends = n; // keeps the confirm modal's daily-total warning current
       const hc = n <= 100 ? '#16a34a' : n <= 150 ? '#d97706' : '#dc2626';
       const hl = n <= 100 ? '' : n <= 150 ? 'Caution' : 'Warning';
       const hp = Math.min(100, Math.round(n / 200 * 100));
@@ -1779,6 +1783,8 @@ async function renderBulkSend(body) {
       });
       if (!previewRows.length) previewRows.push({ phone: '', body: template });
 
+      // Fresh count for the daily-total warning (currentUser can be from login).
+      try { const me = await get('/api/auth/me'); if (currentUser) currentUser.daily_sends = me.daily_sends || 0; } catch (_) {}
       showSendConfirmModal(null, template, effectiveTotal, () => doSubmitBulk(true, name, template, pace), previewRows, { freeTruncated, freeTruncatedFrom: totalInList, imageName: bsState.imageFile ? bsState.imageFile.name : null });
     } else {
       doSubmitBulk(false, name, template, pace);

@@ -851,13 +851,19 @@ app.get('/api/auth/me', requireAuth, async (req, res) => {
     api_send_platform: fresh.api_send_platform || 'mac',
     // Drives the "send a test to yourself first" nudge on the bulk confirm modal.
     has_successful_send: !!db.prepare("SELECT 1 FROM messages m JOIN jobs j ON j.id = m.job_id WHERE j.user_id = ? AND m.status = 'sent' LIMIT 1").get(fresh.id),
+    // Counts every message handed to the phone today, not just ones confirmed
+    // on the spot: 'unconfirmed' (Mac 7s poll timeout) and relay-reported
+    // failures still reach the carrier. Filter on j.user_id because the
+    // delivery reconciler logs with a null user_id. DISTINCT so a reconciled
+    // message isn't counted twice.
     daily_sends: db.prepare(`
-      SELECT COUNT(*) as c FROM send_logs sl
+      SELECT COUNT(DISTINCT sl.message_id) as c FROM send_logs sl
       JOIN messages m ON m.id = sl.message_id
       JOIN jobs j ON j.id = m.job_id
-      WHERE sl.user_id = ? AND sl.status = 'sent'
+      WHERE j.user_id = ? AND j.is_test = 0
         AND date(sl.created_at, 'localtime') = date('now', 'localtime')
-        AND j.is_test = 0
+        AND (sl.status IN ('sent', 'unconfirmed')
+          OR (sl.status IN ('failed', 'dead') AND sl.error LIKE '%delivery failed%'))
     `).get(fresh.id).c || 0,
   });
 });
